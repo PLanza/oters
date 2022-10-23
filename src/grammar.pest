@@ -1,0 +1,70 @@
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// -------------------- Character Collections -------------------- 
+alpha = _{ 'a'..'z' | 'A'..'Z' }
+upper = _{ 'A'..'Z' }
+lower = _{ 'a'..'z' }
+digit = _{ '0'..'9' }
+
+// -------------------- Identifiers -------------------- 
+upper_id = @{ upper ~ (alpha | "\'" | "_")* }
+lower_id = @{ lower ~ (alpha | "\'" | "_")* }
+id = @{ alpha ~ (alpha | "\'" | "_")* }
+
+// -------------------- Literals -------------------- 
+int = @{ "-"? ~ digit+ }
+float = @{ "-"? ~ digit+ ~ "." ~ digit* }
+string = { "\"" }
+unit = { "()" }
+
+// -------------------- Types -------------------- 
+generic_arg = { type_expr | upper_id }
+generic_args = { "<" ~ generic_arg ~ ("," ~ generic_arg)* ~ ">" }
+
+paren_type = { "(" ~ type_expr ~ ")" }
+string_type = { "string" }
+int_type = { "int" }
+float_type = { "float" }
+tuple_type = { "(" ~ type_expr ~ ("," ~ type_expr)+ ~ ")" }
+list_type = { "[" ~ type_expr ~ "]" }
+box_type = { "#" ~ type_expr }
+delay_type = { "@" ~ type_expr }
+fix_type = { "fix" ~ lower_id ~ "->" ~ type_expr }
+user_type = { upper_id ~ generic_args | upper_id }
+type_var = { lower_id }
+
+arrow_arg = { "->" ~ type_factor ~ type_arg }
+
+type_arg = { arrow_arg | "" }
+type_factor = { 
+  paren_type
+  | unit 
+  | string_type
+  | int_type
+  | float_type
+  | tuple_type
+  | list_type
+  | box_type
+  | delay_type
+  | fix_type
+  | user_type
+  | type_var
+}
+type_expr = { type_factor ~ type_arg }
+
+// -------------------- Items -------------------- 
+stable_param = {"#" ~ upper_id }
+generic_param = { stable_param | upper_id }
+generic_params = { "<" ~ generic_param ~ ("," ~ generic_param)* ~ ">" }
+type_alias = { "type" ~ upper_id ~ generic_params? ~ "=" ~ type_expr ~ ";" }
+
+enum_variant = { upper_id ~ type_expr? }
+enum_item = { "enum" ~ upper_id ~ generic_params? ~ "{" ~ enum_variant ~ ("," ~ enum_variant)* ~ ","? ~ "}"}
+
+struct_field = { lower_id ~ ":" ~ type_expr }
+struct_item = { "struct" ~ upper_id ~ generic_params? ~ "{" ~ struct_field ~ ("," ~ struct_field)* ~ ","? ~ "}"}
+
+item = { type_alias | enum_item | struct_item }
+
+file = { SOI ~ item+ ~ EOI }

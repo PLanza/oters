@@ -1,0 +1,15 @@
+type Str<A> = fix a -> (A, a);
+type Event<A> = Str<Option<A>>;
+
+type OutStr<A> = (A, @(fix a -> (A, a)));
+
+enum StreamFunctions<A, B> {
+  Map #(A -> B) -> Str<A> -> Str<B>,
+  ZipType Str<A> -> Str<B> -> Str<(A, B)>,
+  ScanType #(B -> A -> B) -> B -> Str<A> -> Str<B>
+}
+
+enum Tree<A> {
+  Leaf,
+  Node (Tree<A>, A, Tree<A>),
+}

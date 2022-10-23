@@ -1,0 +1,27 @@
+type Str<A> = fix a -> (A, a)
+
+enum Option<T> {
+  None (),
+  Some T,
+}
+
+type Event<A> = Str<Option<A>>
+
+let map = fn<A,B> (f: #(A -> B), (x <<@ xs): Str<A>) ->
+  unbox f x << @(map f xs)
+
+let scan = fn<A, #B> 
+  (f: #(B -> A -> B),
+  acc: B (a <<@ as): Str<A>) -> {
+
+  let acc' = !# f acc a;
+  acc' << @(scan f acc' as)
+
+}
+
+let switch = fn<A> (x <<@ xs): Str<A>, (e <<@ es): Event<Str<A>> -> 
+  match e {
+    None () => x << @(switch xs es),
+    Some (a <<@ as) => a << @(switch as es)
+  }
+
