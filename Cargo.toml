@@ -2,9 +2,13 @@
 name = "oters"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pest = "2.4.*"
-pest_derive = "2.4.*"
+lalrpop-util = { version = "^0.19", features = ["lexer"] }
+regex = "1"
+
+[build-dependencies]
+lalrpop = "^0.19"

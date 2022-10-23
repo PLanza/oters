@@ -1,0 +1,134 @@
+use crate::ast::{Expr, Opcode};
+
+use std::str::FromStr;
+
+use lalrpop_util::ParseError;
+
+grammar;
+
+// -------------------- Utils --------------------  
+
+LeftAssoc<Op, NextTier>: Box<Expr> = {
+  LeftAssoc<Op, NextTier> Op NextTier => Box::new(Expr::BinOp(<>)),
+  NextTier,
+};
+
+RightAssoc<Op, NextTier>: Box<Expr> = {
+  NextTier Op RightAssoc<Op, NextTier> => Box::new(Expr::BinOp(<>)),
+  NextTier,
+};
+
+// -------------------- Literals -------------------- 
+
+True: () = {
+  "true" => (),
+};
+False: () = {
+  "false" => (),
+};
+
+Int: i64 = {
+  r"-?[0-9]+" =>? i64::from_str(<>)
+    .map_err(|_| ParseError::User {
+      error: "Integer overflow"
+    })
+};
+
+Float: f64 = {
+  r"-?[0-9]+\.[0-9]*" =>? f64::from_str(<>)
+    .map_err(|e| ParseError::User {
+      error: "Float overflow"
+    })
+};
+
+String: String = {
+  <s: r#""(\\"|[^"])*""#> => {
+    let mut chars = s.chars();
+    chars.next();
+    chars.next_back();
+    let mut s = chars.as_str();
+    s.replace("\\\"", "\"")
+  }
+};
+
+Unit: () = {
+  r"\(\)" => (),
+};
+ 
+Nil: () = {
+  r"\[\]" => (),
+};
+
+// -------------------- Operators --------------------
+
+OrOp: Opcode = {
+  "||" => Opcode::Or,
+};
+
+AndOp: Opcode = {
+  "&&" => Opcode::And,
+};
+
+CompOp: Opcode = {
+  "==" => Opcode::Eq,
+  "<" => Opcode::Lt,
+  ">" => Opcode::Gt,
+};
+
+ConsStreamOp: Opcode = {
+  "::" => Opcode::Cons,
+  "<<" => Opcode::Stream,
+};
+
+AddSumOp: Opcode = {
+  "+" => Opcode::Add,
+  "-" => Opcode::Sub,
+};
+
+MulDivModOp: Opcode = {
+  "*" => Opcode::Mul,
+  "/" => Opcode::Div,
+  "%" => Opcode::Mod,
+};
+
+PrefixOp: Opcode = {
+  "-" => Opcode::Neg,
+  "!" => Opcode::Not,
+  "@" => Opcode::Delay,
+  "#" => Opcode::Box,
+  "!@" => Opcode::Adv,
+  "!#" => Opcode::Unbox,
+};
+
+// -------------------- Operator Expressions --------------------  
+
+pub OpExpr = OrExpr;
+
+OrExpr = RightAssoc<OrOp, AndExpr>;
+
+AndExpr = RightAssoc<AndOp, Comp>;
+
+Comp = LeftAssoc<CompOp, ConsStream>;
+
+ConsStream = RightAssoc<ConsStreamOp, AddSum>;
+
+AddSum = LeftAssoc<AddSumOp, MulDivMod>;
+
+MulDivMod = LeftAssoc<MulDivModOp, Prefix>;
+
+Prefix: Box<Expr> = {
+  PrefixOp Prefix => Box::new(Expr::UnOp(<>)),
+  Term,
+};
+
+Term: Box<Expr> = {
+  True => Box::new(Expr::True),
+  False => Box::new(Expr::False),
+  Int => Box::new(Expr::Int(<>)),
+  Float => Box::new(Expr::Float(<>)),
+  String => Box::new(Expr::String(<>)),
+  Unit => Box::new(Expr::Unit),
+  Nil => Box::new(Expr::Nil),
+  "(" <OpExpr> ")",
+};
+

@@ -1,0 +1,12 @@
+Operator Precedence:
+  1. . : Tuple and Struct access
+  2. ⊔ : Function application
+  3. -, !, @, #, !@, !# : Neg, Not, Delay Box Adv Unbox
+  4. *, /, % : Mul, Div, Mod
+  5. +, - : Add, Sum
+  6. ::, << : Cons Stream (Right)
+  7. ==, <, > : Eq, Lt, Gt
+  8. && : And (Right)
+  9. || : Or (Right)
+
+
