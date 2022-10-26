@@ -1,3 +1,5 @@
+type GenericParams = Vec<(bool, String)>; // Each parameter is a pair of the parameter name and a boolean marking whether the parameter is stable or not
+
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     True,
@@ -11,6 +13,8 @@ pub enum Expr {
     List(Vec<Box<Expr>>),
     StructVal(String, Vec<(String, Box<Expr>)>),
     Tuple(Vec<Box<Expr>>),
+    Fn(Vec<(String, Box<Type>)>, Box<Expr>),
+    Fix(String, Box<Expr>),
     Let(String, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Block(Vec<Box<Expr>>),
@@ -19,7 +23,9 @@ pub enum Expr {
     DeStruct(Box<Expr>, String),
     Variant(String, Option<Box<Expr>>),
     Var(String),
-    Type(String, Vec<(bool, String)>, Box<Type>), // Type Alias with Generic Parameters (bool corresponds to a stable tag) and defined type
+    Type(String, GenericParams, Box<Type>), // Type Alias with Generic Parameters and defined type
+    Struct(String, GenericParams, Vec<(String, Box<Type>)>), // Struct with generic parameters
+    Enum(String, GenericParams, Vec<(String, Option<Box<Type>>)>) // Enum with generic parameters
 }
 
 #[derive(Debug, PartialEq)]
@@ -28,12 +34,6 @@ pub enum Opcode {
     Div,
     Add,
     Sub,
-    Neg,
-    Not,
-    Delay,
-    Box,
-    Adv,
-    Unbox,
     Mod,
     Cons,
     Stream,
@@ -42,6 +42,14 @@ pub enum Opcode {
     Gt,
     And,
     Or,
+    Neg,
+    Not,
+    Delay,
+    Box,
+    Adv,
+    Unbox,
+    Out,
+    Into,
 }
 
 #[derive(Debug, PartialEq)]

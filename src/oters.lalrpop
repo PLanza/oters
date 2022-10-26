@@ -56,6 +56,11 @@ Unit: () = {
 
 // -------------------- Types --------------------
 
+FixType: Box<Type> = {
+  "fix" <v: LowerId> "->" <t: FixType> => Box::new(Type::Fix(v,t)),
+  FunctionType,
+}
+
 FunctionType: Box<Type> = {
   <PrefixType> "->" <FunctionType> => Box::new(Type::Function(<>)),
   PrefixType,
@@ -97,11 +102,10 @@ TypeTerm: Box<Type> = {
   "[" <Type> "]" => Box::new(Type::List(<>)),
   UserType,
   LowerId => Box::new(Type::Var(<>)),
-  "fix" <v: LowerId> "->" <t: Type> => Box::new(Type::Fix(v,t)),  
   "(" <Type> ")",
 };
 
-Type: Box<Type> = FunctionType;
+Type: Box<Type> = FixType;
 
  
 // -------------------- Operators --------------------
@@ -135,6 +139,8 @@ PrefixOp: Opcode = {
   "#" => Opcode::Box,
   "!@" => Opcode::Adv,
   "!#" => Opcode::Unbox,
+  "out" => Opcode::Out,
+  "into" => Opcode::Into,
 };
 
 // -------------------- Operator Expressions --------------------  
@@ -168,6 +174,12 @@ MulDivMod: Box<Expr> = {
   MulDivMod MulDivModOp AppExpr => Box::new(Expr::BinOp(<>)),
   AppExpr
 };
+
+VariantExpr: Box<Expr> = {
+  <s: UpperId> <e: VariantExpr> => Box::new(Expr::Variant(s, Some(e))),
+  <UpperId> => Box::new(Expr::Variant(<>, None)), // Requires testing
+  <AppExpr>
+}
 
 AppExpr: Box<Expr> = {
   <AppExpr> <DotExpr> => Box::new(Expr::App(<>)),
@@ -253,15 +265,32 @@ IfExpr: Box<Expr> = {
   "if" <e1: Expr> <e2: BlockExpr> "else" <e3: BlockExpr> => Box::new(Expr::If(e1, e2, e3))
 };
 
-VariantExpr: Box<Expr> = {
-  <s: UpperId> => Box::new(Expr::Variant(s, None)),
-  <s: UpperId> <e: Expr> => Box::new(Expr::Variant(s, Some(e))),
-}
+FnArg: (String, Box<Type>) = {
+  "(" <i: LowerId> ":" <t: Type> ")" => (i, t),
+  // Add pattern variants for Lists, Tuples, Streams
+};
+
+FnArgList: Vec<(String, Box<Type>)> = {
+  <a: FnArg> <mut v: ("," <FnArg>)*> => {
+    v.insert(0, a);
+    v
+  },
+};
+
+FnExpr: Box<Expr> = {
+  "fn" Unit "->" <e: Expr> => Box::new(Expr::Fn(vec![("_".to_string(), Box::new(Type::Unit))], e)),
+  "fn" <a: FnArgList> "->" <e: Expr> => Box::new(Expr::Fn(a, e)),
+};
+
+FixExpr: Box<Expr> = {
+  "fix" <LowerId> "->" <Expr> => Box::new(Expr::Fix(<>)),
+};
 
 pub Expr: Box<Expr> = {
   OpExpr,
   BlockExpr,
   IfExpr,
+  FnExpr,
 };
 
 LetExpr: Box<Expr> = {
@@ -285,6 +314,44 @@ TypeExpr: Box<Expr> = {
   "type" <i: UpperId> <v: GenericParams> "=" <t: Type> ";" => Box::new(Expr::Type(i, v, t)),
 };
 
+VariantItem: (String, Option<Box<Type>>) = {
+  <i: UpperId> ":" <t: Type?> ","=> (i, t),
+};
+
+VariantList: Vec<(String, Option<Box<Type>>)> = {
+  <v: VariantItem*> => v,
+  <mut v: VariantItem*> <i: UpperId> <t: Type?>  => {
+    v.push((i,t));
+    v
+  },
+};
+
+StructDefItem: (String, Box<Type>) = {
+  <i: LowerId> ":" <t: Type> ","=> (i, t)
+};
+
+StructDefList: Vec<(String, Box<Type>)> = {
+  <v: StructDefItem*> => v,
+  <mut v: StructDefItem*> <i: LowerId> ":" <t: Type>  => {
+    v.push((i,t));
+    v
+  },
+};
+
+StructExpr: Box<Expr> = {
+  "struct" <i: UpperId> "{" <v: StructDefList> "}" => Box::new(Expr::Struct(i, Vec::new(), v)),
+  "struct" <i: UpperId> <p: GenericParams> "{" <v: StructDefList> "}" => 
+    Box::new(Expr::Struct(i, p, v)),
+};
+
+EnumExpr: Box<Expr> = {
+  "enum" <i: UpperId> "{" <v: VariantList> "}" => Box::new(Expr::Enum(i, Vec::new(), v)),
+  "enum" <i: UpperId> <p: GenericParams> "{" <v: VariantList> "}" => Box::new(Expr::Enum(i, p, v)),
+}
+
 pub Item: Box<Expr> = {
   LetExpr,
+  TypeExpr,
+  EnumExpr,
+  StructExpr,
 }
