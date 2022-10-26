@@ -1,4 +1,3 @@
-pub(crate) mod ast;
 mod parser;
 
 use std::error::Error;

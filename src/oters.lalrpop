@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Opcode};
+use crate::parser::ast::{Expr, Opcode, Type};
 
 use std::str::FromStr;
 
@@ -6,17 +6,16 @@ use lalrpop_util::ParseError;
 
 grammar;
 
-// -------------------- Utils --------------------  
+// -------------------- Identifiers -------------------- 
 
-LeftAssoc<Op, NextTier>: Box<Expr> = {
-  LeftAssoc<Op, NextTier> Op NextTier => Box::new(Expr::BinOp(<>)),
-  NextTier,
-};
+LowerId: String = {
+  <s: r"[a-z][A-Za-z0-9'_]*"> => s.to_string()
+}
 
-RightAssoc<Op, NextTier>: Box<Expr> = {
-  NextTier Op RightAssoc<Op, NextTier> => Box::new(Expr::BinOp(<>)),
-  NextTier,
-};
+UpperId: String = {
+  <s: r"[A-Z][A-Za-z0-9'_]*"> => s.to_string()
+}
+
 
 // -------------------- Literals -------------------- 
 
@@ -46,28 +45,66 @@ String: String = {
     let mut chars = s.chars();
     chars.next();
     chars.next_back();
-    let mut s = chars.as_str();
-    s.replace("\\\"", "\"")
+    let s = chars.as_str();
+    s.replace(r#"\\\""#, r#"\""#)
   }
 };
 
 Unit: () = {
   r"\(\)" => (),
 };
+
+// -------------------- Types --------------------
+
+FunctionType: Box<Type> = {
+  <PrefixType> "->" <FunctionType> => Box::new(Type::Function(<>)),
+  PrefixType,
+};
+
+PrefixType: Box<Type> = {
+  "@" <PrefixType> => Box::new(Type::Delay(<>)),
+  "#" <PrefixType> => Box::new(Type::Box(<>)),
+  TypeTerm,
+};
+
+TupleType: Box<Type> = {
+  "(" <t: Type> <mut v: ("," <Type>)+> ")" => {
+    v.insert(0, t);
+    Box::new(Type::Tuple(v))
+  }
+};
+
+GenericArgs: Vec<Box<Type>> = {
+  "<" <t: Type> <mut v: ("," <Type>)*> ">" => {
+    v.insert(0, t);
+    v
+  }
+};
+
+UserType: Box<Type> = {
+  UpperId => Box::new(Type::User(<>,Vec::new())),
+  UpperId GenericArgs => Box::new(Type::User(<>))
+};
+
+TypeTerm: Box<Type> = { 
+  True => Box::new(Type::Bool),
+  False => Box::new(Type::Bool),
+  "int" => Box::new(Type::Int),
+  "float" => Box::new(Type::Float),
+  "string" => Box::new(Type::String),
+  Unit => Box::new(Type::Unit),
+  TupleType,
+  "[" <Type> "]" => Box::new(Type::List(<>)),
+  UserType,
+  LowerId => Box::new(Type::Var(<>)),
+  "fix" <v: LowerId> "->" <t: Type> => Box::new(Type::Fix(v,t)),  
+  "(" <Type> ")",
+};
+
+Type: Box<Type> = FunctionType;
+
  
-Nil: () = {
-  r"\[\]" => (),
-};
-
 // -------------------- Operators --------------------
-
-OrOp: Opcode = {
-  "||" => Opcode::Or,
-};
-
-AndOp: Opcode = {
-  "&&" => Opcode::And,
-};
 
 CompOp: Opcode = {
   "==" => Opcode::Eq,
@@ -80,7 +117,7 @@ ConsStreamOp: Opcode = {
   "<<" => Opcode::Stream,
 };
 
-AddSumOp: Opcode = {
+AddSubOp: Opcode = {
   "+" => Opcode::Add,
   "-" => Opcode::Sub,
 };
@@ -92,7 +129,7 @@ MulDivModOp: Opcode = {
 };
 
 PrefixOp: Opcode = {
-  "-" => Opcode::Neg,
+  "~" => Opcode::Neg,
   "!" => Opcode::Not,
   "@" => Opcode::Delay,
   "#" => Opcode::Box,
@@ -102,33 +139,152 @@ PrefixOp: Opcode = {
 
 // -------------------- Operator Expressions --------------------  
 
-pub OpExpr = OrExpr;
+OrExpr: Box<Expr> = {
+  <e1: AndExpr> "||" <e2: OrExpr> => Box::new(Expr::BinOp(e1, Opcode::Or, e2)),
+  AndExpr
+};
 
-OrExpr = RightAssoc<OrOp, AndExpr>;
+AndExpr: Box<Expr> = {
+  <e1: Comp> "&&" <e2: AndExpr> => Box::new(Expr::BinOp(e1, Opcode::And, e2)),
+  Comp
+};
 
-AndExpr = RightAssoc<AndOp, Comp>;
+Comp: Box<Expr> = {
+  Comp CompOp ConsStream => Box::new(Expr::BinOp(<>)),
+  ConsStream
+};
 
-Comp = LeftAssoc<CompOp, ConsStream>;
+ConsStream: Box<Expr> = {
+  AddSub ConsStreamOp ConsStream => Box::new(Expr::BinOp(<>)),
+  AddSub
+};
 
-ConsStream = RightAssoc<ConsStreamOp, AddSum>;
+AddSub: Box<Expr> = {
+  AddSub AddSubOp MulDivMod => Box::new(Expr::BinOp(<>)),
+  MulDivMod
+};
 
-AddSum = LeftAssoc<AddSumOp, MulDivMod>;
+MulDivMod: Box<Expr> = {
+  MulDivMod MulDivModOp AppExpr => Box::new(Expr::BinOp(<>)),
+  AppExpr
+};
 
-MulDivMod = LeftAssoc<MulDivModOp, Prefix>;
+AppExpr: Box<Expr> = {
+  <AppExpr> <DotExpr> => Box::new(Expr::App(<>)),
+  DotExpr,
+};
+
+DotExpr: Box<Expr> = {
+  <DotExpr> "." <Int> => Box::new(Expr::DeTuple(<>)),
+  <DotExpr> "." <LowerId> => Box::new(Expr::DeStruct(<>)),
+  Prefix
+};
 
 Prefix: Box<Expr> = {
   PrefixOp Prefix => Box::new(Expr::UnOp(<>)),
   Term,
 };
 
-Term: Box<Expr> = {
+// -------------------- Terms -------------------- 
+
+ListTerm: Box<Expr> = {
+  "[]" => Box::new(Expr::List(Vec::new())),
+  "[" <e: Expr> <mut v: ("," <Expr>)*> "]" => {
+    v.insert(0, e);
+    Box::new(Expr::List(v))
+  }
+}
+
+TupleTerm: Box<Expr> = {
+  "(" <e: Expr> <mut v: ("," <Expr>)+> ")" => {
+    v.insert(0, e);
+    Box::new(Expr::Tuple(v))
+  }
+};
+
+StructItem: (String, Box<Expr>) = {
+  <i: LowerId> ":" <e: Expr> ","=> (i, e)
+};
+
+StructTermList: Vec<(String, Box<Expr>)> = {
+  <v: StructItem*> => v,
+  <mut v: StructItem*> <i: LowerId> ":" <e: Expr>  => {
+    v.push((i,e));
+    v
+  },
+};
+
+StructTerm: Box<Expr> = {
+  <s: UpperId> "{" <v: StructTermList> "}" => Box::new(Expr::StructVal(s, v))
+};
+
+Term: Box<Expr> = { 
   True => Box::new(Expr::True),
   False => Box::new(Expr::False),
   Int => Box::new(Expr::Int(<>)),
   Float => Box::new(Expr::Float(<>)),
   String => Box::new(Expr::String(<>)),
   Unit => Box::new(Expr::Unit),
-  Nil => Box::new(Expr::Nil),
-  "(" <OpExpr> ")",
+  ListTerm,
+  StructTerm, 
+  TupleTerm,
+  LowerId => Box::new(Expr::Var(<>)),
+  "(" <Expr> ")",
 };
 
+
+// -------------------- Expressions -------------------- 
+
+OpExpr = OrExpr;
+
+BlockTerm: Box<Expr> = {
+  LetExpr,
+  <e: Expr> ";" => e
+};
+
+BlockExpr: Box<Expr> =  {
+  "{" <mut v: BlockTerm*> <r: Expr> "}" => {
+    v.push(r);
+    Box::new(Expr::Block(v))
+  }
+};
+
+IfExpr: Box<Expr> = {
+  "if" <e1: Expr> <e2: BlockExpr> "else" <e3: BlockExpr> => Box::new(Expr::If(e1, e2, e3))
+};
+
+VariantExpr: Box<Expr> = {
+  <s: UpperId> => Box::new(Expr::Variant(s, None)),
+  <s: UpperId> <e: Expr> => Box::new(Expr::Variant(s, Some(e))),
+}
+
+pub Expr: Box<Expr> = {
+  OpExpr,
+  BlockExpr,
+  IfExpr,
+};
+
+LetExpr: Box<Expr> = {
+  "let" <i: LowerId> "=" <e: Expr> ";" => Box::new(Expr::Let(i, e))
+};
+
+GenericParam: (bool, String) = {
+  "#" <UpperId> => (true, <>),
+  UpperId => (false, <>),
+};
+
+GenericParams: Vec<(bool, String)> = {
+  "<" <p: GenericParam> <mut v: ("," <GenericParam>)*> ">" => {
+    v.insert(0, p);
+    v
+  }
+};
+
+TypeExpr: Box<Expr> = {
+  "type" <i: UpperId> "=" <t: Type> ";" => Box::new(Expr::Type(i, Vec::new(), t)),
+  "type" <i: UpperId> <v: GenericParams> "=" <t: Type> ";" => Box::new(Expr::Type(i, v, t)),
+};
+
+pub Item: Box<Expr> = {
+  LetExpr,
+}
