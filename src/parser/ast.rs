@@ -22,6 +22,7 @@ pub enum Expr {
     DeTuple(Box<Expr>, i64),
     DeStruct(Box<Expr>, String),
     Variant(String, Option<Box<Expr>>),
+    Match(Box<Expr>, Vec<(Box<Pattern>, Box<Expr>)>),
     Var(String),
     Type(String, GenericParams, Box<Type>), // Type Alias with Generic Parameters and defined type
     Struct(String, GenericParams, Vec<(String, Box<Type>)>), // Struct with generic parameters
@@ -67,4 +68,19 @@ pub enum Type {
     Box(Box<Type>),
     Fix(String, Box<Type>), // Fixed point argument and type expression
     Var(String),            // A Fix type's variable
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Pattern {
+    Underscore,
+    True,
+    False,
+    Int(i64),
+    Float(f64),
+    String(String),
+    Unit,
+    Tuple(Vec<Box<Pattern>>),
+    List(Vec<Box<Pattern>>),
+    Cons(Box<Pattern>, Box<Pattern>),
+
 }

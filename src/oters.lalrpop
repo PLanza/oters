@@ -1,4 +1,4 @@
-use crate::parser::ast::{Expr, Opcode, Type};
+use crate::parser::ast::{Expr, Opcode, Type, Pattern};
 
 use std::str::FromStr;
 
@@ -244,6 +244,42 @@ Term: Box<Expr> = {
   "(" <Expr> ")",
 };
 
+// -------------------- Patterns -------------------- 
+
+ConsPattern: Box<Pattern> = {
+  <PatternTerm> "::" <ConsPattern> => Box::new(Pattern::Cons(<>)),
+  PatternTerm
+};
+
+ListPattern: Box<Pattern> = {
+  "[]" => Box::new(Pattern::List(Vec::new())),
+  "[" <e: Pattern> <mut v: ("," <Pattern>)*> "]" => {
+    v.insert(0, e);
+    Box::new(Pattern::List(v))
+  }
+}
+
+TuplePattern: Box<Pattern> = {
+  "(" <e: Pattern> <mut v: ("," <Pattern>)+> ")" => {
+    v.insert(0, e);
+    Box::new(Pattern::Tuple(v))
+  }
+};
+
+PatternTerm: Box<Pattern> = {
+  "_" => Box::new(Pattern::Underscore),
+  True => Box::new(Pattern::True),
+  False => Box::new(Pattern::False),
+  Int => Box::new(Pattern::Int(<>)),
+  Float => Box::new(Pattern::Float(<>)),
+  String => Box::new(Pattern::String(<>)),
+  Unit => Box::new(Pattern::Unit),
+  TuplePattern, 
+  ListPattern,
+  "(" <Pattern> ")",
+}
+
+Pattern: Box<Pattern> = ConsPattern;
 
 // -------------------- Expressions -------------------- 
 
@@ -286,12 +322,27 @@ FixExpr: Box<Expr> = {
   "fix" <LowerId> "->" <Expr> => Box::new(Expr::Fix(<>)),
 };
 
+MatchItem: (Box<Pattern>, Box<Expr>) = {
+  <Pattern> "=>" <Expr> => (<>),
+};
+
+MatchExpr: Box<Expr> = {
+  "match" <e: Expr> "{" <c: MatchItem> <mut v: ("," <MatchItem>)*> "}" => {
+      v.insert(0, c);
+      Box::new(Expr::Match(e, v))
+    }
+};
+
 pub Expr: Box<Expr> = {
   OpExpr,
   BlockExpr,
   IfExpr,
   FnExpr,
+  FixExpr,
+  MatchExpr,
 };
+
+// -------------------- Top-Level Expressions -------------------- 
 
 LetExpr: Box<Expr> = {
   "let" <i: LowerId> "=" <e: Expr> ";" => Box::new(Expr::Let(i, e))
