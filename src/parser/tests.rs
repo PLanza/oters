@@ -1,35 +1,75 @@
 #[cfg(test)]
-use super::ast::{Expr::*, Opcode::*};
 
 #[allow(unused_imports)]
 use super::oters;
 
 #[allow(unused_imports)]
 use std::boxed::Box;
+use std::result;
 
-#[test]
-fn values() {
-    let result = oters::ExprParser::new().parse("true");
-    assert_eq!(result.unwrap(), Box::new(True));
-    let result = oters::ExprParser::new().parse("false");
-    assert_eq!(result.unwrap(), Box::new(False));
-    let result = oters::ExprParser::new().parse("-4000");
-    assert_eq!(result.unwrap(), Box::new(Int(-4000)));
-    let result = oters::ExprParser::new().parse("-3.1415");
-    assert_eq!(result.unwrap(), Box::new(Float(-3.1415)));
-    let result = oters::ExprParser::new().parse(r#""And he said, \" Hello! \" which I ignored.""#);
-    assert_eq!(
-        result.unwrap(),
-        Box::new(String(
-            r#"And he said, \" Hello! \" which I ignored."#.to_string()
-        ))
-    );
-    let result = oters::ExprParser::new().parse("()");
-    assert_eq!(result.unwrap(), Box::new(Unit));
-    let result = oters::ExprParser::new().parse("[]");
-    assert_eq!(result.unwrap(), Box::new(Nil));
+fn values() -> Vec<(String, Box<super::ast::Expr>)> {
+    use super::ast::Expr::*;
+    vec![
+        ("true".to_string(), Box::new(True)), 
+        ("false".to_string(), Box::new(False)), 
+        ("1".to_string(), Box::new(Int(1))), 
+        ("-10".to_string(), Box::new(Int(-10))), 
+        ("1.0".to_string(), Box::new(Float(1.0))),
+        ("-1.0".to_string(), Box::new(Float(-1.0))),
+        (r#""Hello""#.to_string(), Box::new(String("Hello".to_string()))),
+        (r#""He said \"Hi\"""#.to_string(), Box::new(String("He said \"Hi\"".to_string()))),
+        ("()".to_string(), Box::new(Unit)), 
+    ]
 }
 
+#[test]
+fn test_values() {
+    let parser = super::oters::ExprParser::new();
+
+    for v in values() {
+        let result = parser.parse(&v.0);
+        assert_eq!(result.unwrap(), v.1);
+    }
+
+}
+
+fn binops() -> Vec<(String, super::ast::Opcode)> {
+    use super::ast::Opcode::*;
+    vec![
+        (" + ".to_string(), Add), 
+        (" - ".to_string(), Sub), 
+        (" / ".to_string(), Div), 
+        (" * ".to_string(), Mul), 
+        (" :: ".to_string(), Cons),
+        (" << ".to_string(), Stream),
+        (" == ".to_string(), Eq), 
+        (" < ".to_string(), Lt), 
+        (" > ".to_string(), Gt), 
+        (" && ".to_string(), And), 
+        (" || ".to_string(), Or), 
+    ]
+}
+
+
+#[test]
+fn test_binops() {
+    use super::ast::Expr::BinOp;
+    let parser = super::oters::ExprParser::new();
+    
+    for op in binops() {
+        for v1 in values() {
+            for v2 in values() {
+                let code = format!("{}{}{}", v1.0, op.0, v2.0);
+
+                let result = parser.parse(&code);
+                assert_eq!(result.unwrap(), Box::new(BinOp(v1.1.clone(), op.1, v2.1)));
+            }
+        }
+    }
+
+}
+
+/*
 #[test]
 fn binary_ops() {
     let result = oters::ExprParser::new().parse("(-4.2 * 3. - 7. :: [])");
@@ -42,7 +82,7 @@ fn binary_ops() {
                 Box::new(Float(7.))
             )),
             Cons,
-            Box::new(Nil)
+            Box::new(List(Vec::new()))
         ))
     );
 }
@@ -84,9 +124,9 @@ fn let_expr() {
                 "MyStruct".to_string(),
                 vec![(
                     "list".to_string(),
-                    Box::new(BinOp(Box::new(Int(20)), Cons, Box::new(Nil)))
+                    Box::new(BinOp(Box::new(Int(20)), Cons, Box::new(List(Vec::new()))))
                 )]
             ))
         ))
     );
-}
+}*/

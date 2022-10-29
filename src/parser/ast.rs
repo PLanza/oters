@@ -1,6 +1,6 @@
 type GenericParams = Vec<(bool, String)>; // Each parameter is a pair of the parameter name and a boolean marking whether the parameter is stable or not
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     True,
     False,
@@ -29,7 +29,7 @@ pub enum Expr {
     Enum(String, GenericParams, Vec<(String, Option<Box<Type>>)>) // Enum with generic parameters
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Opcode {
     Mul,
     Div,
@@ -53,7 +53,7 @@ pub enum Opcode {
     Into,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     Unit,
     Int,
@@ -70,7 +70,7 @@ pub enum Type {
     Var(String),            // A Fix type's variable
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Pattern {
     Underscore,
     True,
@@ -81,6 +81,12 @@ pub enum Pattern {
     Unit,
     Tuple(Vec<Box<Pattern>>),
     List(Vec<Box<Pattern>>),
+    Variant(String, Option<Box<Pattern>>),
+    Struct(String, Vec<(String, Box<Pattern>)>),
     Cons(Box<Pattern>, Box<Pattern>),
-
+    Stream(Box<Pattern>, Box<Pattern>),
+    Or(Box<Pattern>, Box<Pattern>),
+    Delay(Box<Pattern>),
+    Box(Box<Pattern>),
+    Var(String),
 }

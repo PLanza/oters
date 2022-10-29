@@ -46,7 +46,7 @@ String: String = {
     chars.next();
     chars.next_back();
     let s = chars.as_str();
-    s.replace(r#"\\\""#, r#"\""#)
+    s.replace("\\\"", "\"")
   }
 };
 
@@ -246,10 +246,22 @@ Term: Box<Expr> = {
 
 // -------------------- Patterns -------------------- 
 
+OrPattern: Box<Pattern> = {
+  <OrPattern> "|" <ConsPattern> => Box::new(Pattern::Or(<>)),
+  ConsPattern,
+};
+
 ConsPattern: Box<Pattern> = {
   <PatternTerm> "::" <ConsPattern> => Box::new(Pattern::Cons(<>)),
-  PatternTerm
+  <PatternTerm> "<<" <ConsPattern> => Box::new(Pattern::Stream(<>)),
+  PrefixPattern,
 };
+
+PrefixPattern: Box<Pattern> = {
+  "@" <PrefixPattern> => Box::new(Pattern::Delay(<>)),
+  "#" <PrefixPattern> => Box::new(Pattern::Box(<>)),
+  PatternTerm,
+}
 
 ListPattern: Box<Pattern> = {
   "[]" => Box::new(Pattern::List(Vec::new())),
@@ -266,6 +278,22 @@ TuplePattern: Box<Pattern> = {
   }
 };
 
+StructPatternItem: (String, Box<Pattern>) = {
+  <i: LowerId> ":" <p: Pattern> ","=> (i, p)
+};
+
+StructPatternList: Vec<(String, Box<Pattern>)> = {
+  <v: StructPatternItem*> => v,
+  <mut v: StructPatternItem*> <i: LowerId> ":" <p: Pattern>  => {
+    v.push((i,p));
+    v
+  },
+};
+
+StructPattern: Box<Pattern> = {
+  <s: UpperId> "{" <v: StructPatternList> "}" => Box::new(Pattern::Struct(s, v))
+};
+
 PatternTerm: Box<Pattern> = {
   "_" => Box::new(Pattern::Underscore),
   True => Box::new(Pattern::True),
@@ -274,12 +302,16 @@ PatternTerm: Box<Pattern> = {
   Float => Box::new(Pattern::Float(<>)),
   String => Box::new(Pattern::String(<>)),
   Unit => Box::new(Pattern::Unit),
+  <s: UpperId> <p: PatternTerm> => Box::new(Pattern::Variant(s, Some(p))),
+  <UpperId> => Box::new(Pattern::Variant(<>, None)),
   TuplePattern, 
   ListPattern,
+  StructPattern,
+  <LowerId> => Box::new(Pattern::Var(<>)),
   "(" <Pattern> ")",
 }
 
-Pattern: Box<Pattern> = ConsPattern;
+Pattern: Box<Pattern> = OrPattern;
 
 // -------------------- Expressions -------------------- 
 
