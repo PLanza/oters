@@ -46,7 +46,7 @@ String: String = {
     chars.next();
     chars.next_back();
     let s = chars.as_str();
-    s.replace("\\\"", "\"")
+    s.replace(r#"\\\""#, r#"\""#)
   }
 };
 
@@ -92,8 +92,7 @@ UserType: Box<Type> = {
 };
 
 TypeTerm: Box<Type> = { 
-  True => Box::new(Type::Bool),
-  False => Box::new(Type::Bool),
+  "bool" => Box::new(Type::Bool),
   "int" => Box::new(Type::Int),
   "float" => Box::new(Type::Float),
   "string" => Box::new(Type::String),
@@ -175,16 +174,15 @@ MulDivMod: Box<Expr> = {
   AppExpr
 };
 
+AppExpr: Box<Expr> = {
+  <AppExpr> <VariantExpr> => Box::new(Expr::App(<>)),
+  VariantExpr,
+};
+
 VariantExpr: Box<Expr> = {
   <s: UpperId> <e: VariantExpr> => Box::new(Expr::Variant(s, Some(e))),
-  <UpperId> => Box::new(Expr::Variant(<>, None)), // Requires testing
-  <AppExpr>
+  DotExpr
 }
-
-AppExpr: Box<Expr> = {
-  <AppExpr> <DotExpr> => Box::new(Expr::App(<>)),
-  DotExpr,
-};
 
 DotExpr: Box<Expr> = {
   <DotExpr> "." <Int> => Box::new(Expr::DeTuple(<>)),
@@ -201,34 +199,35 @@ Prefix: Box<Expr> = {
 
 ListTerm: Box<Expr> = {
   "[]" => Box::new(Expr::List(Vec::new())),
-  "[" <e: Expr> <mut v: ("," <Expr>)*> "]" => {
+  "[" <e: Expr> <mut v: ("," <Expr>)*> ","? "]" => {
     v.insert(0, e);
     Box::new(Expr::List(v))
   }
 }
 
 TupleTerm: Box<Expr> = {
-  "(" <e: Expr> <mut v: ("," <Expr>)+> ")" => {
+  "(" <e: Expr> <mut v: ("," <Expr>)+> ","? ")" => {
     v.insert(0, e);
     Box::new(Expr::Tuple(v))
   }
 };
 
 StructItem: (String, Box<Expr>) = {
-  <i: LowerId> ":" <e: Expr> ","=> (i, e)
+  <i: LowerId> ":" <e: Expr> => (i, e)
 };
 
 StructTermList: Vec<(String, Box<Expr>)> = {
-  <v: StructItem*> => v,
-  <mut v: StructItem*> <i: LowerId> ":" <e: Expr>  => {
-    v.push((i,e));
+  "{}" => Vec::new(),
+  "{" <p: StructItem> <mut v: ("," <StructItem>)*> ","? "}"  => {
+    v.insert(0, p);
     v
   },
 };
 
 StructTerm: Box<Expr> = {
-  <s: UpperId> "{" <v: StructTermList> "}" => Box::new(Expr::StructVal(s, v))
+  <s: UpperId> <v: StructTermList> => Box::new(Expr::StructVal(s, v))
 };
+
 
 Term: Box<Expr> = { 
   True => Box::new(Expr::True),
@@ -237,6 +236,7 @@ Term: Box<Expr> = {
   Float => Box::new(Expr::Float(<>)),
   String => Box::new(Expr::String(<>)),
   Unit => Box::new(Expr::Unit),
+  "(" <UpperId> ")" => Box::new(Expr::Variant(<>, None)), 
   ListTerm,
   StructTerm, 
   TupleTerm,
@@ -279,19 +279,19 @@ TuplePattern: Box<Pattern> = {
 };
 
 StructPatternItem: (String, Box<Pattern>) = {
-  <i: LowerId> ":" <p: Pattern> ","=> (i, p)
+  <i: LowerId> ":" <p: Pattern> => (i, p),
 };
 
 StructPatternList: Vec<(String, Box<Pattern>)> = {
-  <v: StructPatternItem*> => v,
-  <mut v: StructPatternItem*> <i: LowerId> ":" <p: Pattern>  => {
-    v.push((i,p));
+  "{}" => Vec::new(),
+  "{" <p: StructPatternItem> <mut v: ("," <StructPatternItem>)*> ","? "}"  => {
+    v.insert(0, p);
     v
   },
 };
 
 StructPattern: Box<Pattern> = {
-  <s: UpperId> "{" <v: StructPatternList> "}" => Box::new(Pattern::Struct(s, v))
+  <s: UpperId> <v: StructPatternList> => Box::new(Pattern::Struct(s, v))
 };
 
 PatternTerm: Box<Pattern> = {
