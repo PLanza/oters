@@ -203,3 +203,165 @@ fn test_list() {
     assert_eq!(result.unwrap(), list.1);
 }
 
+fn primitives() -> Vec<(String, Box<super::ast::Type>)> {
+    use super::ast::Type::{Bool, Int, Float, String, Unit, Var, User};
+    vec![
+        ("bool".to_string(), Box::new(Bool)), 
+        ("int".to_string(), Box::new(Int)), 
+        ("float".to_string(), Box::new(Float)), 
+        ("string".to_string(), Box::new(String)), 
+        ("()".to_string(), Box::new(Unit)),
+        ("alpha".to_string(), Box::new(Var("alpha".to_string()))),
+        ("T".to_string(), Box::new(User("T".to_string(), Vec::with_capacity(0)))),
+    ]
+}
+
+#[test]
+fn test_primitives() {
+    let parser = super::oters::TypeParser::new(); 
+
+    for t in primitives() {
+        let result = parser.parse(&t.0);
+        assert_eq!(result.unwrap(), t.1)
+    }
+}
+
+fn list_types() -> Vec<(String, Box<super::ast::Type>)> {
+    use super::ast::Type::List;
+    let mut list_types = Vec::new();
+    for t in primitives() {
+        list_types.push((format!("[{}]", t.0), Box::new(List(t.1))));
+
+    }
+
+    list_types
+}
+
+#[test]
+fn test_list_types() {
+    let parser = super::oters::TypeParser::new(); 
+
+    for t in list_types() {
+        let result = parser.parse(&t.0);
+        assert_eq!(result.unwrap(), t.1)
+    }
+}
+
+fn prefix_types() -> Vec<(String, Box<super::ast::Type>)> {
+    use super::ast::Type::{Box, Delay};
+    let mut types = Vec::new();
+    for t in primitives() {
+        types.push((format!("@{}", t.0), std::boxed::Box::new(Delay(t.1.clone()))));
+        types.push((format!("#{}", t.0), std::boxed::Box::new(Box(t.1))));
+    }
+
+    types
+
+}
+#[test]
+fn test_prefix_types() {
+    let parser = super::oters::TypeParser::new(); 
+
+    for t in prefix_types() {
+        let result = parser.parse(&t.0);
+        assert_eq!(result.unwrap(), t.1)
+    }
+}
+
+fn function_types() -> Vec<(String, Box<super::ast::Type>)> {
+    use super::ast::Type::Function;
+    let mut function_types = Vec::new();
+
+    let mut types = primitives();
+    types.append(&mut prefix_types());
+    types.append(&mut list_types());
+
+    for t1 in types.iter() {
+        for t2 in types.iter() {
+            let code = format!("{} -> {}", t1.0, t2.0);
+
+            let expr = std::boxed::Box::new(Function(t1.1.clone(), t2.1.clone()));
+
+            function_types.push((code, expr));
+        }
+    }
+
+    function_types
+}
+
+#[test]
+fn test_function_types() {
+    let parser = super::oters::TypeParser::new(); 
+
+    for t in function_types() {
+        let result = parser.parse(&t.0);
+        assert_eq!(result.unwrap(), t.1)
+    }
+}
+
+fn fix_types() -> Vec<(String, Box<super::ast::Type>)> {
+    use super::ast::Type::Fix;
+
+    let mut types = primitives();
+    types.append(&mut prefix_types());
+    types.append(&mut list_types());
+    types.append(&mut function_types());
+
+    let mut fix_types = Vec::new();
+
+    for t in types.iter() {
+        let code = format!("fix alpha -> {}", t.0);
+
+        let expr = std::boxed::Box::new(Fix("alpha".to_string(), t.1.clone()));
+
+        fix_types.push((code, expr));
+    }
+
+    fix_types
+}
+
+#[test]
+fn test_fix_types() {
+    let parser = super::oters::TypeParser::new(); 
+
+    for t in fix_types() {
+        let result = parser.parse(&t.0);
+        assert_eq!(result.unwrap(), t.1)
+    }
+}
+
+fn user_type() -> (String, Box<super::ast::Type>) {
+    use super::ast::Type::User;
+
+    let mut types = primitives();
+    types.append(&mut prefix_types());
+    types.append(&mut list_types());
+    types.append(&mut function_types());
+    types.append(&mut fix_types());
+    
+    let mut code = "MyType <".to_string();
+    let mut generics_vec = Vec::new();
+
+    for t in types {
+        code.push_str(format!("{}, ", t.0).as_str());
+
+        generics_vec.push(t.1.clone());
+    }
+
+    code.pop();
+    code.pop();
+    code.push_str(">");
+
+    (code, Box::new(User("MyType".to_string(), generics_vec)))
+}
+
+#[test]
+fn test_user_type() {
+    let parser = super::oters::TypeParser::new();
+
+    let user_type = user_type();
+    
+    let result = parser.parse(&user_type.0);
+    assert_eq!(result.unwrap(), user_type.1);
+}
+

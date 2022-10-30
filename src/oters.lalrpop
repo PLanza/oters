@@ -104,7 +104,7 @@ TypeTerm: Box<Type> = {
   "(" <Type> ")",
 };
 
-Type: Box<Type> = FixType;
+pub Type: Box<Type> = FixType;
 
  
 // -------------------- Operators --------------------
