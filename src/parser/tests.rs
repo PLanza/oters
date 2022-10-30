@@ -19,7 +19,7 @@ fn values() -> Vec<(String, Box<super::ast::Expr>)> {
         (r#""He said \"Hi\"""#.to_string(), Box::new(String("He said \\\"Hi\\\"".to_string()))),
         ("()".to_string(), Box::new(Unit)), 
         ("var".to_string(), Box::new(Var("var".to_string()))),
-        ("(None)".to_string(), Box::new(Variant("None".to_string(), None))),
+        ("( None )".to_string(), Box::new(Variant("None".to_string(), None))),
     ]
 }
 
@@ -202,5 +202,4 @@ fn test_list() {
     let result = parser.parse(&list.0);
     assert_eq!(result.unwrap(), list.1);
 }
-
 

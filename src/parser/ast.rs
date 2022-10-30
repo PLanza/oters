@@ -11,17 +11,17 @@ pub enum Expr {
     BinOp(Box<Expr>, Opcode, Box<Expr>),
     UnOp(Opcode, Box<Expr>),
     List(Vec<Box<Expr>>),
-    StructVal(String, Vec<(String, Box<Expr>)>),
+    StructVal(String, Vec<(String, Box<Expr>)>), // Form a struct when the second argument of App
     Tuple(Vec<Box<Expr>>),
     Fn(Vec<(String, Box<Type>)>, Box<Expr>),
     Fix(String, Box<Expr>),
     Let(String, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Block(Vec<Box<Expr>>),
-    App(Box<Expr>, Box<Expr>),
+    App(Box<Expr>, Box<Expr>), // Doubles as struct
     DeTuple(Box<Expr>, i64),
     DeStruct(Box<Expr>, String),
-    Variant(String, Option<Box<Expr>>),
+    Variant(String, Option<Box<Expr>>), 
     Match(Box<Expr>, Vec<(Box<Pattern>, Box<Expr>)>),
     Var(String),
     Type(String, GenericParams, Box<Type>), // Type Alias with Generic Parameters and defined type

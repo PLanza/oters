@@ -7,7 +7,7 @@ lalrpop_mod!(pub oters);
 pub fn parse() {
     let parser = oters::ExprParser::new();
 
-    let result = parser.parse("None 3");
+    let result = parser.parse("! None");
 
     println!("{:?}", result);
 }

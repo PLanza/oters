@@ -181,6 +181,7 @@ AppExpr: Box<Expr> = {
 
 VariantExpr: Box<Expr> = {
   <s: UpperId> <e: VariantExpr> => Box::new(Expr::Variant(s, Some(e))),
+  <s: UpperId> <f: Fields> => Box::new(Expr::StructVal(s, f)), 
   DotExpr
 }
 
@@ -212,22 +213,17 @@ TupleTerm: Box<Expr> = {
   }
 };
 
-StructItem: (String, Box<Expr>) = {
+FieldItem: (String, Box<Expr>) = {
   <i: LowerId> ":" <e: Expr> => (i, e)
 };
 
-StructTermList: Vec<(String, Box<Expr>)> = {
+Fields: Vec<(String, Box<Expr>)> = {
   "{}" => Vec::new(),
-  "{" <p: StructItem> <mut v: ("," <StructItem>)*> ","? "}"  => {
+  "{" <p: FieldItem> <mut v: ("," <FieldItem>)*> ","? "}"  => {
     v.insert(0, p);
     v
   },
 };
-
-StructTerm: Box<Expr> = {
-  <s: UpperId> <v: StructTermList> => Box::new(Expr::StructVal(s, v))
-};
-
 
 Term: Box<Expr> = { 
   True => Box::new(Expr::True),
@@ -236,9 +232,7 @@ Term: Box<Expr> = {
   Float => Box::new(Expr::Float(<>)),
   String => Box::new(Expr::String(<>)),
   Unit => Box::new(Expr::Unit),
-  "(" <UpperId> ")" => Box::new(Expr::Variant(<>, None)), 
   ListTerm,
-  StructTerm, 
   TupleTerm,
   LowerId => Box::new(Expr::Var(<>)),
   "(" <Expr> ")",
@@ -265,8 +259,8 @@ PrefixPattern: Box<Pattern> = {
 
 ListPattern: Box<Pattern> = {
   "[]" => Box::new(Pattern::List(Vec::new())),
-  "[" <e: Pattern> <mut v: ("," <Pattern>)*> "]" => {
-    v.insert(0, e);
+  "[" <p: Pattern> <mut v: ("," <Pattern>)*> "]" => {
+    v.insert(0, p);
     Box::new(Pattern::List(v))
   }
 }
@@ -330,7 +324,7 @@ BlockExpr: Box<Expr> =  {
 };
 
 IfExpr: Box<Expr> = {
-  "if" <e1: Expr> <e2: BlockExpr> "else" <e3: BlockExpr> => Box::new(Expr::If(e1, e2, e3))
+  "if" <e1: Expr> "then" <e2: Expr> "else" <e3: Expr> => Box::new(Expr::If(e1, e2, e3))
 };
 
 FnArg: (String, Box<Type>) = {
@@ -355,12 +349,11 @@ FixExpr: Box<Expr> = {
 };
 
 MatchItem: (Box<Pattern>, Box<Expr>) = {
-  <Pattern> "=>" <Expr> => (<>),
+  "|" <Pattern> "->" <Expr> => (<>),
 };
 
 MatchExpr: Box<Expr> = {
-  "match" <e: Expr> "{" <c: MatchItem> <mut v: ("," <MatchItem>)*> "}" => {
-      v.insert(0, c);
+  "match" <e: Expr> "with" <v: MatchItem+> "}" => {
       Box::new(Expr::Match(e, v))
     }
 };
@@ -372,6 +365,7 @@ pub Expr: Box<Expr> = {
   FnExpr,
   FixExpr,
   MatchExpr,
+  <UpperId> => Box::new(Expr::Variant(<>, None)), 
 };
 
 // -------------------- Top-Level Expressions -------------------- 
