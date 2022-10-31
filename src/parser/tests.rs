@@ -1,11 +1,10 @@
-#[cfg(test)]
-
 #[allow(unused_imports)]
 use super::oters;
 
 #[allow(unused_imports)]
 use std::boxed::Box;
 
+#[cfg(test)]
 fn values() -> Vec<(String, Box<super::ast::Expr>)> {
     use super::ast::Expr::*;
     vec![
@@ -31,9 +30,9 @@ fn test_values() {
         let result = parser.parse(&v.0);
         assert_eq!(result.unwrap(), v.1);
     }
-
 }
 
+#[cfg(test)]
 fn unops() -> Vec<(String, Box<super::ast::Expr>)> {
     use super::ast::Opcode::*;
     let unops = vec![
@@ -73,6 +72,7 @@ fn test_unops() {
     }
 }
 
+#[cfg(test)]
 fn binops() -> Vec<(String, Box<super::ast::Expr>)> {
     use super::ast::Opcode::*;
     let binops = vec![
@@ -117,6 +117,7 @@ fn test_binops() {
     }
 }
 
+#[cfg(test)]
 fn struct_val() -> (String, Box<super::ast::Expr>) {
     use super::ast::Expr::StructVal;
     
@@ -148,6 +149,7 @@ fn test_struct_val() {
     assert_eq!(result.unwrap(), struct_val.1);
 }
 
+#[cfg(test)]
 fn tuple() -> (String, Box<super::ast::Expr>) {
     use super::ast::Expr::Tuple;
     
@@ -175,7 +177,7 @@ fn test_tuple() {
     assert_eq!(result.unwrap(), tuple.1);
 }
 
-
+#[cfg(test)]
 fn list() -> (String, Box<super::ast::Expr>) {
     use super::ast::Expr::List;
     
@@ -203,7 +205,8 @@ fn test_list() {
     assert_eq!(result.unwrap(), list.1);
 }
 
-fn primitives() -> Vec<(String, Box<super::ast::Type>)> {
+#[cfg(test)]
+fn primitive_types() -> Vec<(String, Box<super::ast::Type>)> {
     use super::ast::Type::{Bool, Int, Float, String, Unit, Var, User};
     vec![
         ("bool".to_string(), Box::new(Bool)), 
@@ -217,19 +220,20 @@ fn primitives() -> Vec<(String, Box<super::ast::Type>)> {
 }
 
 #[test]
-fn test_primitives() {
+fn test_primitive_types() {
     let parser = super::oters::TypeParser::new(); 
 
-    for t in primitives() {
+    for t in primitive_types() {
         let result = parser.parse(&t.0);
         assert_eq!(result.unwrap(), t.1)
     }
 }
 
+#[cfg(test)]
 fn list_types() -> Vec<(String, Box<super::ast::Type>)> {
     use super::ast::Type::List;
     let mut list_types = Vec::new();
-    for t in primitives() {
+    for t in primitive_types() {
         list_types.push((format!("[{}]", t.0), Box::new(List(t.1))));
 
     }
@@ -247,10 +251,11 @@ fn test_list_types() {
     }
 }
 
+#[cfg(test)]
 fn prefix_types() -> Vec<(String, Box<super::ast::Type>)> {
     use super::ast::Type::{Box, Delay};
     let mut types = Vec::new();
-    for t in primitives() {
+    for t in primitive_types() {
         types.push((format!("@{}", t.0), std::boxed::Box::new(Delay(t.1.clone()))));
         types.push((format!("#{}", t.0), std::boxed::Box::new(Box(t.1))));
     }
@@ -268,11 +273,12 @@ fn test_prefix_types() {
     }
 }
 
+#[cfg(test)]
 fn function_types() -> Vec<(String, Box<super::ast::Type>)> {
     use super::ast::Type::Function;
     let mut function_types = Vec::new();
 
-    let mut types = primitives();
+    let mut types = primitive_types();
     types.append(&mut prefix_types());
     types.append(&mut list_types());
 
@@ -299,10 +305,11 @@ fn test_function_types() {
     }
 }
 
+#[cfg(test)]
 fn fix_types() -> Vec<(String, Box<super::ast::Type>)> {
     use super::ast::Type::Fix;
 
-    let mut types = primitives();
+    let mut types = primitive_types();
     types.append(&mut prefix_types());
     types.append(&mut list_types());
     types.append(&mut function_types());
@@ -330,10 +337,11 @@ fn test_fix_types() {
     }
 }
 
+#[cfg(test)]
 fn user_type() -> (String, Box<super::ast::Type>) {
     use super::ast::Type::User;
 
-    let mut types = primitives();
+    let mut types = primitive_types();
     types.append(&mut prefix_types());
     types.append(&mut list_types());
     types.append(&mut function_types());
@@ -365,3 +373,108 @@ fn test_user_type() {
     assert_eq!(result.unwrap(), user_type.1);
 }
 
+#[cfg(test)]
+fn types() -> Vec<(String, Box<super::ast::Type>)> {
+    let mut types = primitive_types();
+    types.append(&mut prefix_types());
+    types.append(&mut list_types());
+    types.append(&mut function_types());
+    types.append(&mut fix_types());
+    types.push(user_type());
+
+    types
+}
+
+#[test]
+fn test_type_alias() {
+    use super::ast::Expr::Type;
+
+    let params = vec![(true, "A".to_string()), (false, "B".to_string())];
+
+    
+    let parser = super::oters::ItemParser::new();
+    
+    for t in types() {
+        let code = format!("type MyAlias<#A, B> = {}", t.0);
+
+        let result = parser.parse(&code);
+        assert_eq!(result.unwrap(), Box::new(Type("MyAlias".to_string(), params.clone(), t.1.clone())));
+    };
+}
+
+#[test]
+fn test_struct_def() {
+    use super::ast::Expr::Struct;
+
+    let params = vec![(true, "A".to_string()), (false, "B".to_string())];
+
+    let parser = super::oters::ItemParser::new();
+
+    let mut code = "struct MyStruct<#A, B> {".to_string();
+    let mut fields = Vec::new();
+    
+    for (i, t) in types().iter().enumerate() {
+        code.push_str(format!("a{} : {},\n", i, t.0).as_str());
+        fields.push((format!("a{}", i).to_string(), t.1.clone()));
+    };
+
+    code.push_str("}");    
+
+    let result = parser.parse(&code);
+    assert_eq!(result.unwrap(), Box::new(Struct("MyStruct".to_string(), params.clone(), fields)));
+}
+
+#[test]
+fn test_enum_def() {
+    use super::ast::Expr::Enum;
+
+    let params = vec![(true, "A".to_string()), (false, "B".to_string())];
+
+    let parser = super::oters::ItemParser::new();
+
+    let mut code = "enum MyEnum<#A, B> {".to_string();
+    let mut fields = Vec::new();
+    
+    for (i, t) in types().iter().enumerate() {
+        code.push_str(format!("A{} {},\n", i, t.0).as_str());
+        fields.push((format!("A{}", i).to_string(), Some(t.1.clone())));
+    };
+
+    fields.append(&mut vec![("Empty1".to_string(), None), ("Empty2'".to_string(), None), ("Empty_3".to_string(), None),]);
+    code.push_str("Empty1, Empty2', Empty_3 }");    
+
+    let result = parser.parse(&code);
+    assert_eq!(result.unwrap(), Box::new(Enum("MyEnum".to_string(), params.clone(), fields)));
+}
+
+#[cfg(test)]
+fn functions() -> Vec<(String, Box<super::ast::Expr>)> {
+    use super::ast::Expr::Fn;
+    
+    let mut exprs = binops();
+    exprs.append(&mut unops());
+
+    let mut fn_vecs = Vec::new();
+
+    let types = types();
+
+    for (i, t) in types.iter().enumerate() {
+        let e = &exprs[i];
+        let code = format!("fn (arg : {}) -> {}", t.0, e.0);
+
+        fn_vecs.push((code.to_string(), 
+                Box::new(Fn(vec![("arg".to_string(), t.1.clone())], e.1.clone()))));
+    } 
+
+    fn_vecs
+}
+
+#[test]
+fn test_fn_exprs() { 
+    let parser = super::oters::ExprParser::new();
+
+    for v in functions() {
+        let result = parser.parse(&v.0);
+        assert_eq!(result.unwrap(), v.1);
+    }
+}

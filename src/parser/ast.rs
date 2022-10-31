@@ -11,14 +11,13 @@ pub enum Expr {
     BinOp(Box<Expr>, Opcode, Box<Expr>),
     UnOp(Opcode, Box<Expr>),
     List(Vec<Box<Expr>>),
-    StructVal(String, Vec<(String, Box<Expr>)>), // Form a struct when the second argument of App
+    StructVal(String, Vec<(String, Box<Expr>)>), 
     Tuple(Vec<Box<Expr>>),
     Fn(Vec<(String, Box<Type>)>, Box<Expr>),
     Fix(String, Box<Expr>),
-    Let(String, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Block(Vec<Box<Expr>>),
-    App(Box<Expr>, Box<Expr>), // Doubles as struct
+    App(Box<Expr>, Box<Expr>), 
     DeTuple(Box<Expr>, i64),
     DeStruct(Box<Expr>, String),
     Variant(String, Option<Box<Expr>>), 
@@ -26,7 +25,8 @@ pub enum Expr {
     Var(String),
     Type(String, GenericParams, Box<Type>), // Type Alias with Generic Parameters and defined type
     Struct(String, GenericParams, Vec<(String, Box<Type>)>), // Struct with generic parameters
-    Enum(String, GenericParams, Vec<(String, Option<Box<Type>>)>) // Enum with generic parameters
+    Enum(String, GenericParams, Vec<(String, Option<Box<Type>>)>), // Enum with generic parameters
+    Let(String, GenericParams, Box<Expr>),
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -82,7 +82,7 @@ pub enum Pattern {
     Tuple(Vec<Box<Pattern>>),
     List(Vec<Box<Pattern>>),
     Variant(String, Option<Box<Pattern>>),
-    Struct(String, Vec<(String, Box<Pattern>)>),
+    Struct(String, Vec<(String, Option<Box<Pattern>>)>),
     Cons(Box<Pattern>, Box<Pattern>),
     Stream(Box<Pattern>, Box<Pattern>),
     Or(Box<Pattern>, Box<Pattern>),

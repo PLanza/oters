@@ -4,10 +4,17 @@ mod tests;
 use lalrpop_util::lalrpop_mod;
 lalrpop_mod!(pub oters);
 
-pub fn parse() {
-    let parser = oters::ExprParser::new();
+use std::fs::read_to_string;
 
-    let result = parser.parse("! None");
+pub fn parse_file(path: String) -> Result<(), Box<dyn std::error::Error>> {
+    let path = std::path::Path::new(&path);
+    let source = read_to_string(path)?;
+
+    let parser = oters::ProgramParser::new();
+
+    let result = parser.parse(&source);
 
     println!("{:?}", result);
+
+    Ok(())
 }
