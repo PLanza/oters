@@ -6,6 +6,25 @@ use lalrpop_util::ParseError;
 
 grammar;
 
+// -------------------- Utils -------------------- 
+
+// A comma separated list with minimum one element and optional trailing comma
+Comma<T>: Vec<T> = {
+    <t: T> <mut v: ("," <T>)*> ","? => { 
+      v.insert(0, t);
+      v
+    }
+}
+
+FieldItem<T>: (String, T) = {
+  <i: LowerId> ":" <e: T> => (i, e)
+};
+
+Fields<T>: Vec<(String, T)> = {
+  "{}" => Vec::new(),
+  "{" <Comma<FieldItem<T>>> "}"
+};
+
 // -------------------- Identifiers -------------------- 
 
 LowerId: String = {
@@ -55,6 +74,7 @@ Unit: () = {
 };
 
 // -------------------- Types --------------------
+// Presented with lowest precedence at the top
 
 FixType: Box<Type> = {
   "fix" <v: LowerId> "->" <t: FixType> => Box::new(Type::Fix(v,t)),
@@ -68,22 +88,20 @@ FunctionType: Box<Type> = {
 
 PrefixType: Box<Type> = {
   "@" <PrefixType> => Box::new(Type::Delay(<>)),
-  "#" <PrefixType> => Box::new(Type::Box(<>)),
+  "#" <PrefixType> => Box::new(Type::Stable(<>)),
   TypeTerm,
 };
 
+// Minimum of 2 elements
 TupleType: Box<Type> = {
-  "(" <t: Type> <mut v: ("," <Type>)+> ")" => {
+  "(" <t: Type> "," <mut v: Comma<Type>> ")" => {
     v.insert(0, t);
     Box::new(Type::Tuple(v))
   }
 };
 
 GenericArgs: Vec<Box<Type>> = {
-  "<" <t: Type> <mut v: ("," <Type>)*> ">" => {
-    v.insert(0, t);
-    v
-  }
+  "<" <Comma<Type>> ">"
 };
 
 UserType: Box<Type> = {
@@ -108,6 +126,7 @@ pub Type: Box<Type> = FixType;
 
  
 // -------------------- Operators --------------------
+// Grouped by Precedence
 
 CompOp: Opcode = {
   "==" => Opcode::Eq,
@@ -135,7 +154,7 @@ PrefixOp: Opcode = {
   "~" => Opcode::Neg,
   "!" => Opcode::Not,
   "@" => Opcode::Delay,
-  "#" => Opcode::Box,
+  "#" => Opcode::Stable,
   "!@" => Opcode::Adv,
   "!#" => Opcode::Unbox,
   "out" => Opcode::Out,
@@ -143,51 +162,60 @@ PrefixOp: Opcode = {
 };
 
 // -------------------- Operator Expressions --------------------  
+// Lowest precedence at the top
 
+// Right associative 
 OrExpr: Box<Expr> = {
   <e1: AndExpr> "||" <e2: OrExpr> => Box::new(Expr::BinOp(e1, Opcode::Or, e2)),
   AndExpr
 };
 
+// Right associative 
 AndExpr: Box<Expr> = {
   <e1: Comp> "&&" <e2: AndExpr> => Box::new(Expr::BinOp(e1, Opcode::And, e2)),
   Comp
 };
 
+// Left associative 
 Comp: Box<Expr> = {
   Comp CompOp ConsStream => Box::new(Expr::BinOp(<>)),
   ConsStream
 };
 
+// Right associative 
 ConsStream: Box<Expr> = {
   AddSub ConsStreamOp ConsStream => Box::new(Expr::BinOp(<>)),
   AddSub
 };
 
+// Left associative 
 AddSub: Box<Expr> = {
   AddSub AddSubOp MulDivMod => Box::new(Expr::BinOp(<>)),
   MulDivMod
 };
 
+// Left associative 
 MulDivMod: Box<Expr> = {
   MulDivMod MulDivModOp AppExpr => Box::new(Expr::BinOp(<>)),
   AppExpr
 };
 
+// Left associative 
 AppExpr: Box<Expr> = {
-  <AppExpr> <VariantExpr> => Box::new(Expr::App(<>)),
-  VariantExpr,
+  <AppExpr> <VariantStructExpr> => Box::new(Expr::App(<>)),
+  VariantStructExpr,
 };
 
-VariantExpr: Box<Expr> = {
-  <s: UpperId> <e: VariantExpr> => Box::new(Expr::Variant(s, Some(e))),
-  <s: UpperId> <f: Fields> => Box::new(Expr::StructVal(s, f)), 
+VariantStructExpr: Box<Expr> = {
+  <s: UpperId> <e: VariantStructExpr> => Box::new(Expr::Variant(s, Some(e))),
+  <s: UpperId> <f: Fields<Expr>> => Box::new(Expr::StructExpr(s, f)), 
   DotExpr
 }
 
+// Left associative 
 DotExpr: Box<Expr> = {
-  <DotExpr> "." <Int> => Box::new(Expr::DeTuple(<>)),
-  <DotExpr> "." <LowerId> => Box::new(Expr::DeStruct(<>)),
+  <DotExpr> "." <Int> => Box::new(Expr::ProjTuple(<>)),
+  <DotExpr> "." <LowerId> => Box::new(Expr::ProjStruct(<>)),
   Prefix
 };
 
@@ -197,32 +225,18 @@ Prefix: Box<Expr> = {
 };
 
 // -------------------- Terms -------------------- 
+// The simplest expressions
 
 ListTerm: Box<Expr> = {
   "[]" => Box::new(Expr::List(Vec::new())),
-  "[" <e: Expr> <mut v: ("," <Expr>)*> ","? "]" => {
-    v.insert(0, e);
-    Box::new(Expr::List(v))
-  }
-}
+  "[" <v: Comma<Expr>> "]" => Box::new(Expr::List(v)),
+};
 
 TupleTerm: Box<Expr> = {
-  "(" <e: Expr> <mut v: ("," <Expr>)+> ","? ")" => {
+  "(" <e: Expr> "," <mut v: Comma<Expr>> ")" => {
     v.insert(0, e);
     Box::new(Expr::Tuple(v))
   }
-};
-
-FieldItem: (String, Box<Expr>) = {
-  <i: LowerId> ":" <e: Expr> => (i, e)
-};
-
-Fields: Vec<(String, Box<Expr>)> = {
-  "{}" => Vec::new(),
-  "{" <p: FieldItem> <mut v: ("," <FieldItem>)*> ","? "}"  => {
-    v.insert(0, p);
-    v
-  },
 };
 
 Term: Box<Expr> = { 
@@ -239,12 +253,15 @@ Term: Box<Expr> = {
 };
 
 // -------------------- Patterns -------------------- 
+// Lowest precedence at the top
 
+// Left associative
 OrPattern: Box<Pattern> = {
   <OrPattern> "|" <ConsPattern> => Box::new(Pattern::Or(<>)),
   ConsPattern,
 };
 
+// Right associative
 ConsPattern: Box<Pattern> = {
   <PatternTerm> "::" <ConsPattern> => Box::new(Pattern::Cons(<>)),
   <PatternTerm> "<<" <ConsPattern> => Box::new(Pattern::Stream(<>)),
@@ -253,20 +270,17 @@ ConsPattern: Box<Pattern> = {
 
 PrefixPattern: Box<Pattern> = {
   "@" <PrefixPattern> => Box::new(Pattern::Delay(<>)),
-  "#" <PrefixPattern> => Box::new(Pattern::Box(<>)),
+  "#" <PrefixPattern> => Box::new(Pattern::Stable(<>)),
   PatternTerm,
 }
 
 ListPattern: Box<Pattern> = {
   "[]" => Box::new(Pattern::List(Vec::new())),
-  "[" <p: Pattern> <mut v: ("," <Pattern>)*> "]" => {
-    v.insert(0, p);
-    Box::new(Pattern::List(v))
-  }
+  "[" <v: Comma<Pattern>> "]" => Box::new(Pattern::List(v))
 }
 
 TuplePattern: Box<Pattern> = {
-  "(" <e: Pattern> <mut v: ("," <Pattern>)+> ")" => {
+  "(" <e: Pattern> "," <mut v: Comma<Pattern>> ")" => {
     v.insert(0, e);
     Box::new(Pattern::Tuple(v))
   }
@@ -280,10 +294,7 @@ StructPatternItem: (String, Option<Box<Pattern>>) = {
 
 StructPatternList: Vec<(String, Option<Box<Pattern>>)> = {
   "{}" => Vec::new(),
-  "{" <p: StructPatternItem> <mut v: ("," <StructPatternItem>)*> ","? "}"  => {
-    v.insert(0, p);
-    v
-  },
+  "{" <Comma<StructPatternItem>> "}",
 };
 
 StructPattern: Box<Pattern> = {
@@ -352,10 +363,7 @@ MatchItem: (Box<Pattern>, Box<Expr>) = {
 };
 
 MatchExpr: Box<Expr> = {
-  "match" <e: Expr> "with" "{" <c: MatchItem> <mut v: ("," <MatchItem>)*> ","? "}" => {
-      v.insert(0, c);
-      Box::new(Expr::Match(e, v))
-    }
+  "match" <e: Expr> "with" "{" <v: Comma<MatchItem>> "}" => Box::new(Expr::Match(e, v))
 };
 
 pub Expr: Box<Expr> = {
@@ -381,50 +389,28 @@ GenericParam: (bool, String) = {
 };
 
 GenericParams: Vec<(bool, String)> = {
-  "<" <p: GenericParam> <mut v: ("," <GenericParam>)*> ">" => {
-    v.insert(0, p);
-    v
-  }
+  "<" <Comma<GenericParam>> ">"
 };
 
 TypeExpr: Box<Expr> = {
-  "type" <i: UpperId> "=" <t: Type> => Box::new(Expr::Type(i, Vec::new(), t)),
-  "type" <i: UpperId> <v: GenericParams> "=" <t: Type> => Box::new(Expr::Type(i, v, t)),
+  "type" <i: UpperId> "=" <t: Type> => Box::new(Expr::TypeDef(i, Vec::new(), t)),
+  "type" <i: UpperId> <v: GenericParams> "=" <t: Type> => Box::new(Expr::TypeDef(i, v, t)),
 };
 
 VariantItem: (String, Option<Box<Type>>) = {
-  <i: UpperId> <t: Type?> ","=> (i, t),
-};
-
-VariantList: Vec<(String, Option<Box<Type>>)> = {
-  <v: VariantItem*> => v,
-  <mut v: VariantItem*> <i: UpperId> <t: Type?>  => {
-    v.push((i,t));
-    v
-  },
-};
-
-StructDefItem: (String, Box<Type>) = {
-  <i: LowerId> ":" <t: Type> ","=> (i, t)
-};
-
-StructDefList: Vec<(String, Box<Type>)> = {
-  <v: StructDefItem*> => v,
-  <mut v: StructDefItem*> <i: LowerId> ":" <t: Type> => {
-    v.push((i,t));
-    v
-  },
+  <i: UpperId> <t: Type?> => (i, t),
 };
 
 StructExpr: Box<Expr> = {
-  "struct" <i: UpperId> "{" <v: StructDefList> "}" => Box::new(Expr::Struct(i, Vec::new(), v)),
-  "struct" <i: UpperId> <p: GenericParams> "{" <v: StructDefList> "}" => 
-    Box::new(Expr::Struct(i, p, v)),
+  "struct" <i: UpperId> <f: Fields<Type>> => Box::new(Expr::StructDef(i, Vec::new(), f)),
+  "struct" <i: UpperId> <p: GenericParams> <f: Fields<Type>> => 
+    Box::new(Expr::StructDef(i, p, f)),
 };
 
 EnumExpr: Box<Expr> = {
-  "enum" <i: UpperId> "{" <v: VariantList> "}" => Box::new(Expr::Enum(i, Vec::new(), v)),
-  "enum" <i: UpperId> <p: GenericParams> "{" <v: VariantList> "}" => Box::new(Expr::Enum(i, p, v)),
+  "enum" <i: UpperId> "{" <v: Comma<VariantItem>> "}" => Box::new(Expr::EnumDef(i, Vec::new(), v)),
+  "enum" <i: UpperId> <p: GenericParams> "{" <v: Comma<VariantItem>> "}" => 
+    Box::new(Expr::EnumDef(i, p, v)),
 }
 
 pub Item: Box<Expr> = {

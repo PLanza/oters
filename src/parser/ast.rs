@@ -11,22 +11,22 @@ pub enum Expr {
     BinOp(Box<Expr>, Opcode, Box<Expr>),
     UnOp(Opcode, Box<Expr>),
     List(Vec<Box<Expr>>),
-    StructVal(String, Vec<(String, Box<Expr>)>),
+    StructExpr(String, Vec<(String, Box<Expr>)>),
     Tuple(Vec<Box<Expr>>),
     Fn(Vec<(String, Box<Type>)>, Box<Expr>),
-    Fix(String, Box<Expr>),
+    Fix(String, Box<Expr>), // From Patrick Bahr's Rattus 
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Block(Vec<Box<Expr>>),
     App(Box<Expr>, Box<Expr>),
-    DeTuple(Box<Expr>, i64),
-    DeStruct(Box<Expr>, String),
+    ProjTuple(Box<Expr>, i64),
+    ProjStruct(Box<Expr>, String),
     Variant(String, Option<Box<Expr>>),
     Match(Box<Expr>, Vec<(Box<Pattern>, Box<Expr>)>),
     Var(String),
-    Type(String, GenericParams, Box<Type>), // Type Alias with Generic Parameters and defined type
-    Struct(String, GenericParams, Vec<(String, Box<Type>)>), // Struct with generic parameters
-    Enum(String, GenericParams, Vec<(String, Option<Box<Type>>)>), // Enum with generic parameters
-    Let(String, GenericParams, Box<Expr>),
+    TypeDef(String, GenericParams, Box<Type>), // Type Alias with Generic Parameters and defined type
+    StructDef(String, GenericParams, Vec<(String, Box<Type>)>), // Struct with generic parameters
+    EnumDef(String, GenericParams, Vec<(String, Option<Box<Type>>)>), // Enum with generic parameters
+    Let(String, GenericParams, Box<Expr>), // Let generic parameters for binding with functions
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -45,12 +45,12 @@ pub enum Opcode {
     Or,
     Neg,
     Not,
-    Delay,
-    Box,
-    Adv,
-    Unbox,
-    Out,
-    Into,
+    Delay, // From Patrick Bahr's Rattus 
+    Stable, // From Patrick Bahr's Rattus 
+    Adv, // From Patrick Bahr's Rattus 
+    Unbox, // From Patrick Bahr's Rattus 
+    Out, // From Patrick Bahr's Rattus 
+    Into, // From Patrick Bahr's Rattus 
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -64,9 +64,9 @@ pub enum Type {
     List(Box<Type>),
     User(String, Vec<Box<Type>>), // Structs, Enums, Generics, and Type Aliases with their generic arguments
     Function(Box<Type>, Box<Type>),
-    Delay(Box<Type>),
-    Box(Box<Type>),
-    Fix(String, Box<Type>), // Fixed point argument and type expression
+    Delay(Box<Type>), // From Patrick Bahr's Rattus 
+    Stable(Box<Type>), // From Patrick Bahr's Rattus 
+    Fix(String, Box<Type>), // Fixed point argument and type expression as defined in Rattus
     Var(String),            // A Fix type's variable
 }
 
@@ -86,7 +86,7 @@ pub enum Pattern {
     Cons(Box<Pattern>, Box<Pattern>),
     Stream(Box<Pattern>, Box<Pattern>),
     Or(Box<Pattern>, Box<Pattern>),
-    Delay(Box<Pattern>),
-    Box(Box<Pattern>),
+    Delay(Box<Pattern>), // From Patrick Bahr's Rattus 
+    Stable(Box<Pattern>), // From Patrick Bahr's Rattus 
     Var(String),
 }

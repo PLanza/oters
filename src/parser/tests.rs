@@ -48,7 +48,7 @@ fn unops() -> Vec<(String, Box<super::ast::Expr>)> {
         ("~".to_string(), Neg),
         ("!".to_string(), Not),
         ("@".to_string(), Delay),
-        ("#".to_string(), Box),
+        ("#".to_string(), Stable),
         ("!@".to_string(), Adv),
         ("!#".to_string(), Unbox),
         ("out ".to_string(), Out),
@@ -128,7 +128,7 @@ fn test_binops() {
 
 #[cfg(test)]
 fn struct_val() -> (String, Box<super::ast::Expr>) {
-    use super::ast::Expr::StructVal;
+    use super::ast::Expr::StructExpr;
 
     let mut code = "MyStruct { ".to_string();
     let mut struct_vec = Vec::new();
@@ -146,7 +146,7 @@ fn struct_val() -> (String, Box<super::ast::Expr>) {
 
     (
         code,
-        Box::new(StructVal("MyStruct".to_string(), struct_vec)),
+        Box::new(StructExpr("MyStruct".to_string(), struct_vec)),
     )
 }
 
@@ -266,14 +266,14 @@ fn test_list_types() {
 
 #[cfg(test)]
 fn prefix_types() -> Vec<(String, Box<super::ast::Type>)> {
-    use super::ast::Type::{Box, Delay};
+    use super::ast::Type::{Stable, Delay};
     let mut types = Vec::new();
     for t in primitive_types() {
         types.push((
             format!("@{}", t.0),
             std::boxed::Box::new(Delay(t.1.clone())),
         ));
-        types.push((format!("#{}", t.0), std::boxed::Box::new(Box(t.1))));
+        types.push((format!("#{}", t.0), std::boxed::Box::new(Stable(t.1))));
     }
 
     types
@@ -402,7 +402,7 @@ fn types() -> Vec<(String, Box<super::ast::Type>)> {
 
 #[test]
 fn test_type_alias() {
-    use super::ast::Expr::Type;
+    use super::ast::Expr::TypeDef;
 
     let params = vec![(true, "A".to_string()), (false, "B".to_string())];
 
@@ -414,14 +414,14 @@ fn test_type_alias() {
         let result = parser.parse(&code);
         assert_eq!(
             result.unwrap(),
-            Box::new(Type("MyAlias".to_string(), params.clone(), t.1.clone()))
+            Box::new(TypeDef("MyAlias".to_string(), params.clone(), t.1.clone()))
         );
     }
 }
 
 #[test]
 fn test_struct_def() {
-    use super::ast::Expr::Struct;
+    use super::ast::Expr::StructDef;
 
     let params = vec![(true, "A".to_string()), (false, "B".to_string())];
 
@@ -440,13 +440,13 @@ fn test_struct_def() {
     let result = parser.parse(&code);
     assert_eq!(
         result.unwrap(),
-        Box::new(Struct("MyStruct".to_string(), params.clone(), fields))
+        Box::new(StructDef("MyStruct".to_string(), params.clone(), fields))
     );
 }
 
 #[test]
 fn test_enum_def() {
-    use super::ast::Expr::Enum;
+    use super::ast::Expr::EnumDef;
 
     let params = vec![(true, "A".to_string()), (false, "B".to_string())];
 
@@ -470,7 +470,7 @@ fn test_enum_def() {
     let result = parser.parse(&code);
     assert_eq!(
         result.unwrap(),
-        Box::new(Enum("MyEnum".to_string(), params.clone(), fields))
+        Box::new(EnumDef("MyEnum".to_string(), params.clone(), fields))
     );
 }
 
