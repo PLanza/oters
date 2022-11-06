@@ -1,3 +1,5 @@
+type Program = Vec<Box<Expr>>;
+
 type GenericParams = Vec<(bool, String)>; // Each parameter is a pair of the parameter name and a boolean marking whether the parameter is stable or not
 
 #[derive(Debug, PartialEq, Clone)]

@@ -1,0 +1,4 @@
+let fail = match 2 {
+    2 => Some (2),
+    _ => None
+  }
