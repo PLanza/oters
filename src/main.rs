@@ -1,8 +1,8 @@
 mod parser;
 
-use std::error::Error;
+use anyhow::Result;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     parser::parse_file("examples/ex1.otrs".to_string())?;
     let result = parser::parse_file("examples/nonex1.otrs".to_string());
 

@@ -4,10 +4,13 @@ mod tests;
 use lalrpop_util::{lalrpop_mod, ParseError};
 lalrpop_mod!(pub oters);
 
-use std::fs::read_to_string;
-use std::error::Error;
+use self::ast::Program;
 
-fn parsing_error_message(source: &String, location: (usize, usize))-> Result<String, Box<dyn Error>> {
+use std::fs::read_to_string;
+
+use anyhow::{anyhow, Result};
+
+fn parsing_error_message(source: &String, location: (usize, usize))-> Result<String> {
     let mut line_number = 1;
     let mut line_start = 0;
     let mut line_end = 0;
@@ -49,7 +52,7 @@ fn parsing_error_message(source: &String, location: (usize, usize))-> Result<Str
     Ok(message.to_string())
 }
 
-pub fn parse_file(path: String) -> Result<Vec<Box<ast::Expr>>, Box<dyn Error>> {
+pub fn parse_file(path: String) -> Result<Program> {
     let path = std::path::Path::new(&path);
     let source = read_to_string(path)?;
 
@@ -61,13 +64,13 @@ pub fn parse_file(path: String) -> Result<Vec<Box<ast::Expr>>, Box<dyn Error>> {
         Ok(ast) => Ok (ast),
         Err(e) => match e {
             ParseError::ExtraToken { token } => 
-                Err(format!("Extra token {}", parsing_error_message(&source, (token.0, token.2))?))?,
+                Err(anyhow!("Extra token {}", parsing_error_message(&source, (token.0, token.2))?)),
             ParseError::InvalidToken { location } => 
-                Err(format!("Invalid token {}", parsing_error_message(&source, (location, location + 1))?))?,
+                Err(anyhow!("Invalid token {}", parsing_error_message(&source, (location, location + 1))?)),
             ParseError::UnrecognizedToken { token, .. } => 
-                Err(format!("Unrecognized token {}", parsing_error_message(&source, (token.0, token.2))?))?,
+                Err(anyhow!("Unrecognized token {}", parsing_error_message(&source, (token.0, token.2))?)),
             e => 
-                Err(format!("Parse error {}", e))?,
+                Err(anyhow!("Parse error {}", e)),
         }
     }
 }
