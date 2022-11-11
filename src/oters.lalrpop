@@ -1,4 +1,4 @@
-use crate::parser::ast::{Expr, Opcode, Type, Pattern};
+use crate::parser::ast::{Expr, Opcode, TypeExpr, Pattern};
 
 use std::str::FromStr;
 
@@ -76,53 +76,53 @@ Unit: () = {
 // -------------------- Types --------------------
 // Presented with lowest precedence at the top
 
-FixType: Box<Type> = {
-  "fix" <v: LowerId> "->" <t: FixType> => Box::new(Type::Fix(v,t)),
+FixType: Box<TypeExpr> = {
+  "fix" <v: LowerId> "->" <t: FixType> => Box::new(TypeExpr::TEFix(v,t)),
   FunctionType,
 }
 
-FunctionType: Box<Type> = {
-  <PrefixType> "->" <FunctionType> => Box::new(Type::Function(<>)),
+FunctionType: Box<TypeExpr> = {
+  <PrefixType> "->" <FunctionType> => Box::new(TypeExpr::TEFunction(<>)),
   PrefixType,
 };
 
-PrefixType: Box<Type> = {
-  "@" <PrefixType> => Box::new(Type::Delay(<>)),
-  "#" <PrefixType> => Box::new(Type::Stable(<>)),
+PrefixType: Box<TypeExpr> = {
+  "@" <PrefixType> => Box::new(TypeExpr::TEDelay(<>)),
+  "#" <PrefixType> => Box::new(TypeExpr::TEStable(<>)),
   TypeTerm,
 };
 
 // Minimum of 2 elements
-TupleType: Box<Type> = {
+TupleType: Box<TypeExpr> = {
   "(" <t: Type> "," <mut v: Comma<Type>> ")" => {
     v.insert(0, t);
-    Box::new(Type::Tuple(v))
+    Box::new(TypeExpr::TETuple(v))
   }
 };
 
-GenericArgs: Vec<Box<Type>> = {
+GenericArgs: Vec<Box<TypeExpr>> = {
   "<" <Comma<Type>> ">"
 };
 
-UserType: Box<Type> = {
-  UpperId => Box::new(Type::User(<>,Vec::new())),
-  UpperId GenericArgs => Box::new(Type::User(<>))
+UserType: Box<TypeExpr> = {
+  UpperId => Box::new(TypeExpr::TEUser(<>,Vec::new())),
+  UpperId GenericArgs => Box::new(TypeExpr::TEUser(<>))
 };
 
-TypeTerm: Box<Type> = { 
-  "bool" => Box::new(Type::Bool),
-  "int" => Box::new(Type::Int),
-  "float" => Box::new(Type::Float),
-  "string" => Box::new(Type::String),
-  Unit => Box::new(Type::Unit),
+TypeTerm: Box<TypeExpr> = { 
+  "bool" => Box::new(TypeExpr::TEBool),
+  "int" => Box::new(TypeExpr::TEInt),
+  "float" => Box::new(TypeExpr::TEFloat),
+  "string" => Box::new(TypeExpr::TEString),
+  Unit => Box::new(TypeExpr::TEUnit),
   TupleType,
-  "[" <Type> "]" => Box::new(Type::List(<>)),
+  "[" <Type> "]" => Box::new(TypeExpr::TEList(<>)),
   UserType,
-  LowerId => Box::new(Type::Var(<>)),
+  LowerId => Box::new(TypeExpr::TEVar(<>)),
   "(" <Type> ")",
 };
 
-pub Type: Box<Type> = FixType;
+pub Type: Box<TypeExpr> = FixType;
 
  
 // -------------------- Operators --------------------
@@ -340,17 +340,17 @@ IfExpr: Box<Expr> = {
   "if" <e1: Expr> "then" <e2: Expr> "else" <e3: Expr> => Box::new(Expr::If(e1, e2, e3))
 };
 
-FnArg: (String, Box<Type>) = {
+FnArg: (String, Box<TypeExpr>) = {
   "(" <i: LowerId> ":" <t: Type> ")" => (i, t),
   // Add pattern variants for Lists, Tuples, Streams
 };
 
-FnArgList: Vec<(String, Box<Type>)> = {
+FnArgList: Vec<(String, Box<TypeExpr>)> = {
   <v: FnArg+> => v,
 };
 
 FnExpr: Box<Expr> = {
-  "fn" Unit "->" <e: Expr> => Box::new(Expr::Fn(vec![("_".to_string(), Box::new(Type::Unit))], e)),
+  "fn" Unit "->" <e: Expr> => Box::new(Expr::Fn(vec![("_".to_string(), Box::new(TypeExpr::TEUnit))], e)),
   "fn" <a: FnArgList> "->" <e: Expr> => Box::new(Expr::Fn(a, e)),
 };
 
@@ -397,7 +397,7 @@ TypeExpr: Box<Expr> = {
   "type" <i: UpperId> <v: GenericParams> "=" <t: Type> => Box::new(Expr::TypeDef(i, v, t)),
 };
 
-VariantItem: (String, Option<Box<Type>>) = {
+VariantItem: (String, Option<Box<TypeExpr>>) = {
   <i: UpperId> <t: Type?> => (i, t),
 };
 

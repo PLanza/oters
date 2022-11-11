@@ -1,4 +1,4 @@
-mod ast;
+pub mod ast;
 mod tests;
 
 use lalrpop_util::{lalrpop_mod, ParseError};
@@ -10,7 +10,7 @@ use std::fs::read_to_string;
 
 use anyhow::{anyhow, Result};
 
-fn parsing_error_message(source: &String, location: (usize, usize))-> Result<String> {
+fn parsing_error_message(source: &String, location: (usize, usize)) -> Result<String> {
     let mut line_number = 1;
     let mut line_start = 0;
     let mut line_end = 0;
@@ -38,16 +38,19 @@ fn parsing_error_message(source: &String, location: (usize, usize))-> Result<Str
         char_count += 1;
     }
 
-    // The source code line where the error occurs   
+    // The source code line where the error occurs
     let code_line = &source[line_start..line_end];
 
-    // A line pointing where the error is located 
+    // A line pointing where the error is located
     // Assumes all utf8 characters are displayed with the same width
     let mut under_line = (0..token_pos).map(|_| " ").collect::<String>();
-    under_line.push_str(&String::from_utf8(vec![b'^'; source[location.0 .. location.1].len()])?);
+    under_line.push_str(&String::from_utf8(vec![
+        b'^';
+        source[location.0..location.1]
+            .len()
+    ])?);
 
-    let message = format!(
-        "on line {}\n{}\n{}", line_number, code_line, under_line);
+    let message = format!("on line {}\n{}\n{}", line_number, code_line, under_line);
 
     Ok(message.to_string())
 }
@@ -59,18 +62,23 @@ pub fn parse_file(path: String) -> Result<Program> {
     let parser = oters::ProgramParser::new();
 
     let result = parser.parse(&source);
-    
+
     match result {
-        Ok(ast) => Ok (ast),
+        Ok(ast) => Ok(ast),
         Err(e) => match e {
-            ParseError::ExtraToken { token } => 
-                Err(anyhow!("Extra token {}", parsing_error_message(&source, (token.0, token.2))?)),
-            ParseError::InvalidToken { location } => 
-                Err(anyhow!("Invalid token {}", parsing_error_message(&source, (location, location + 1))?)),
-            ParseError::UnrecognizedToken { token, .. } => 
-                Err(anyhow!("Unrecognized token {}", parsing_error_message(&source, (token.0, token.2))?)),
-            e => 
-                Err(anyhow!("Parse error {}", e)),
-        }
+            ParseError::ExtraToken { token } => Err(anyhow!(
+                "Extra token {}",
+                parsing_error_message(&source, (token.0, token.2))?
+            )),
+            ParseError::InvalidToken { location } => Err(anyhow!(
+                "Invalid token {}",
+                parsing_error_message(&source, (location, location + 1))?
+            )),
+            ParseError::UnrecognizedToken { token, .. } => Err(anyhow!(
+                "Unrecognized token {}",
+                parsing_error_message(&source, (token.0, token.2))?
+            )),
+            e => Err(anyhow!("Parse error {}", e)),
+        },
     }
 }

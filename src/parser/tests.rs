@@ -217,18 +217,18 @@ fn test_list() {
 }
 
 #[cfg(test)]
-fn primitive_types() -> Vec<(String, Box<super::ast::Type>)> {
-    use super::ast::Type::{Bool, Float, Int, String, Unit, User, Var};
+fn primitive_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
+    use super::ast::TypeExpr::{TEBool, TEFloat, TEInt, TEString, TEUnit, TEUser, TEVar};
     vec![
-        ("bool".to_string(), Box::new(Bool)),
-        ("int".to_string(), Box::new(Int)),
-        ("float".to_string(), Box::new(Float)),
-        ("string".to_string(), Box::new(String)),
-        ("()".to_string(), Box::new(Unit)),
-        ("alpha".to_string(), Box::new(Var("alpha".to_string()))),
+        ("bool".to_string(), Box::new(TEBool)),
+        ("int".to_string(), Box::new(TEInt)),
+        ("float".to_string(), Box::new(TEFloat)),
+        ("string".to_string(), Box::new(TEString)),
+        ("()".to_string(), Box::new(TEUnit)),
+        ("alpha".to_string(), Box::new(TEVar("alpha".to_string()))),
         (
             "T".to_string(),
-            Box::new(User("T".to_string(), Vec::with_capacity(0))),
+            Box::new(TEUser("T".to_string(), Vec::with_capacity(0))),
         ),
     ]
 }
@@ -244,11 +244,11 @@ fn test_primitive_types() {
 }
 
 #[cfg(test)]
-fn list_types() -> Vec<(String, Box<super::ast::Type>)> {
-    use super::ast::Type::List;
+fn list_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
+    use super::ast::TypeExpr::TEList;
     let mut list_types = Vec::new();
     for t in primitive_types() {
-        list_types.push((format!("[{}]", t.0), Box::new(List(t.1))));
+        list_types.push((format!("[{}]", t.0), Box::new(TEList(t.1))));
     }
 
     list_types
@@ -265,15 +265,15 @@ fn test_list_types() {
 }
 
 #[cfg(test)]
-fn prefix_types() -> Vec<(String, Box<super::ast::Type>)> {
-    use super::ast::Type::{Stable, Delay};
+fn prefix_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
+    use super::ast::TypeExpr::{TEDelay, TEStable};
     let mut types = Vec::new();
     for t in primitive_types() {
         types.push((
             format!("@{}", t.0),
-            std::boxed::Box::new(Delay(t.1.clone())),
+            std::boxed::Box::new(TEDelay(t.1.clone())),
         ));
-        types.push((format!("#{}", t.0), std::boxed::Box::new(Stable(t.1))));
+        types.push((format!("#{}", t.0), std::boxed::Box::new(TEStable(t.1))));
     }
 
     types
@@ -289,8 +289,8 @@ fn test_prefix_types() {
 }
 
 #[cfg(test)]
-fn function_types() -> Vec<(String, Box<super::ast::Type>)> {
-    use super::ast::Type::Function;
+fn function_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
+    use super::ast::TypeExpr::TEFunction;
     let mut function_types = Vec::new();
 
     let mut types = primitive_types();
@@ -301,7 +301,7 @@ fn function_types() -> Vec<(String, Box<super::ast::Type>)> {
         for t2 in types.iter() {
             let code = format!("{} -> {}", t1.0, t2.0);
 
-            let expr = std::boxed::Box::new(Function(t1.1.clone(), t2.1.clone()));
+            let expr = std::boxed::Box::new(TEFunction(t1.1.clone(), t2.1.clone()));
 
             function_types.push((code, expr));
         }
@@ -321,8 +321,8 @@ fn test_function_types() {
 }
 
 #[cfg(test)]
-fn fix_types() -> Vec<(String, Box<super::ast::Type>)> {
-    use super::ast::Type::Fix;
+fn fix_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
+    use super::ast::TypeExpr::TEFix;
 
     let mut types = primitive_types();
     types.append(&mut prefix_types());
@@ -334,7 +334,7 @@ fn fix_types() -> Vec<(String, Box<super::ast::Type>)> {
     for t in types.iter() {
         let code = format!("fix alpha -> {}", t.0);
 
-        let expr = std::boxed::Box::new(Fix("alpha".to_string(), t.1.clone()));
+        let expr = std::boxed::Box::new(TEFix("alpha".to_string(), t.1.clone()));
 
         fix_types.push((code, expr));
     }
@@ -353,8 +353,8 @@ fn test_fix_types() {
 }
 
 #[cfg(test)]
-fn user_type() -> (String, Box<super::ast::Type>) {
-    use super::ast::Type::User;
+fn user_type() -> (String, Box<super::ast::TypeExpr>) {
+    use super::ast::TypeExpr::TEUser;
 
     let mut types = primitive_types();
     types.append(&mut prefix_types());
@@ -375,7 +375,7 @@ fn user_type() -> (String, Box<super::ast::Type>) {
     code.pop();
     code.push_str(">");
 
-    (code, Box::new(User("MyType".to_string(), generics_vec)))
+    (code, Box::new(TEUser("MyType".to_string(), generics_vec)))
 }
 
 #[test]
@@ -389,7 +389,7 @@ fn test_user_type() {
 }
 
 #[cfg(test)]
-fn types() -> Vec<(String, Box<super::ast::Type>)> {
+fn types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
     let mut types = primitive_types();
     types.append(&mut prefix_types());
     types.append(&mut list_types());
