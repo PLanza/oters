@@ -69,7 +69,7 @@ pub enum TypeExpr {
     TEDelay(Box<TypeExpr>),       // From Patrick Bahr's Rattus
     TEStable(Box<TypeExpr>),      // From Patrick Bahr's Rattus
     TEFix(String, Box<TypeExpr>), // Fixed point argument and type expression as defined in Rattus
-    TEVar(String),            // A Fix type's variable
+    TEVar(String),                // A Fix type's variable
 }
 
 #[derive(Debug, PartialEq, Clone)]
