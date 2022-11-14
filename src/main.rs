@@ -1,10 +1,14 @@
+#![allow(dead_code)]
+
 mod parser;
 mod types;
 
 use anyhow::Result;
 
 fn main() -> Result<()> {
-    parser::parse_file("examples/ex1.otrs".to_string())?;
+    let program = parser::parse_file("examples/ex1.otrs".to_string())?;
+    println!("{:?}", program);
+
     let result = parser::parse_file("examples/nonex1.otrs".to_string());
 
     match result {

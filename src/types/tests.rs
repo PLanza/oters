@@ -1,5 +1,9 @@
+#[allow(unused_imports)]
+use std::collections::HashMap;
+
 #[test]
 fn test_stable_context() {
+    let type_decs = HashMap::new();
     use super::{
         Type, VarContext,
         VarTerm::{self, Var},
@@ -45,5 +49,8 @@ fn test_stable_context() {
         ticks: vec![],
     };
 
-    assert_eq!(context.stable(), stable);
+    assert_eq!(context.stable(&type_decs), stable);
 }
+
+// Test substitution
+// Test Well-formedness

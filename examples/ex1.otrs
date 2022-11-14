@@ -27,3 +27,8 @@ let switch<A> = fn (xs: Str<A>) (es: Event<Str<A>>) ->
       Some (a << as) => a << @(switch !@as !@es)
     }
   }
+
+let const<#A> = fn (x: A) -> 
+  x << @(const x)
+
+let twos = map #(fn (x: int) -> x + 1) (const 1)
