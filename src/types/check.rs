@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use super::errors::*;
-use super::{Type, TypeContext};
-use crate::parser::ast::{Expr, Program};
+use super::{Type, TypeContext, VarContext};
+use crate::parser::ast::{Expr, Opcode, Program};
 
 use anyhow::Result;
 
@@ -86,7 +86,7 @@ impl ProgramChecker {
                     for (s, _) in ts {
                         self.variant_map.insert(s.clone(), id.clone());
                     }
-                },
+                }
                 Expr::StructDef(id, params, ts) => {
                     // Extend type_context to convert generic args safely
                     if !params.is_empty() {
@@ -97,7 +97,10 @@ impl ProgramChecker {
 
                     // Convert TypeExprs to Types
                     for (s, t) in ts {
-                        fields.insert(s.clone(), Box::new(t.clone().to_type(type_context.clone(), &self.type_decs)?));
+                        fields.insert(
+                            s.clone(),
+                            Box::new(t.clone().to_type(type_context.clone(), &self.type_decs)?),
+                        );
                     }
 
                     // Create the Struct type
@@ -113,11 +116,96 @@ impl ProgramChecker {
                     // Add struct to the type declarations
                     self.type_decs.insert(id.clone(), t);
                 }
+                Expr::Let(id, params, expr) => {
+                    // Extend type_context to safely type check the expression
+                    if !params.is_empty() {
+                        type_context.extend(&mut params.clone());
+                    }
+
+                    // Type check the expression
+                    let t = self.type_check_expr(expr, type_context.clone(), VarContext::new())?;
+                    let t = if params.is_empty() {
+                        t
+                    } else {
+                        Type::Generic(params.clone(), Box::new(t))
+                    };
+
+                    // Make sure the resulting type is well formed
+                    type_context.well_formed(&t, &self.type_decs)?;
+
+                    // Add it to the map of value declarations
+                    self.value_decs.insert(id.clone(), t);
+                }
                 _ => return Err(InvalidExprError::InvalidTopLevelExpr(expr.head_string()).into()),
             }
         }
 
         println!("{:?}", self.type_decs);
         Ok(())
+    }
+
+    fn type_check_expr(
+        &self,
+        expr: &Expr,
+        t_context: TypeContext,
+        v_context: VarContext,
+    ) -> Result<Type> {
+        match expr {
+            Expr::True | Expr::False => Ok(Type::Bool),
+            Expr::Int(_) => Ok(Type::Int),
+            Expr::Float(_) => Ok(Type::Float),
+            Expr::String(_) => Ok(Type::String),
+            Expr::Unit => Ok(Type::Unit),
+            Expr::BinOp(e1, op, e2) => {
+                let t1 = self.type_check_expr(e1, t_context.clone(), v_context.clone())?;
+                let t2 = self.type_check_expr(e2, t_context, v_context)?;
+                self.type_check_bop(t1, t2, *op)
+            }
+            _ => todo!(),
+        }
+    }
+
+    fn type_check_bop(&self, type_1: Type, type_2: Type, op: Opcode) -> Result<Type> {
+        use Opcode::*;
+        match (type_1, op, type_2) {
+            (Type::Int, Mul, Type::Int)
+            | (Type::Int, Div, Type::Int)
+            | (Type::Int, Add, Type::Int)
+            | (Type::Int, Sub, Type::Int)
+            | (Type::Int, Mod, Type::Int) => Ok(Type::Int),
+            (Type::Float, Mul, Type::Float)
+            | (Type::Float, Div, Type::Float)
+            | (Type::Float, Add, Type::Float)
+            | (Type::Float, Sub, Type::Float)
+            | (Type::Float, Mod, Type::Float) => Ok(Type::Float),
+            (t1, Mul, t2) | (t1, Div, t2) | (t1, Add, t2) | (t1, Sub, t2) | (t1, Mod, t2) => Err(
+                TypeError::ImproperType("Int or Float".into(), format!("{:?} and {:?}", t1, t2))
+                    .into(),
+            ),
+            (Type::Int, Eq, Type::Int)
+            | (Type::Int, Lt, Type::Int)
+            | (Type::Int, Gt, Type::Int) => Ok(Type::Bool),
+            (Type::Float, Eq, Type::Float)
+            | (Type::Float, Lt, Type::Float)
+            | (Type::Float, Gt, Type::Float) => Ok(Type::Bool),
+            (t1, Eq, t2) | (t1, Lt, t2) | (t1, Gt, t2) => Err(TypeError::ImproperType(
+                "Int or Float".into(),
+                format!("{:?} and {:?}", t1, t2),
+            )
+            .into()),
+            (Type::Bool, Or, Type::Bool) | (Type::Bool, And, Type::Bool) => Ok(Type::Bool),
+            (t1, Or, t2) | (t1, And, t2) => {
+                Err(TypeError::ImproperType("Bool".into(), format!("{:?} and {:?}", t1, t2)).into())
+            }
+            (t, Cons, Type::List(list_t)) => {
+                if t == *list_t {
+                    Ok(Type::List(Box::new(t)))
+                } else {
+                    Err(TypeError::ImproperType(format!("{:?}", list_t), format!("{:?}", t)).into())
+                }
+            }
+            (_, Stream, _) => todo!(),
+            (_, op, _) => Err(InvalidExprError::InvalidBinaryOperator(format!("{:?}", op)).into()),
+        }
     }
 }

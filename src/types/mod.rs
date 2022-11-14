@@ -32,13 +32,13 @@ pub enum Type {
     App(Box<Type>, Vec<Box<Type>>), // A type applied to a generic (e.g. Stream<int> => App(Stream, int))
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum VarTerm {
     Tick,
     Var(String, Type),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct VarContext {
     terms: Vec<VarTerm>,
     ticks: Vec<usize>, // Locations of ticks within the context

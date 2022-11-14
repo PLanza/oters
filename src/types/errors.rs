@@ -11,8 +11,10 @@ impl Expr {
 
 #[derive(Error, Debug)]
 pub enum InvalidExprError {
-    #[error("Cannot have the expression `{0}` as top level.")]
+    #[error("Cannot have the expression {0} as top level.")]
     InvalidTopLevelExpr(String),
+    #[error("Cannot use operator {0} as a binary operator.")]
+    InvalidBinaryOperator(String),
 }
 
 #[derive(Error, Debug)]
@@ -25,4 +27,6 @@ pub enum TypeError {
     GenericVariableNotFound(String),
     #[error("Expexted a Stable type, got {0} instead")]
     ImproperUnstableType(String),
+    #[error("Expected {0}, got {1} instead")]
+    ImproperType(String, String),
 }

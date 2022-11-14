@@ -45,6 +45,7 @@ pub enum Opcode {
     Gt,
     And,
     Or,
+    // Unary operators
     Neg,
     Not,
     Delay,  // From Patrick Bahr's Rattus
