@@ -17,6 +17,12 @@ pub enum InvalidExprError {
 
 #[derive(Error, Debug)]
 pub enum TypeError {
-    #[error("Type {0} has not be declared")]
+    #[error("Type {0} has not been declared")]
     UserTypeNotFound(String),
+    #[error("Type Arguments applied to non-generic argument")]
+    ImproperTypeArguments,
+    #[error("Generic Type Variable {0} has not been declared")]
+    GenericVariableNotFound(String),
+    #[error("Expexted a Stable type, got {0} instead")]
+    ImproperUnstableType(String),
 }

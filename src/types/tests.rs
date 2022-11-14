@@ -49,7 +49,7 @@ fn test_stable_context() {
         ticks: vec![],
     };
 
-    assert_eq!(context.stable(&type_decs), stable);
+    assert_eq!(context.stable(&type_decs).unwrap(), stable);
 }
 
 // Test substitution

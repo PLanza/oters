@@ -97,41 +97,52 @@ impl Type {
         }
     }
 
-    pub fn is_stable(&self, t_decs: &HashMap<String, Type>) -> bool {
+    pub fn is_stable(&self, t_decs: &HashMap<String, Type>) -> Result<bool> {
         use self::Type::*;
         match self {
-            Unit | Int | Float | String | Bool => true, // All primitive types are Stable
-            Tuple(v) => v.iter().fold(true, |mut acc, t| {
-                acc = acc && t.is_stable(t_decs);
-                acc
-            }),
+            Unit | Int | Float | String | Bool => Ok(true), // All primitive types are Stable
+            Tuple(v) => {
+                let mut result = true;
+                for t in v {
+                    result = result && t.is_stable(t_decs)?;
+                }
+                Ok(result)
+            }
             List(t) => t.is_stable(t_decs),
-            Function(..) => false, // Functions can have temporal values in their closure
-            Delay(..) => false,    // Delayed values are inherently temporal
-            Stable(..) => true,    // Stable values wrap any type, making it atemporal
-            Fix(..) => false,      // The fix point type argument is implictly a delay type
-            FixVar(..) => false,
-            Struct(m) => m.iter().fold(true, |mut acc, (_, t)| {
-                acc = acc && t.is_stable(t_decs);
-                acc
-            }),
-            Enum(m) => m.iter().fold(true, |mut acc, (_, o)| {
-                let t_stable = match o {
-                    Some(t) => t.is_stable(t_decs),
-                    None => true,
-                };
-                acc = acc && t_stable;
-                acc
-            }),
+            Function(..) => Ok(false), // Functions can have temporal values in their closure
+            Delay(..) => Ok(false),    // Delayed values are inherently temporal
+            Stable(..) => Ok(true),    // Stable values wrap any type, making it atemporal
+            Fix(..) => Ok(false),      // The fix point type argument is implictly a delay type
+            FixVar(..) => Ok(false),
+            Struct(m) => {
+                let mut result = true;
+                for (_, t) in m.iter() {
+                    result = result && t.is_stable(t_decs)?;
+                }
+                Ok(result)
+            }
+
+            Enum(m) => {
+                let mut result = true;
+                for (_, o) in m.iter() {
+                    let t_stable = match o {
+                        Some(t) => t.is_stable(t_decs)?,
+                        None => true,
+                    };
+
+                    result = result && t_stable;
+                }
+                Ok(result)
+            }
             Generic(params, t) => {
                 let params_stable = params.iter().fold(true, |mut acc, (b, _)| {
                     acc = acc && *b;
                     acc
                 });
 
-                params_stable && t.is_stable(t_decs)
+                Ok(params_stable && t.is_stable(t_decs)?)
             }
-            GenericVar(b, _) => *b,
+            GenericVar(b, _) => Ok(*b),
             App(t, args) => match &**t {
                 Generic(params, t_) => {
                     // To find if a type application is stable we have to perform the substitution
@@ -143,10 +154,11 @@ impl Type {
                     if params.len() == args.len() {
                         result.is_stable(t_decs)
                     } else {
-                        Generic(params[args.len()..].to_vec(), Box::new(result)).is_stable(t_decs)
+                        Ok(Generic(params[args.len()..].to_vec(), Box::new(result))
+                            .is_stable(t_decs)?)
                     }
                 }
-                _ => unreachable!("Cannot do type application on non-Generic types"),
+                _ => Err(TypeError::ImproperTypeArguments.into()),
             },
         }
     }
@@ -220,26 +232,23 @@ impl VarContext {
         }
     }
 
-    pub fn stable(&self, t_decs: &HashMap<String, Type>) -> Self {
-        let terms = self
-            .terms
-            .iter()
-            .fold(Vec::new(), |mut context, term| match term {
-                VarTerm::Tick => context,
+    pub fn stable(&self, t_decs: &HashMap<String, Type>) -> Result<Self> {
+        let mut terms = Vec::new();
+        for term in &self.terms {
+            match term {
+                VarTerm::Tick => (),
                 VarTerm::Var(x, t) => {
-                    if t.is_stable(t_decs) {
-                        context.push(VarTerm::Var(x.clone(), t.clone()));
-                        context
-                    } else {
-                        context
+                    if t.is_stable(t_decs)? {
+                        terms.push(VarTerm::Var(x.clone(), t.clone()));
                     }
                 }
-            });
+            }
+        }
 
-        Self {
+        Ok(Self {
             terms,
             ticks: Vec::new(),
-        }
+        })
     }
 }
 
@@ -252,32 +261,40 @@ impl TypeContext {
         self.types.append(params);
     }
 
-    pub fn well_formed(&self, t: &Type, t_decs: &HashMap<String, Type>) -> bool {
+    pub fn well_formed(&self, t: &Type, t_decs: &HashMap<String, Type>) -> Result<()> {
         use Type::*;
         match t {
-            Unit | Int | Float | String | Bool => true, // All primitive types are well formed
-            Tuple(v) => v.iter().fold(true, |mut acc, t| {
-                acc = acc && self.well_formed(t, t_decs);
-                acc
-            }),
+            Unit | Int | Float | String | Bool => Ok(()), // All primitive types are well formed
+            Tuple(v) => {
+                for t in v {
+                    self.well_formed(t, t_decs)?;
+                }
+                Ok(())
+            }
             List(t) => self.well_formed(t, t_decs),
-            Function(t1, t2) => self.well_formed(t1, t_decs) && self.well_formed(t2, t_decs),
+            Function(t1, t2) => {
+                self.well_formed(t1, t_decs)?;
+                self.well_formed(t2, t_decs)
+            }
             Delay(t) => self.well_formed(t, t_decs),
             Stable(t) => self.well_formed(t, t_decs),
             Fix(_, t) => self.well_formed(t, t_decs),
-            FixVar(..) => true, // Fix point vars go into the term context as they have unchanging types
-            Struct(m) => m.iter().fold(true, |mut acc, (_, t)| {
-                acc = acc && self.well_formed(t, t_decs);
-                acc
-            }),
-            Enum(m) => m.iter().fold(true, |mut acc, (_, o)| {
-                let t_stable = match o {
-                    Some(t) => self.well_formed(t, t_decs),
-                    None => true,
-                };
-                acc = acc && t_stable;
-                acc
-            }),
+            FixVar(..) => Ok(()), // Fix point vars go into the term context as they have unchanging types
+            Struct(m) => {
+                for (_, t) in m {
+                    self.well_formed(t, t_decs)?;
+                }
+                Ok(())
+            }
+            Enum(m) => {
+                for (_, o) in m {
+                    match o {
+                        None => (),
+                        Some(t) => self.well_formed(t, t_decs)?,
+                    };
+                }
+                Ok(())
+            }
             Generic(params, t) => {
                 // the ∀ type in System F
                 let mut context = self.clone();
@@ -289,30 +306,28 @@ impl TypeContext {
                 // makes sure that the generic parameter has been declared
                 for (b_prime, s_prime) in &self.types {
                     if b == b_prime && s == s_prime {
-                        return true;
+                        return Ok(());
                     }
                 }
-                false // May want to give specific errors instead of bool response
+                Err(TypeError::GenericVariableNotFound(s.clone()).into())
             }
             App(t, v) => match &**t {
                 // Concrete type applied to a generic type e.g. Option<int>
                 Generic(params, t) => {
                     if v.len() > params.len() {
                         // List of args cannot be longer than allowed params
-                        return false;
+                        return Err(TypeError::ImproperTypeArguments.into());
                     }
                     for (i, t) in v.iter().enumerate() {
                         // Check that a non-stable type is not passed as a stable arg
-                        if params[i].0 && !t.is_stable(t_decs) {
-                            return false;
+                        if params[i].0 && !t.is_stable(t_decs).unwrap() {
+                            return Err(TypeError::ImproperUnstableType(format!("{:?}", t)).into());
                         }
-                        if !self.well_formed(t, t_decs) {
-                            return false;
-                        }
+                        self.well_formed(t, t_decs)?;
                     }
                     self.well_formed(&Generic(params.clone(), t.clone()), t_decs)
                 }
-                _ => false,
+                _ => Err(TypeError::ImproperTypeArguments.into()),
             },
         }
     }
