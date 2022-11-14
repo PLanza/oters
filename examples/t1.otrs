@@ -1,0 +1,11 @@
+enum Option<T> {
+  None,
+  Some T,
+}
+
+type Str<A> = fix a -> (A, a)
+
+struct Circle {
+  pos: Str<(int,int)>,
+  r: Str<float>,
+}

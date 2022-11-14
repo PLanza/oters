@@ -1,3 +1,4 @@
+pub mod check;
 mod errors;
 mod tests;
 
