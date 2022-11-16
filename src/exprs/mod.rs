@@ -32,6 +32,12 @@ pub enum Expr {
     Unit,
     BinOp(Box<Expr>, BOpcode, Box<Expr>),
     UnOp(UOpcode, Box<Expr>),
+    Delay(Box<Expr>),  // From Patrick Bahr's Rattus
+    Stable(Box<Expr>), // From Patrick Bahr's Rattus
+    Adv(Box<Expr>),    // From Patrick Bahr's Rattus
+    Unbox(Box<Expr>),  // From Patrick Bahr's Rattus
+    Out(Box<Expr>),    // From Patrick Bahr's Rattus
+    Into(Box<Expr>),   // From Patrick Bahr's Rattus
     List(Vec<Box<Expr>>),
     Struct(String, Vec<(String, Box<Expr>)>),
     Tuple(Vec<Box<Expr>>),
@@ -67,12 +73,6 @@ pub enum BOpcode {
 pub enum UOpcode {
     Neg,
     Not,
-    Delay,  // From Patrick Bahr's Rattus
-    Stable, // From Patrick Bahr's Rattus
-    Adv,    // From Patrick Bahr's Rattus
-    Unbox,  // From Patrick Bahr's Rattus
-    Out,    // From Patrick Bahr's Rattus
-    Into,   // From Patrick Bahr's Rattus
 }
 
 impl PExpr {
@@ -86,8 +86,7 @@ impl PExpr {
             PExpr::String(s) => Ok(Expr::String(s)),
             PExpr::Unit => Ok(Expr::Unit),
             // Desugar e1 << e2 into Into (e1, e2)
-            PExpr::BinOp(e1, Opcode::Stream, e2) => Ok(Expr::UnOp(
-                UOpcode::Into,
+            PExpr::BinOp(e1, Opcode::Stream, e2) => Ok(Expr::Into(
                 Box::new(Expr::Tuple(vec![
                     Box::new(e1.to_expr(t_context, t_decs)?),
                     Box::new(e2.to_expr(t_context, t_decs)?),
@@ -98,7 +97,14 @@ impl PExpr {
                 op.to_bopcode(), 
                 Box::new(e2.to_expr(t_context, t_decs)?)
             )),
-            PExpr::UnOp(op, e) => Ok(Expr::UnOp(op.to_uopcode(), Box::new(e.to_expr(t_context, t_decs)?))),
+            PExpr::UnOp(Opcode::Neg, e) => Ok(Expr::UnOp(UOpcode::Neg, Box::new(e.to_expr(t_context, t_decs)?))),
+            PExpr::UnOp(Opcode::Not, e) => Ok(Expr::UnOp(UOpcode::Neg, Box::new(e.to_expr(t_context, t_decs)?))),
+            PExpr::UnOp(Opcode::Delay, e) => Ok(Expr::Delay(Box::new(e.to_expr(t_context, t_decs)?))),
+            PExpr::UnOp(Opcode::Stable, e) => Ok(Expr::Stable(Box::new(e.to_expr(t_context, t_decs)?))),
+            PExpr::UnOp(Opcode::Adv, e) => Ok(Expr::Adv(Box::new(e.to_expr(t_context, t_decs)?))),
+            PExpr::UnOp(Opcode::Unbox, e) => Ok(Expr::Unbox(Box::new(e.to_expr(t_context, t_decs)?))),
+            PExpr::UnOp(Opcode::Into, e) => Ok(Expr::Into(Box::new(e.to_expr(t_context, t_decs)?))),
+            PExpr::UnOp(Opcode::Out, e) => Ok(Expr::Out(Box::new(e.to_expr(t_context, t_decs)?))),
             PExpr::List(v) => {
                 let mut list = Vec::new();
                 for e in v {
@@ -172,8 +178,7 @@ impl PExpr {
             PExpr::Let(id, _, e) => match e.to_expr(t_context, t_decs)? {
                 Expr::Fn(ts, fn_e) => {
                     let (is_rec, rec_e) = fn_e.clone().substitute(&id, 
-                        &Expr::UnOp(UOpcode::Adv, Box::new(Expr::UnOp(UOpcode::Unbox, Box::new(
-                                        Expr::Var(id.clone()))))));
+                        &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(id.clone()))))));
                     if is_rec {
                         Ok(Expr::Let(
                             id.clone(),
@@ -191,7 +196,6 @@ impl PExpr {
             _ => unreachable!(),
         }
     }
-
 }
 
 impl Expr {
@@ -215,6 +219,36 @@ impl Expr {
 
                 (b, UnOp(op, Box::new(e_)))
             },
+            Delay(e) => {
+                let (b, e_) = e.substitute(var, val);
+
+                (b, Delay(Box::new(e_)))
+            }
+            Stable(e) => {
+                let (b, e_) = e.substitute(var, val);
+
+                (b, Stable(Box::new(e_)))
+            }
+            Adv(e) => {
+                let (b, e_) = e.substitute(var, val);
+
+                (b, Adv(Box::new(e_)))
+            }
+            Unbox(e) => {
+                let (b, e_) = e.substitute(var, val);
+
+                (b, Unbox(Box::new(e_)))
+            }
+            Into(e) => {
+                let (b, e_) = e.substitute(var, val);
+
+                (b, Into(Box::new(e_)))
+            }
+            Out(e) => {
+                let (b, e_) = e.substitute(var, val);
+
+                (b, Out(Box::new(e_)))
+            }
             List(v) => {
                 let mut list = Vec::new();
                 let mut b = false;
@@ -366,20 +400,6 @@ impl Opcode {
         }
     }
 
-    fn to_uopcode(self) -> UOpcode {
-        use Opcode::*;
-        match self {
-            Neg => UOpcode::Neg,
-            Not => UOpcode::Not,
-            Delay => UOpcode::Delay,
-            Stable => UOpcode::Stable,
-            Adv => UOpcode::Adv,
-            Unbox => UOpcode::Unbox,
-            Out => UOpcode::Out,
-            Into => UOpcode::Into,
-            op => unreachable!("Can't convert {:?} to UOpcode", op),
-        }
-    }
 }
 
 impl VarContext {

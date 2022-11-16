@@ -6,6 +6,8 @@ pub enum TypeError {
     UserTypeNotFound(String),
     #[error("Type Arguments applied to non-generic argument")]
     ImproperTypeArguments,
+    #[error("Fixed Point Variable {0} has not been declared")]
+    FixedPointVariableNotFound(String),
     #[error("Generic Type Variable {0} has not been declared")]
     GenericVariableNotFound(String),
     #[error("Expexted a Stable type, got {0} instead")]

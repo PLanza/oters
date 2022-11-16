@@ -24,7 +24,7 @@ pub enum Type {
     Delay(Box<Type>),
     Stable(Box<Type>),
     Fix(String, Box<Type>),
-    FixVar(String),
+    FixVar(String), // These have their own types
     Generic(GenericParams, Box<Type>), // A pair of generic parameters with the type definition
     GenericVar(bool, String),
     Struct(HashMap<String, Box<Type>>), // A map from the struct fields to their respective type
@@ -104,7 +104,7 @@ impl Type {
             Delay(..) => Ok(false),    // Delayed values are inherently temporal
             Stable(..) => Ok(true),    // Stable values wrap any type, making it atemporal
             Fix(..) => Ok(false),      // The fix point type argument is implictly a delay type
-            FixVar(..) => Ok(false),
+            FixVar(..) => Ok(true),
             Struct(m) => {
                 let mut result = true;
                 for (_, t) in m.iter() {
@@ -272,8 +272,22 @@ impl TypeContext {
             }
             Delay(t) => self.well_formed(t, t_decs),
             Stable(t) => self.well_formed(t, t_decs),
-            Fix(_, t) => self.well_formed(t, t_decs),
-            FixVar(..) => Ok(()), // Fix point vars go into the term context as they have unchanging types
+            Fix(alpha, t) => {
+                let mut context = self.clone();
+                context.extend(&mut vec![(true, alpha.clone())]);
+
+                context.well_formed(t, t_decs)
+            }
+
+            FixVar(alpha) => {
+                // makes sure that the generic parameter has been declared
+                for (_, s) in &self.types {
+                    if  alpha == s {
+                        return Ok(());
+                    }
+                }
+                Err(TypeError::FixedPointVariableNotFound(alpha.clone()).into())
+            }
             Struct(m) => {
                 for (_, t) in m {
                     self.well_formed(t, t_decs)?;

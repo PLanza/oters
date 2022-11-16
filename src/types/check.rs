@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{Type, TypeContext, TypeError};
 use crate::parser::ast::{PExpr, Program};
-use crate::exprs::{VarContext, InvalidExprError, Expr, BOpcode, UOpcode};
+use crate::exprs::{VarContext, InvalidExprError, Expr, BOpcode, UOpcode, VarTerm};
 
 use anyhow::Result;
 
@@ -128,8 +128,7 @@ impl ProgramChecker {
                         // Recursive functions are translated to fix points to ensure guarded recursion
                         Expr::Fn(ts, fn_e) => {
                             let (is_rec, rec_e) = fn_e.clone().substitute(&id, 
-                                &Expr::UnOp(UOpcode::Adv, Box::new(Expr::UnOp(UOpcode::Unbox, Box::new(
-                                                Expr::Var(id.clone()))))));
+                                &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(id.clone()))))));
                             if is_rec {
                                 Expr::Let(
                                     id.clone(),
@@ -185,6 +184,51 @@ impl ProgramChecker {
                 let t2 = self.type_check_expr(e2, t_context, v_context)?;
                 self.type_check_bop(t1, t2, *op)
             }
+            Expr::UnOp(UOpcode::Neg, e) => {
+                let t = self.type_check_expr(e, t_context, v_context)?;
+                match t {
+                    Type::Int => Ok(Type::Int),
+                    Type::Float => Ok(Type::Float),
+                    t => Err(TypeError::ImproperType("Int or Float".into(), format!("{:?}", t)).into())
+                }
+            }
+            Expr::UnOp(UOpcode::Not, e) => {
+                let t = self.type_check_expr(e, t_context, v_context)?;
+                match t {
+                    Type::Bool => Ok(Type::Int),
+                    Type::Float => Ok(Type::Float),
+                    t => Err(TypeError::ImproperType("Bool".into(), format!("{:?}", t)).into())
+                }
+            }
+            Expr::Delay(e) => {
+                let mut context = v_context.clone();
+                context.terms.push(VarTerm::Tick);
+                Ok(Type::Delay(Box::new(self.type_check_expr(e, t_context, context)?)))
+            }
+            Expr::Stable(e) => {
+                let context = v_context.stable(&self.type_decs)?;
+                Ok(Type::Stable(Box::new(self.type_check_expr(e, t_context, context)?)))
+            }
+            Expr::Adv(e) => {
+                let last_tick = v_context.ticks.last();
+                let (terms, ticks) = match last_tick {
+                    None => return Err(InvalidExprError::ImproperAdvExpr.into()),
+                    Some(i) => (v_context.terms.split_at(*i).0.to_vec(),
+                    v_context.ticks.split_at(v_context.ticks.len() - 1).0.to_vec())
+                };
+
+                let context = VarContext { terms, ticks };
+
+                match self.type_check_expr(e, t_context, context)? {
+                    Type::Delay(t) => Ok(*t),
+                    t => Err(TypeError::ImproperType("Delay".into(), format!("{:?}", t)).into())
+                }
+            }
+            Expr::Unbox(e) => match self.type_check_expr(e, t_context, v_context)? {
+                Type::Stable(t) => Ok(*t),
+                t => Err(TypeError::ImproperType("Stable".into(), format!("{:?}", t)).into())
+            }
+            
             _ => todo!(),
         }
     }

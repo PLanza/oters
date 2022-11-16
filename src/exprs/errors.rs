@@ -15,4 +15,6 @@ pub enum InvalidExprError {
     InvalidTopLevelExpr(String),
     #[error("Cannot use operator {0} as a binary operator.")]
     InvalidBinaryOperator(String),
+    #[error("Adv expressions must always be inside Delay expressions")]
+    ImproperAdvExpr,
 }
