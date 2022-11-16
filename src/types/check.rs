@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use super::errors::*;
-use super::{Type, TypeContext, VarContext};
-use crate::parser::ast::{Expr, Opcode, Program};
+use super::{Type, TypeContext, TypeError};
+use crate::parser::ast::{PExpr, Program};
+use crate::exprs::{VarContext, InvalidExprError, Expr, BOpcode, UOpcode};
 
 use anyhow::Result;
 
@@ -21,13 +21,14 @@ impl ProgramChecker {
             variant_map: HashMap::new(),
         }
     }
+
     pub fn type_check_program(&mut self, program: &Program) -> Result<()> {
         for expr in program {
             let mut type_context = TypeContext::new();
 
             match expr.as_ref() {
                 // Type Aliases
-                Expr::TypeDef(t_id, params, t) => {
+                PExpr::TypeDef(t_id, params, t) => {
                     // The type being aliased
                     let t = if params.is_empty() {
                         t.clone().to_type(type_context.clone(), &self.type_decs)?
@@ -48,7 +49,7 @@ impl ProgramChecker {
                     // Add it to the type declarations
                     self.type_decs.insert(t_id.clone(), t);
                 }
-                Expr::EnumDef(id, params, ts) => {
+                PExpr::EnumDef(id, params, ts) => {
                     // Extend type_context to convert generic args safely
                     if !params.is_empty() {
                         type_context.extend(&mut params.clone());
@@ -87,7 +88,7 @@ impl ProgramChecker {
                         self.variant_map.insert(s.clone(), id.clone());
                     }
                 }
-                Expr::StructDef(id, params, ts) => {
+                PExpr::StructDef(id, params, ts) => {
                     // Extend type_context to convert generic args safely
                     if !params.is_empty() {
                         type_context.extend(&mut params.clone());
@@ -116,14 +117,37 @@ impl ProgramChecker {
                     // Add struct to the type declarations
                     self.type_decs.insert(id.clone(), t);
                 }
-                Expr::Let(id, params, expr) => {
+                PExpr::Let(id, params, expr) => {
                     // Extend type_context to safely type check the expression
                     if !params.is_empty() {
                         type_context.extend(&mut params.clone());
                     }
 
+                    // Translate from parsed expression to language expressions 
+                    let e = match expr.clone().to_expr(&type_context, &self.type_decs)? {
+                        // Recursive functions are translated to fix points to ensure guarded recursion
+                        Expr::Fn(ts, fn_e) => {
+                            let (is_rec, rec_e) = fn_e.clone().substitute(&id, 
+                                &Expr::UnOp(UOpcode::Adv, Box::new(Expr::UnOp(UOpcode::Unbox, Box::new(
+                                                Expr::Var(id.clone()))))));
+                            if is_rec {
+                                Expr::Let(
+                                    id.clone(),
+                                    Box::new(Expr::Fix(id.clone(), Box::new(Expr::Fn(ts, Box::new(rec_e))))
+                                    )) 
+                            } else {
+                                Expr::Let(
+                                    id.clone(),
+                                    Box::new(Expr::Fn(ts, fn_e))
+                                )
+                            }
+                        }
+                        e => Expr::Let(id.clone(), Box::new(e))
+                    };
+
+
                     // Type check the expression
-                    let t = self.type_check_expr(expr, type_context.clone(), VarContext::new())?;
+                    let t = self.type_check_expr(&e, type_context.clone(), VarContext::new())?;
                     let t = if params.is_empty() {
                         t
                     } else {
@@ -151,7 +175,7 @@ impl ProgramChecker {
         v_context: VarContext,
     ) -> Result<Type> {
         match expr {
-            Expr::True | Expr::False => Ok(Type::Bool),
+            Expr::Bool(_) => Ok(Type::Bool),
             Expr::Int(_) => Ok(Type::Int),
             Expr::Float(_) => Ok(Type::Float),
             Expr::String(_) => Ok(Type::String),
@@ -165,8 +189,8 @@ impl ProgramChecker {
         }
     }
 
-    fn type_check_bop(&self, type_1: Type, type_2: Type, op: Opcode) -> Result<Type> {
-        use Opcode::*;
+    fn type_check_bop(&self, type_1: Type, type_2: Type, op: BOpcode) -> Result<Type> {
+        use BOpcode::*;
         match (type_1, op, type_2) {
             (Type::Int, Mul, Type::Int)
             | (Type::Int, Div, Type::Int)
@@ -204,8 +228,10 @@ impl ProgramChecker {
                     Err(TypeError::ImproperType(format!("{:?}", list_t), format!("{:?}", t)).into())
                 }
             }
-            (_, Stream, _) => todo!(),
-            (_, op, _) => Err(InvalidExprError::InvalidBinaryOperator(format!("{:?}", op)).into()),
+            (t1, Cons, t2) => {
+                Err(TypeError::ImproperType(format!("{:?} List", t1), format!("{:?}", t2)).into())
+            }
+
         }
     }
 }

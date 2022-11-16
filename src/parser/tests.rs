@@ -5,8 +5,8 @@ use super::oters;
 use std::boxed::Box;
 
 #[cfg(test)]
-fn values() -> Vec<(String, Box<super::ast::Expr>)> {
-    use super::ast::Expr::*;
+fn values() -> Vec<(String, Box<super::ast::PExpr>)> {
+    use super::ast::PExpr::*;
     vec![
         ("true".to_string(), Box::new(True)),
         ("false".to_string(), Box::new(False)),
@@ -42,7 +42,7 @@ fn test_values() {
 }
 
 #[cfg(test)]
-fn unops() -> Vec<(String, Box<super::ast::Expr>)> {
+fn unops() -> Vec<(String, Box<super::ast::PExpr>)> {
     use super::ast::Opcode::*;
     let unops = vec![
         ("~".to_string(), Neg),
@@ -59,7 +59,7 @@ fn unops() -> Vec<(String, Box<super::ast::Expr>)> {
 
     for op in unops {
         for v in values() {
-            use super::ast::Expr::UnOp;
+            use super::ast::PExpr::UnOp;
             let code = format!("{}{}", op.0, v.0);
 
             let expr = std::boxed::Box::new(UnOp(op.1, v.1));
@@ -82,7 +82,7 @@ fn test_unops() {
 }
 
 #[cfg(test)]
-fn binops() -> Vec<(String, Box<super::ast::Expr>)> {
+fn binops() -> Vec<(String, Box<super::ast::PExpr>)> {
     use super::ast::Opcode::*;
     let binops = vec![
         (" + ".to_string(), Add),
@@ -103,7 +103,7 @@ fn binops() -> Vec<(String, Box<super::ast::Expr>)> {
     for op in binops {
         for v1 in unops() {
             for v2 in unops() {
-                use super::ast::Expr::BinOp;
+                use super::ast::PExpr::BinOp;
                 let code = format!("{}{}{}", v1.0, op.0, v2.0);
 
                 let expr = std::boxed::Box::new(BinOp(v1.1.clone(), op.1, v2.1));
@@ -127,8 +127,8 @@ fn test_binops() {
 }
 
 #[cfg(test)]
-fn struct_val() -> (String, Box<super::ast::Expr>) {
-    use super::ast::Expr::StructExpr;
+fn struct_val() -> (String, Box<super::ast::PExpr>) {
+    use super::ast::PExpr::StructExpr;
 
     let mut code = "MyStruct { ".to_string();
     let mut struct_vec = Vec::new();
@@ -161,8 +161,8 @@ fn test_struct_val() {
 }
 
 #[cfg(test)]
-fn tuple() -> (String, Box<super::ast::Expr>) {
-    use super::ast::Expr::Tuple;
+fn tuple() -> (String, Box<super::ast::PExpr>) {
+    use super::ast::PExpr::Tuple;
 
     let mut code = "(".to_string();
     let mut tuple_vec = Vec::new();
@@ -189,8 +189,8 @@ fn test_tuple() {
 }
 
 #[cfg(test)]
-fn list() -> (String, Box<super::ast::Expr>) {
-    use super::ast::Expr::List;
+fn list() -> (String, Box<super::ast::PExpr>) {
+    use super::ast::PExpr::List;
 
     let mut code = "[".to_string();
     let mut list_vec = Vec::new();
@@ -402,7 +402,7 @@ fn types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
 
 #[test]
 fn test_type_alias() {
-    use super::ast::Expr::TypeDef;
+    use super::ast::PExpr::TypeDef;
 
     let params = vec![(true, "A".to_string()), (false, "B".to_string())];
 
@@ -421,7 +421,7 @@ fn test_type_alias() {
 
 #[test]
 fn test_struct_def() {
-    use super::ast::Expr::StructDef;
+    use super::ast::PExpr::StructDef;
 
     let params = vec![(true, "A".to_string()), (false, "B".to_string())];
 
@@ -446,7 +446,7 @@ fn test_struct_def() {
 
 #[test]
 fn test_enum_def() {
-    use super::ast::Expr::EnumDef;
+    use super::ast::PExpr::EnumDef;
 
     let params = vec![(true, "A".to_string()), (false, "B".to_string())];
 
@@ -475,8 +475,8 @@ fn test_enum_def() {
 }
 
 #[cfg(test)]
-fn ifs() -> Vec<(String, Box<super::ast::Expr>)> {
-    use super::ast::Expr::If;
+fn ifs() -> Vec<(String, Box<super::ast::PExpr>)> {
+    use super::ast::PExpr::If;
 
     let mut exprs = binops();
     exprs.append(&mut unops());
@@ -518,8 +518,8 @@ fn test_if_exprs() {
 }
 
 #[cfg(test)]
-fn block_expr() -> (String, Box<super::ast::Expr>) {
-    use super::ast::Expr::Block;
+fn block_expr() -> (String, Box<super::ast::PExpr>) {
+    use super::ast::PExpr::Block;
 
     let mut exprs = binops();
     exprs.append(&mut unops());
@@ -554,8 +554,8 @@ fn test_block_expr() {
 }
 
 #[cfg(test)]
-fn functions() -> Vec<(String, Box<super::ast::Expr>)> {
-    use super::ast::Expr::Fn;
+fn functions() -> Vec<(String, Box<super::ast::PExpr>)> {
+    use super::ast::PExpr::Fn;
 
     let mut exprs = binops();
     exprs.append(&mut unops());
@@ -590,8 +590,8 @@ fn test_fn_exprs() {
 }
 
 #[cfg(test)]
-fn fix_points() -> Vec<(String, Box<super::ast::Expr>)> {
-    use super::ast::Expr::Fix;
+fn fix_points() -> Vec<(String, Box<super::ast::PExpr>)> {
+    use super::ast::PExpr::Fix;
 
     let mut exprs = binops();
     exprs.append(&mut unops());
@@ -623,8 +623,8 @@ fn test_fix_exprs() {
 }
 
 #[cfg(test)]
-fn variant_exprs() -> Vec<(String, Box<super::ast::Expr>)> {
-    use super::ast::Expr::Variant;
+fn variant_exprs() -> Vec<(String, Box<super::ast::PExpr>)> {
+    use super::ast::PExpr::Variant;
 
     let mut exprs = binops();
     exprs.append(&mut unops());

@@ -1,34 +1,35 @@
-pub type Program = Vec<Box<Expr>>;
+pub type Program = Vec<Box<PExpr>>;
 
 type GenericParams = Vec<(bool, String)>; // Each parameter is a pair of the parameter name and a boolean marking whether the parameter is stable or not
 
+// The parsed expressions of the grammar, need to translated into syntax::Exprs
 #[derive(Debug, PartialEq, Clone)]
-pub enum Expr {
+pub enum PExpr {
     True,
     False,
     Int(i64),
     Float(f64),
     String(String),
     Unit,
-    BinOp(Box<Expr>, Opcode, Box<Expr>),
-    UnOp(Opcode, Box<Expr>),
-    List(Vec<Box<Expr>>),
-    StructExpr(String, Vec<(String, Box<Expr>)>),
-    Tuple(Vec<Box<Expr>>),
-    Fn(Vec<(String, Box<TypeExpr>)>, Box<Expr>),
-    Fix(String, Box<Expr>), // From Patrick Bahr's Rattus
-    If(Box<Expr>, Box<Expr>, Box<Expr>),
-    Block(Vec<Box<Expr>>),
-    App(Box<Expr>, Box<Expr>),
-    ProjTuple(Box<Expr>, i64),
-    ProjStruct(Box<Expr>, String),
-    Variant(String, Option<Box<Expr>>),
-    Match(Box<Expr>, Vec<(Box<Pattern>, Box<Expr>)>),
+    BinOp(Box<PExpr>, Opcode, Box<PExpr>),
+    UnOp(Opcode, Box<PExpr>),
+    List(Vec<Box<PExpr>>),
+    StructExpr(String, Vec<(String, Box<PExpr>)>),
+    Tuple(Vec<Box<PExpr>>),
+    Fn(Vec<(String, Box<TypeExpr>)>, Box<PExpr>),
+    Fix(String, Box<PExpr>), // From Patrick Bahr's Rattus
+    If(Box<PExpr>, Box<PExpr>, Box<PExpr>),
+    Block(Vec<Box<PExpr>>),
+    App(Box<PExpr>, Box<PExpr>),
+    ProjTuple(Box<PExpr>, i64),
+    ProjStruct(Box<PExpr>, String),
+    Variant(String, Option<Box<PExpr>>),
+    Match(Box<PExpr>, Vec<(Box<Pattern>, Box<PExpr>)>),
     Var(String),
     TypeDef(String, GenericParams, Box<TypeExpr>), // Type Alias with Generic Parameters and defined type
     StructDef(String, GenericParams, Vec<(String, Box<TypeExpr>)>), // Struct with generic parameters
     EnumDef(String, GenericParams, Vec<(String, Option<Box<TypeExpr>>)>), // Enum with generic parameters
-    Let(String, GenericParams, Box<Expr>), // Let generic parameters for binding with functions
+    Let(String, GenericParams, Box<PExpr>), // Let generic parameters for binding with functions
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

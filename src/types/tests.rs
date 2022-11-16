@@ -4,8 +4,9 @@ use std::collections::HashMap;
 #[test]
 fn test_stable_context() {
     let type_decs = HashMap::new();
-    use super::{
-        Type, VarContext,
+    use super::Type;
+    use crate::exprs::{
+        VarContext,
         VarTerm::{self, Var},
     };
 

@@ -3,7 +3,7 @@ mod errors;
 mod tests;
 
 use crate::parser::ast::TypeExpr;
-use errors::TypeError;
+pub use errors::TypeError;
 
 use std::collections::HashMap;
 
@@ -30,18 +30,7 @@ pub enum Type {
     Struct(HashMap<String, Box<Type>>), // A map from the struct fields to their respective type
     Enum(HashMap<String, Option<Box<Type>>>), // A map from each variant constructor to an Option
     App(Box<Type>, Vec<Box<Type>>), // A type applied to a generic (e.g. Stream<int> => App(Stream, int))
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum VarTerm {
-    Tick,
-    Var(String, Type),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct VarContext {
-    terms: Vec<VarTerm>,
-    ticks: Vec<usize>, // Locations of ticks within the context
+    User(String),                   // The name of an Enum, Struct or Type alias
 }
 
 #[derive(Clone)]
@@ -64,7 +53,7 @@ impl Type {
             Delay(t_) => Delay(Box::new(t_.substitute(v, t))),
             Stable(t_) => Stable(Box::new(t_.substitute(v, t))),
             Fix(alpha, t_) => Fix(alpha.clone(), Box::new(t_.substitute(v, t))),
-            FixVar(..) => self.clone(),
+            FixVar(_) => self.clone(),
             Generic(..) => !unreachable!("Can't have nested Generic Types"),
             GenericVar(.., id) => {
                 if id == v {
@@ -95,6 +84,7 @@ impl Type {
                     .map(|t_| Box::new(t_.substitute(v, t)))
                     .collect(),
             ),
+            User(_) => self.clone(),
         }
     }
 
@@ -159,14 +149,22 @@ impl Type {
                             .is_stable(t_decs)?)
                     }
                 }
+                User(id) => match t_decs.get(id) {
+                    Some(t) => App(Box::new(t.clone()), args.clone()).is_stable(t_decs),
+                    None => Err(TypeError::UserTypeNotFound(id.clone()).into()),
+                },
                 _ => Err(TypeError::ImproperTypeArguments.into()),
+            },
+            User(id) => match t_decs.get(id) {
+                Some(t) => t.clone().is_stable(t_decs),
+                None => Err(TypeError::UserTypeNotFound(id.clone()).into()),
             },
         }
     }
 }
 
 impl TypeExpr {
-    fn to_type(self, t_context: TypeContext, t_decs: &HashMap<String, Type>) -> Result<Type> {
+    pub fn to_type(self, t_context: TypeContext, t_decs: &HashMap<String, Type>) -> Result<Type> {
         use Type::*;
         use TypeExpr::*;
         match self {
@@ -203,11 +201,11 @@ impl TypeExpr {
 
                 match t_decs.get(&id) {
                     // Find the user type in the type declarations
-                    Some(t) => {
+                    Some(_) => {
                         if v.is_empty() {
-                            Ok(t.clone())
+                            Ok(User(id))
                         } else {
-                            Ok(App(Box::new(t.clone()), args))
+                            Ok(App(Box::new(User(id)), args))
                         }
                     }
                     None => Err(TypeError::UserTypeNotFound(id).into()),
@@ -225,15 +223,10 @@ impl TypeExpr {
     }
 }
 
-impl VarContext {
-    pub fn new() -> Self {
-        Self {
-            terms: Vec::new(),
-            ticks: Vec::new(),
-        }
-    }
-
+impl crate::exprs::VarContext {
     pub fn stable(&self, t_decs: &HashMap<String, Type>) -> Result<Self> {
+        use crate::exprs::VarTerm;
+
         let mut terms = Vec::new();
         for term in &self.terms {
             match term {
@@ -328,7 +321,16 @@ impl TypeContext {
                     }
                     self.well_formed(&Generic(params.clone(), t.clone()), t_decs)
                 }
+                User(id) => match t_decs.get(id) {
+                    Some(t) => self.well_formed(&App(Box::new(t.clone()), v.clone()), t_decs),
+                    None => Err(TypeError::UserTypeNotFound(id.clone()).into()),
+                },
+
                 _ => Err(TypeError::ImproperTypeArguments.into()),
+            },
+            User(id) => match t_decs.get(id) {
+                Some(t) => self.well_formed(t, t_decs),
+                None => Err(TypeError::UserTypeNotFound(id.clone()).into()),
             },
         }
     }

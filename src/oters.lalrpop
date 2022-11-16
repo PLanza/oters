@@ -1,4 +1,4 @@
-use crate::parser::ast::{Expr, Opcode, TypeExpr, Pattern};
+use crate::parser::ast::{PExpr, Opcode, TypeExpr, Pattern};
 
 use std::str::FromStr;
 
@@ -165,90 +165,90 @@ PrefixOp: Opcode = {
 // Lowest precedence at the top
 
 // Right associative 
-OrExpr: Box<Expr> = {
-  <e1: AndExpr> "||" <e2: OrExpr> => Box::new(Expr::BinOp(e1, Opcode::Or, e2)),
+OrExpr: Box<PExpr> = {
+  <e1: AndExpr> "||" <e2: OrExpr> => Box::new(PExpr::BinOp(e1, Opcode::Or, e2)),
   AndExpr
 };
 
 // Right associative 
-AndExpr: Box<Expr> = {
-  <e1: Comp> "&&" <e2: AndExpr> => Box::new(Expr::BinOp(e1, Opcode::And, e2)),
+AndExpr: Box<PExpr> = {
+  <e1: Comp> "&&" <e2: AndExpr> => Box::new(PExpr::BinOp(e1, Opcode::And, e2)),
   Comp
 };
 
 // Left associative 
-Comp: Box<Expr> = {
-  Comp CompOp ConsStream => Box::new(Expr::BinOp(<>)),
+Comp: Box<PExpr> = {
+  Comp CompOp ConsStream => Box::new(PExpr::BinOp(<>)),
   ConsStream
 };
 
 // Right associative 
-ConsStream: Box<Expr> = {
-  AddSub ConsStreamOp ConsStream => Box::new(Expr::BinOp(<>)),
+ConsStream: Box<PExpr> = {
+  AddSub ConsStreamOp ConsStream => Box::new(PExpr::BinOp(<>)),
   AddSub
 };
 
 // Left associative 
-AddSub: Box<Expr> = {
-  AddSub AddSubOp MulDivMod => Box::new(Expr::BinOp(<>)),
+AddSub: Box<PExpr> = {
+  AddSub AddSubOp MulDivMod => Box::new(PExpr::BinOp(<>)),
   MulDivMod
 };
 
 // Left associative 
-MulDivMod: Box<Expr> = {
-  MulDivMod MulDivModOp AppExpr => Box::new(Expr::BinOp(<>)),
+MulDivMod: Box<PExpr> = {
+  MulDivMod MulDivModOp AppExpr => Box::new(PExpr::BinOp(<>)),
   AppExpr
 };
 
 // Left associative 
-AppExpr: Box<Expr> = {
-  <AppExpr> <VariantStructExpr> => Box::new(Expr::App(<>)),
+AppExpr: Box<PExpr> = {
+  <AppExpr> <VariantStructExpr> => Box::new(PExpr::App(<>)),
   VariantStructExpr,
 };
 
-VariantStructExpr: Box<Expr> = {
-  <s: UpperId> <e: VariantStructExpr> => Box::new(Expr::Variant(s, Some(e))),
-  <s: UpperId> <f: Fields<Expr>> => Box::new(Expr::StructExpr(s, f)), 
+VariantStructExpr: Box<PExpr> = {
+  <s: UpperId> <e: VariantStructExpr> => Box::new(PExpr::Variant(s, Some(e))),
+  <s: UpperId> <f: Fields<Expr>> => Box::new(PExpr::StructExpr(s, f)), 
   DotExpr
 }
 
 // Left associative 
-DotExpr: Box<Expr> = {
-  <DotExpr> "." <Int> => Box::new(Expr::ProjTuple(<>)),
-  <DotExpr> "." <LowerId> => Box::new(Expr::ProjStruct(<>)),
+DotExpr: Box<PExpr> = {
+  <DotExpr> "." <Int> => Box::new(PExpr::ProjTuple(<>)),
+  <DotExpr> "." <LowerId> => Box::new(PExpr::ProjStruct(<>)),
   Prefix
 };
 
-Prefix: Box<Expr> = {
-  PrefixOp Prefix => Box::new(Expr::UnOp(<>)),
+Prefix: Box<PExpr> = {
+  PrefixOp Prefix => Box::new(PExpr::UnOp(<>)),
   Term,
 };
 
 // -------------------- Terms -------------------- 
 // The simplest expressions
 
-ListTerm: Box<Expr> = {
-  "[]" => Box::new(Expr::List(Vec::new())),
-  "[" <v: Comma<Expr>> "]" => Box::new(Expr::List(v)),
+ListTerm: Box<PExpr> = {
+  "[]" => Box::new(PExpr::List(Vec::new())),
+  "[" <v: Comma<Expr>> "]" => Box::new(PExpr::List(v)),
 };
 
-TupleTerm: Box<Expr> = {
+TupleTerm: Box<PExpr> = {
   "(" <e: Expr> "," <mut v: Comma<Expr>> ")" => {
     v.insert(0, e);
-    Box::new(Expr::Tuple(v))
+    Box::new(PExpr::Tuple(v))
   }
 };
 
-Term: Box<Expr> = { 
-  True => Box::new(Expr::True),
-  False => Box::new(Expr::False),
-  Int => Box::new(Expr::Int(<>)),
-  Float => Box::new(Expr::Float(<>)),
-  String => Box::new(Expr::String(<>)),
-  Unit => Box::new(Expr::Unit),
+Term: Box<PExpr> = { 
+  True => Box::new(PExpr::True),
+  False => Box::new(PExpr::False),
+  Int => Box::new(PExpr::Int(<>)),
+  Float => Box::new(PExpr::Float(<>)),
+  String => Box::new(PExpr::String(<>)),
+  Unit => Box::new(PExpr::Unit),
   ListTerm,
   TupleTerm,
-  LowerId => Box::new(Expr::Var(<>)),
+  LowerId => Box::new(PExpr::Var(<>)),
   "(" <Expr> ")",
 };
 
@@ -324,20 +324,20 @@ Pattern: Box<Pattern> = OrPattern;
 
 OpExpr = OrExpr;
 
-BlockTerm: Box<Expr> = {
-  "let" <i: LowerId> "=" <e: Expr> ";" => Box::new(Expr::Let(i, Vec::new(), e)),
+BlockTerm: Box<PExpr> = {
+  "let" <i: LowerId> "=" <e: Expr> ";" => Box::new(PExpr::Let(i, Vec::new(), e)),
   <e: Expr> ";" => e
 };
 
-BlockExpr: Box<Expr> =  {
+BlockExpr: Box<PExpr> =  {
   "{" <mut v: BlockTerm*> <r: Expr> "}" => {
     v.push(r);
-    Box::new(Expr::Block(v))
+    Box::new(PExpr::Block(v))
   }
 };
 
-IfExpr: Box<Expr> = {
-  "if" <e1: Expr> "then" <e2: Expr> "else" <e3: Expr> => Box::new(Expr::If(e1, e2, e3))
+IfExpr: Box<PExpr> = {
+  "if" <e1: Expr> "then" <e2: Expr> "else" <e3: Expr> => Box::new(PExpr::If(e1, e2, e3))
 };
 
 FnArg: (String, Box<TypeExpr>) = {
@@ -349,38 +349,38 @@ FnArgList: Vec<(String, Box<TypeExpr>)> = {
   <v: FnArg+> => v,
 };
 
-FnExpr: Box<Expr> = {
-  "fn" Unit "->" <e: Expr> => Box::new(Expr::Fn(vec![("_".to_string(), Box::new(TypeExpr::TEUnit))], e)),
-  "fn" <a: FnArgList> "->" <e: Expr> => Box::new(Expr::Fn(a, e)),
+FnExpr: Box<PExpr> = {
+  "fn" Unit "->" <e: Expr> => Box::new(PExpr::Fn(vec![("_".to_string(), Box::new(TypeExpr::TEUnit))], e)),
+  "fn" <a: FnArgList> "->" <e: Expr> => Box::new(PExpr::Fn(a, e)),
 };
 
-FixExpr: Box<Expr> = {
-  "fix" <LowerId> "->" <Expr> => Box::new(Expr::Fix(<>)),
+FixExpr: Box<PExpr> = {
+  "fix" <LowerId> "->" <Expr> => Box::new(PExpr::Fix(<>)),
 };
 
-MatchItem: (Box<Pattern>, Box<Expr>) = {
+MatchItem: (Box<Pattern>, Box<PExpr>) = {
   <Pattern> "=>" <Expr> => (<>),
 };
 
-MatchExpr: Box<Expr> = {
-  "match" <e: Expr> "with" "{" <v: Comma<MatchItem>> "}" => Box::new(Expr::Match(e, v))
+MatchExpr: Box<PExpr> = {
+  "match" <e: Expr> "with" "{" <v: Comma<MatchItem>> "}" => Box::new(PExpr::Match(e, v))
 };
 
-pub Expr: Box<Expr> = {
+pub Expr: Box<PExpr> = {
   OpExpr,
   BlockExpr,
   IfExpr,
   FnExpr,
   FixExpr,
   MatchExpr,
-  <UpperId> => Box::new(Expr::Variant(<>, None)), 
+  <UpperId> => Box::new(PExpr::Variant(<>, None)), 
 };
 
 // -------------------- Top-Level Expressions -------------------- 
 
-LetExpr: Box<Expr> = {
-  "let" <i: LowerId> "=" <e: Expr> => Box::new(Expr::Let(i, Vec::new(), e)),
-  "let" <i: LowerId> <p: GenericParams> "=" <e: Expr> => Box::new(Expr::Let(i, p, e))
+LetExpr: Box<PExpr> = {
+  "let" <i: LowerId> "=" <e: Expr> => Box::new(PExpr::Let(i, Vec::new(), e)),
+  "let" <i: LowerId> <p: GenericParams> "=" <e: Expr> => Box::new(PExpr::Let(i, p, e))
 };
 
 GenericParam: (bool, String) = {
@@ -392,34 +392,34 @@ GenericParams: Vec<(bool, String)> = {
   "<" <Comma<GenericParam>> ">"
 };
 
-TypeExpr: Box<Expr> = {
-  "type" <i: UpperId> "=" <t: Type> => Box::new(Expr::TypeDef(i, Vec::new(), t)),
-  "type" <i: UpperId> <v: GenericParams> "=" <t: Type> => Box::new(Expr::TypeDef(i, v, t)),
+TypeExpr: Box<PExpr> = {
+  "type" <i: UpperId> "=" <t: Type> => Box::new(PExpr::TypeDef(i, Vec::new(), t)),
+  "type" <i: UpperId> <v: GenericParams> "=" <t: Type> => Box::new(PExpr::TypeDef(i, v, t)),
 };
 
 VariantItem: (String, Option<Box<TypeExpr>>) = {
   <i: UpperId> <t: Type?> => (i, t),
 };
 
-StructExpr: Box<Expr> = {
-  "struct" <i: UpperId> <f: Fields<Type>> => Box::new(Expr::StructDef(i, Vec::new(), f)),
+StructExpr: Box<PExpr> = {
+  "struct" <i: UpperId> <f: Fields<Type>> => Box::new(PExpr::StructDef(i, Vec::new(), f)),
   "struct" <i: UpperId> <p: GenericParams> <f: Fields<Type>> => 
-    Box::new(Expr::StructDef(i, p, f)),
+    Box::new(PExpr::StructDef(i, p, f)),
 };
 
-EnumExpr: Box<Expr> = {
-  "enum" <i: UpperId> "{" <v: Comma<VariantItem>> "}" => Box::new(Expr::EnumDef(i, Vec::new(), v)),
+EnumExpr: Box<PExpr> = {
+  "enum" <i: UpperId> "{" <v: Comma<VariantItem>> "}" => Box::new(PExpr::EnumDef(i, Vec::new(), v)),
   "enum" <i: UpperId> <p: GenericParams> "{" <v: Comma<VariantItem>> "}" => 
-    Box::new(Expr::EnumDef(i, p, v)),
+    Box::new(PExpr::EnumDef(i, p, v)),
 }
 
-pub Item: Box<Expr> = {
+pub Item: Box<PExpr> = {
   LetExpr,
   TypeExpr,
   EnumExpr,
   StructExpr,
 }
 
-pub Program: Vec<Box<Expr>> = {
+pub Program: Vec<Box<PExpr>> = {
   <Item*>
 }

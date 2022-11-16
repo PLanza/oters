@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 mod parser;
+mod exprs;
 mod types;
 
 use anyhow::Result;
