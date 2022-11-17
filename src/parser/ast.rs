@@ -16,8 +16,7 @@ pub enum PExpr {
     List(Vec<Box<PExpr>>),
     StructExpr(String, Vec<(String, Box<PExpr>)>),
     Tuple(Vec<Box<PExpr>>),
-    Fn(Vec<(String, Box<TypeExpr>)>, Box<PExpr>),
-    Fix(String, Box<PExpr>), // From Patrick Bahr's Rattus
+    Fn(Vec<String>, Box<PExpr>),
     If(Box<PExpr>, Box<PExpr>, Box<PExpr>),
     Block(Vec<Box<PExpr>>),
     App(Box<PExpr>, Box<PExpr>),
@@ -26,10 +25,10 @@ pub enum PExpr {
     Variant(String, Option<Box<PExpr>>),
     Match(Box<PExpr>, Vec<(Box<Pattern>, Box<PExpr>)>),
     Var(String),
-    TypeDef(String, GenericParams, Box<TypeExpr>), // Type Alias with Generic Parameters and defined type
-    StructDef(String, GenericParams, Vec<(String, Box<TypeExpr>)>), // Struct with generic parameters
-    EnumDef(String, GenericParams, Vec<(String, Option<Box<TypeExpr>>)>), // Enum with generic parameters
-    Let(String, GenericParams, Box<PExpr>), // Let generic parameters for binding with functions
+    TypeDef(String, Vec<String>, Box<TypeExpr>), // Type Alias with Generic Parameters and defined type
+    StructDef(String, Vec<String>, Vec<(String, Box<TypeExpr>)>), // Struct with generic parameters
+    EnumDef(String, Vec<String>, Vec<(String, Option<Box<TypeExpr>>)>), // Enum with generic parameters
+    Let(String, Box<PExpr>), // Let generic parameters for binding with functions
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -68,10 +67,8 @@ pub enum TypeExpr {
     TEList(Box<TypeExpr>),
     TEUser(String, Vec<Box<TypeExpr>>), // Structs, Enums, Generics, and Type Aliases with their generic arguments
     TEFunction(Box<TypeExpr>, Box<TypeExpr>),
-    TEDelay(Box<TypeExpr>),       // From Patrick Bahr's Rattus
-    TEStable(Box<TypeExpr>),      // From Patrick Bahr's Rattus
-    TEFix(String, Box<TypeExpr>), // Fixed point argument and type expression as defined in Rattus
-    TEVar(String),                // A Fix type's variable
+    TEDelay(Box<TypeExpr>),  // From Patrick Bahr's Rattus
+    TEStable(Box<TypeExpr>), // From Patrick Bahr's Rattus
 }
 
 #[derive(Debug, PartialEq, Clone)]

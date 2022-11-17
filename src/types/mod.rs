@@ -217,8 +217,6 @@ impl TypeExpr {
             )),
             TEDelay(t) => Ok(Delay(Box::new(t.to_type(t_context, t_decs)?))),
             TEStable(t) => Ok(Stable(Box::new(t.to_type(t_context, t_decs)?))),
-            TEFix(alpha, t) => Ok(Fix(alpha, Box::new(t.to_type(t_context, t_decs)?))),
-            TEVar(alpha) => Ok(FixVar(alpha)),
         }
     }
 }

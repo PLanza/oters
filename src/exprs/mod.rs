@@ -137,9 +137,6 @@ impl PExpr {
 
                 Ok(Expr::Fn(t_args, Box::new(e.to_expr(t_context, t_decs)?)))
             }
-            PExpr::Fix(alpha, e) => {
-                Ok(Expr::Fix(alpha, Box::new(e.to_expr(t_context, t_decs)?)))
-            }
             PExpr::If(e1, e2, e3) => {
                 Ok(Expr::If(
                     Box::new(e1.to_expr(t_context, t_decs)?), 
