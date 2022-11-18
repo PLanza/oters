@@ -1,6 +1,6 @@
 //pub mod check;
 mod errors;
-//mod tests;
+mod tests;
 
 use crate::parser::ast::TypeExpr;
 pub use errors::TypeError;
@@ -22,7 +22,7 @@ pub enum Type {
     Delay(Box<Type>),
     Stable(Box<Type>),
     Fix(String, Box<Type>),
-    FixVar(String), // These have their own types
+    FixVar(String),             // These have their own types
     Generic(String, Box<Type>), // A pair of generic parameters with the type definition
     GenericVar(String),
     Struct(HashMap<String, Box<Type>>), // A map from the struct fields to their respective type
@@ -46,7 +46,11 @@ impl TypeContext {
 }
 
 impl Type {
-    pub fn from_texpr(t: TypeExpr, t_context: TypeContext, t_decs: &HashMap<String, Type>) -> Result<Type> {
+    pub fn from_texpr(
+        t: TypeExpr,
+        t_context: TypeContext,
+        t_decs: &HashMap<String, Type>,
+    ) -> Result<Type> {
         use Type::*;
         use TypeExpr::*;
         match t {
@@ -58,9 +62,11 @@ impl Type {
             TETuple(v) => {
                 let mut types = Vec::new();
                 for t_expr in v {
-                    types.push(Box::new(
-                        Type::from_texpr(*t_expr, t_context.clone(), t_decs)?,
-                    ));
+                    types.push(Box::new(Type::from_texpr(
+                        *t_expr,
+                        t_context.clone(),
+                        t_decs,
+                    )?));
                 }
                 Ok(Tuple(types))
             }
@@ -76,12 +82,17 @@ impl Type {
 
                 let mut t = match t_decs.get(&id) {
                     Some(t) => t.clone(),
-                    None => return Err(TypeError::UserTypeNotFound(id).into()), 
+                    None => return Err(TypeError::UserTypeNotFound(id).into()),
                 };
 
                 for t_expr in v {
                     match t {
-                        Generic(arg, t_) => t = t_.sub_generic(&arg, &Type::from_texpr(*t_expr, t_context.clone(), t_decs)?),
+                        Generic(arg, t_) => {
+                            t = t_.sub_generic(
+                                &arg,
+                                &Type::from_texpr(*t_expr, t_context.clone(), t_decs)?,
+                            )
+                        }
                         _ => return Err(TypeError::ImproperTypeArguments.into()),
                     }
                 }
@@ -97,11 +108,18 @@ impl Type {
         }
     }
 
-    pub fn from_typedef(id: String, params: Vec<String>, t: TypeExpr, t_decs: &HashMap<String, Type>) -> Result<Type> {
+    pub fn from_typedef(
+        id: String,
+        params: Vec<String>,
+        t: TypeExpr,
+        t_decs: &HashMap<String, Type>,
+    ) -> Result<Type> {
         let mut t_decs = t_decs.clone();
         t_decs.insert(id.clone(), Type::GenericVar(id.clone()));
 
-        let t_context = TypeContext { vars: params.clone() }; 
+        let t_context = TypeContext {
+            vars: params.clone(),
+        };
         let mut t = Type::from_texpr(t, t_context, &t_decs)?;
 
         for param in params.iter().rev() {
@@ -111,21 +129,31 @@ impl Type {
         let fix_var = format!("rec_{}", id);
         t = t.sub_delay(&id, &fix_var);
 
-        t = Type::Fix(fix_var, Box::new(t));       
+        t = Type::Fix(fix_var, Box::new(t));
 
         Ok(t)
     }
 
-    pub fn from_structdef(id: String, params: Vec<String>, fields: Vec<(String, Box<TypeExpr>)>, t_decs: &HashMap<String, Type>) -> Result<Type> {
+    pub fn from_structdef(
+        id: String,
+        params: Vec<String>,
+        fields: Vec<(String, Box<TypeExpr>)>,
+        t_decs: &HashMap<String, Type>,
+    ) -> Result<Type> {
         let mut t_decs = t_decs.clone();
         t_decs.insert(id.clone(), Type::GenericVar(id.clone()));
 
-        let t_context = TypeContext { vars: params.clone() }; 
+        let t_context = TypeContext {
+            vars: params.clone(),
+        };
 
         let mut field_map = HashMap::new();
 
         for (s, t) in fields {
-            field_map.insert(s, Box::new(Type::from_texpr(*t, t_context.clone(), &t_decs)?));
+            field_map.insert(
+                s,
+                Box::new(Type::from_texpr(*t, t_context.clone(), &t_decs)?),
+            );
         }
 
         let mut t = Type::Struct(field_map);
@@ -137,18 +165,29 @@ impl Type {
         Ok(t)
     }
 
-    pub fn from_enumdef(id: String, params: Vec<String>, variants: Vec<(String, Option<Box<TypeExpr>>)>, t_decs: &HashMap<String, Type>) -> Result<Type> {
+    pub fn from_enumdef(
+        id: String,
+        params: Vec<String>,
+        variants: Vec<(String, Option<Box<TypeExpr>>)>,
+        t_decs: &HashMap<String, Type>,
+    ) -> Result<Type> {
         let mut t_decs = t_decs.clone();
         t_decs.insert(id.clone(), Type::GenericVar(id.clone()));
 
-        let t_context = TypeContext { vars: params.clone() }; 
+        let t_context = TypeContext {
+            vars: params.clone(),
+        };
 
         let mut var_map = HashMap::new();
 
         for (s, o) in variants {
             let t = match o {
                 None => None,
-                Some(t_expr) => Some(Box::new(Type::from_texpr(*t_expr, t_context.clone(), &t_decs)?))
+                Some(t_expr) => Some(Box::new(Type::from_texpr(
+                    *t_expr,
+                    t_context.clone(),
+                    &t_decs,
+                )?)),
             };
             var_map.insert(s, t);
         }
@@ -166,29 +205,37 @@ impl Type {
         use Type::*;
         match self {
             Unit | Int | Float | String | Bool => self.clone(),
-            Tuple(ts) => Tuple(ts.iter().map(|t_| Box::new(t_.sub_delay(var, fix_var))).collect()),
+            Tuple(ts) => Tuple(
+                ts.iter()
+                    .map(|t_| Box::new(t_.sub_delay(var, fix_var)))
+                    .collect(),
+            ),
             List(t_) => List(Box::new(t_.sub_delay(var, fix_var))),
-            Function(t1, t2) => {
-                Function(Box::new(t1.sub_delay(var, fix_var)), Box::new(t2.sub_delay(var, fix_var)))
-            }
+            Function(t1, t2) => Function(
+                Box::new(t1.sub_delay(var, fix_var)),
+                Box::new(t2.sub_delay(var, fix_var)),
+            ),
             Delay(t) => match &**t {
-                GenericVar(id) => if id == var {
-                    FixVar(fix_var.clone())
-                } else {
-                    Delay(Box::new(t.sub_delay(var, fix_var))) 
+                GenericVar(id) => {
+                    if id == var {
+                        FixVar(fix_var.clone())
+                    } else {
+                        Delay(Box::new(t.sub_delay(var, fix_var)))
+                    }
                 }
-                _ => Delay(Box::new(t.sub_delay(var, fix_var))) 
-
-            } 
+                _ => Delay(Box::new(t.sub_delay(var, fix_var))),
+            },
             Stable(t_) => Stable(Box::new(t_.sub_delay(var, fix_var))),
             Fix(alpha, t_) => Fix(alpha.clone(), Box::new(t_.sub_delay(var, fix_var))),
             FixVar(_) => self.clone(),
-            Generic(arg, t_) => if arg == var {
-                // var is now a different bound variable
-                self.clone()
-            } else {
-                Generic(arg.clone(), Box::new(t_.sub_delay(var, fix_var)))
-            },
+            Generic(arg, t_) => {
+                if arg == var {
+                    // var is now a different bound variable
+                    self.clone()
+                } else {
+                    Generic(arg.clone(), Box::new(t_.sub_delay(var, fix_var)))
+                }
+            }
             GenericVar(_) => self.clone(),
             Struct(map) => Struct(
                 map.iter()
@@ -212,21 +259,29 @@ impl Type {
         use Type::*;
         match self {
             Unit | Int | Float | String | Bool => self.clone(),
-            Tuple(ts) => Tuple(ts.iter().map(|t_| Box::new(t_.sub_generic(var, t))).collect()),
+            Tuple(ts) => Tuple(
+                ts.iter()
+                    .map(|t_| Box::new(t_.sub_generic(var, t)))
+                    .collect(),
+            ),
             List(t_) => List(Box::new(t_.sub_generic(var, t))),
-            Function(t1, t2) => 
-                Function(Box::new(t1.sub_generic(var, t)), Box::new(t2.sub_generic(var, t))),
-            
+            Function(t1, t2) => Function(
+                Box::new(t1.sub_generic(var, t)),
+                Box::new(t2.sub_generic(var, t)),
+            ),
+
             Delay(t_) => Delay(Box::new(t_.sub_generic(var, t))),
             Stable(t_) => Stable(Box::new(t_.sub_generic(var, t))),
             Fix(alpha, t_) => Fix(alpha.clone(), Box::new(t_.sub_generic(var, t))),
             FixVar(_) => self.clone(),
-            Generic(arg, t_) => if arg == var {
-                // var is now a different bound variable
-                self.clone()
-            } else {
-                Generic(arg.clone(), Box::new(t_.sub_generic(var, t)))
-            },
+            Generic(arg, t_) => {
+                if arg == var {
+                    // var is now a different bound variable
+                    self.clone()
+                } else {
+                    Generic(arg.clone(), Box::new(t_.sub_generic(var, t)))
+                }
+            }
             GenericVar(id) => {
                 if id == var {
                     // Substitute if the GenericVar matches
@@ -253,30 +308,30 @@ impl Type {
         }
     }
 
-    pub fn well_formed(&self, t_context: TypeContext, t_decs: &HashMap<String, Type>) -> Result<()> {
+    pub fn well_formed(&self, t_context: TypeContext) -> Result<()> {
         use Type::*;
         match self {
             Unit | Int | Float | String | Bool => Ok(()), // All primitive types are well formed
             Tuple(v) => {
                 for t in v {
-                    t.well_formed(t_context.clone(), t_decs)?;
+                    t.well_formed(t_context.clone())?;
                 }
                 Ok(())
             }
-            List(t) => t.well_formed(t_context, t_decs),
+            List(t) => t.well_formed(t_context),
             Function(t1, t2) => {
-                t1.well_formed(t_context.clone(), t_decs)?;
-                t2.well_formed(t_context, t_decs)
+                t1.well_formed(t_context.clone())?;
+                t2.well_formed(t_context)
             }
-            Delay(t) => t.well_formed(t_context, t_decs),
-            Stable(t) => t.well_formed(t_context, t_decs),
+            Delay(t) => t.well_formed(t_context),
+            Stable(t) => t.well_formed(t_context),
             Fix(alpha, t) => {
                 let mut context = t_context.clone();
                 context.extend(alpha.clone());
 
-                t.well_formed(context, t_decs)
+                t.well_formed(context)
             }
-            // Fixed vars are lower case while generic vars are upper case 
+            // Fixed vars are lower case while generic vars are upper case
             FixVar(alpha) => {
                 // makes sure that the generic parameter has been declared
                 if t_context.vars.contains(alpha) {
@@ -287,7 +342,7 @@ impl Type {
             }
             Struct(m) => {
                 for (_, t) in m {
-                    t.well_formed(t_context.clone(), t_decs)?;
+                    t.well_formed(t_context.clone())?;
                 }
                 Ok(())
             }
@@ -295,7 +350,7 @@ impl Type {
                 for (_, o) in m {
                     match o {
                         None => (),
-                        Some(t) => t.well_formed(t_context.clone(), t_decs)?,
+                        Some(t) => t.well_formed(t_context.clone())?,
                     };
                 }
                 Ok(())
@@ -305,41 +360,40 @@ impl Type {
                 let mut context = t_context.clone();
                 context.extend(arg.clone());
 
-                t.well_formed(context, t_decs)
+                t.well_formed(context)
             }
             // makes sure that the generic parameter has been declared
-            GenericVar(s) => if t_context.vars.contains(s) {
+            GenericVar(s) => {
+                if t_context.vars.contains(s) {
                     Ok(())
                 } else {
                     Err(TypeError::GenericVariableNotFound(s.clone()).into())
+                }
             }
         }
     }
-}
 
-/*
-impl Type {
-    pub fn is_stable(&self, t_decs: &HashMap<String, Type>) -> Result<bool> {
+    pub fn is_stable(&self) -> Result<bool> {
         use self::Type::*;
         match self {
             Unit | Int | Float | String | Bool => Ok(true), // All primitive types are Stable
             Tuple(v) => {
                 let mut result = true;
                 for t in v {
-                    result = result && t.is_stable(t_decs)?;
+                    result = result && t.is_stable()?;
                 }
                 Ok(result)
             }
-            List(t) => t.is_stable(t_decs),
+            List(t) => t.is_stable(),
             Function(..) => Ok(false), // Functions can have temporal values in their closure
             Delay(..) => Ok(false),    // Delayed values are inherently temporal
             Stable(..) => Ok(true),    // Stable values wrap any type, making it atemporal
             Fix(..) => Ok(false),      // The fix point type argument is implictly a delay type
-            FixVar(..) => Ok(true),
+            FixVar(..) => Ok(false),
             Struct(m) => {
                 let mut result = true;
                 for (_, t) in m.iter() {
-                    result = result && t.is_stable(t_decs)?;
+                    result = result && t.is_stable()?;
                 }
                 Ok(result)
             }
@@ -348,7 +402,7 @@ impl Type {
                 let mut result = true;
                 for (_, o) in m.iter() {
                     let t_stable = match o {
-                        Some(t) => t.is_stable(t_decs)?,
+                        Some(t) => t.is_stable()?,
                         None => true,
                     };
 
@@ -356,41 +410,8 @@ impl Type {
                 }
                 Ok(result)
             }
-            Generic(params, t) => {
-                let params_stable = params.iter().fold(true, |mut acc, (b, _)| {
-                    acc = acc && *b;
-                    acc
-                });
-
-                Ok(params_stable && t.is_stable(t_decs)?)
-            }
-            GenericVar(b, _) => Ok(*b),
-            App(t, args) => match &**t {
-                Generic(params, t_) => {
-                    // To find if a type application is stable we have to perform the substitution
-                    let mut result = Unit;
-                    for (i, a) in args.iter().enumerate() {
-                        result = t_.substitute(&params[i].1, &a);
-                    }
-
-                    if params.len() == args.len() {
-                        result.is_stable(t_decs)
-                    } else {
-                        Ok(Generic(params[args.len()..].to_vec(), Box::new(result))
-                            .is_stable(t_decs)?)
-                    }
-                }
-                User(id) => match t_decs.get(id) {
-                    Some(t) => App(Box::new(t.clone()), args.clone()).is_stable(t_decs),
-                    None => Err(TypeError::UserTypeNotFound(id.clone()).into()),
-                },
-                _ => Err(TypeError::ImproperTypeArguments.into()),
-            },
-            User(id) => match t_decs.get(id) {
-                Some(t) => t.clone().is_stable(t_decs),
-                None => Err(TypeError::UserTypeNotFound(id.clone()).into()),
-            },
+            Generic(..) => Ok(false),
+            GenericVar(_) => Ok(false),
         }
     }
 }
-*/

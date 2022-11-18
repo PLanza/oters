@@ -1,9 +1,5 @@
-#[allow(unused_imports)]
-use std::collections::HashMap;
-
 #[test]
 fn test_stable_context() {
-    let type_decs = HashMap::new();
     use super::Type;
     use crate::exprs::{
         VarContext,
@@ -50,7 +46,7 @@ fn test_stable_context() {
         ticks: vec![],
     };
 
-    assert_eq!(context.stable(&type_decs).unwrap(), stable);
+    assert_eq!(context.stable().unwrap(), stable);
 }
 
 // Test substitution
