@@ -1,7 +1,7 @@
 mod errors;
 
 use crate::parser::ast::{Opcode, PExpr, Pattern};
-use crate::types::{Type, TypeContext};
+use crate::types::Type;
 
 use std::collections::HashMap;
 
@@ -39,16 +39,16 @@ pub enum Expr {
     Out(Box<Expr>),    // From Patrick Bahr's Rattus
     Into(Box<Expr>),   // From Patrick Bahr's Rattus
     List(Vec<Box<Expr>>),
-    Struct(String, Vec<(String, Box<Expr>)>),
     Tuple(Vec<Box<Expr>>),
-    Fn(Vec<(String, Type)>, Box<Expr>),
+    Struct(String, Vec<(String, Box<Expr>)>),
+    Variant(String, Option<Box<Expr>>),
+    Fn(String, Box<Expr>),
     Fix(String, Box<Expr>), // From Patrick Bahr's Rattus
     If(Box<Expr>, Box<Expr>, Box<Expr>),
-    Block(Vec<Box<Expr>>),
+    Seq(Box<Expr>, Box<Expr>),
     App(Box<Expr>, Box<Expr>),
     ProjTuple(Box<Expr>, i64),
     ProjStruct(Box<Expr>, String),
-    Variant(String, Option<Box<Expr>>),
     Match(Box<Expr>, Vec<(Pattern, Box<Expr>)>),
     Var(String),
     Let(String, Box<Expr>),
@@ -75,10 +75,10 @@ pub enum UOpcode {
     Not,
 }
 
-impl PExpr {
+impl Expr {
     // Type context and declarations only needed for the Fn expr and so a reference is sufficient
-    pub fn to_expr(self, t_context: &TypeContext, t_decs: &HashMap<String, Type>) -> Result<Expr> {
-        match self {
+    pub fn from_pexpr(pe: PExpr , t_decs: &HashMap<String, Type>) -> Result<Expr> {
+        match pe {
             PExpr::True => Ok(Expr::Bool(true)),
             PExpr::False => Ok(Expr::Bool(true)),
             PExpr::Int(i) => Ok(Expr::Int(i)),
@@ -88,27 +88,27 @@ impl PExpr {
             // Desugar e1 << e2 into Into (e1, e2)
             PExpr::BinOp(e1, Opcode::Stream, e2) => Ok(Expr::Into(
                 Box::new(Expr::Tuple(vec![
-                    Box::new(e1.to_expr(t_context, t_decs)?),
-                    Box::new(e2.to_expr(t_context, t_decs)?),
+                    Box::new(Expr::from_pexpr(*e1, t_decs)?),
+                    Box::new(Expr::from_pexpr(*e2, t_decs)?),
                 ])),
             )),
             PExpr::BinOp(e1, op, e2) => Ok(Expr::BinOp(
-                Box::new(e1.to_expr(t_context, t_decs)?), 
+                Box::new(Expr::from_pexpr(*e1, t_decs)?), 
                 op.to_bopcode(), 
-                Box::new(e2.to_expr(t_context, t_decs)?)
+                Box::new(Expr::from_pexpr(*e2, t_decs)?)
             )),
-            PExpr::UnOp(Opcode::Neg, e) => Ok(Expr::UnOp(UOpcode::Neg, Box::new(e.to_expr(t_context, t_decs)?))),
-            PExpr::UnOp(Opcode::Not, e) => Ok(Expr::UnOp(UOpcode::Neg, Box::new(e.to_expr(t_context, t_decs)?))),
-            PExpr::UnOp(Opcode::Delay, e) => Ok(Expr::Delay(Box::new(e.to_expr(t_context, t_decs)?))),
-            PExpr::UnOp(Opcode::Stable, e) => Ok(Expr::Stable(Box::new(e.to_expr(t_context, t_decs)?))),
-            PExpr::UnOp(Opcode::Adv, e) => Ok(Expr::Adv(Box::new(e.to_expr(t_context, t_decs)?))),
-            PExpr::UnOp(Opcode::Unbox, e) => Ok(Expr::Unbox(Box::new(e.to_expr(t_context, t_decs)?))),
-            PExpr::UnOp(Opcode::Into, e) => Ok(Expr::Into(Box::new(e.to_expr(t_context, t_decs)?))),
-            PExpr::UnOp(Opcode::Out, e) => Ok(Expr::Out(Box::new(e.to_expr(t_context, t_decs)?))),
+            PExpr::UnOp(Opcode::Neg, e) => Ok(Expr::UnOp(UOpcode::Neg, Box::new(Expr::from_pexpr(*e, t_decs)?))),
+            PExpr::UnOp(Opcode::Not, e) => Ok(Expr::UnOp(UOpcode::Neg, Box::new(Expr::from_pexpr(*e, t_decs)?))),
+            PExpr::UnOp(Opcode::Delay, e) => Ok(Expr::Delay(Box::new(Expr::from_pexpr(*e, t_decs)?))),
+            PExpr::UnOp(Opcode::Stable, e) => Ok(Expr::Stable(Box::new(Expr::from_pexpr(*e, t_decs)?))),
+            PExpr::UnOp(Opcode::Adv, e) => Ok(Expr::Adv(Box::new(Expr::from_pexpr(*e, t_decs)?))),
+            PExpr::UnOp(Opcode::Unbox, e) => Ok(Expr::Unbox(Box::new(Expr::from_pexpr(*e, t_decs)?))),
+            PExpr::UnOp(Opcode::Into, e) => Ok(Expr::Into(Box::new(Expr::from_pexpr(*e, t_decs)?))),
+            PExpr::UnOp(Opcode::Out, e) => Ok(Expr::Out(Box::new(Expr::from_pexpr(*e, t_decs)?))),
             PExpr::List(v) => {
                 let mut list = Vec::new();
                 for e in v {
-                    list.push(Box::new(e.to_expr(t_context, t_decs)?));
+                    list.push(Box::new(Expr::from_pexpr(*e, t_decs)?));
                 }
 
                 Ok(Expr::List(list))
@@ -116,7 +116,7 @@ impl PExpr {
             PExpr::StructExpr(id, v) => {
                 let mut fields = Vec::new();
                 for (f, e) in v {
-                    fields.push((f, Box::new(e.to_expr(t_context, t_decs)?)));
+                    fields.push((f, Box::new(Expr::from_pexpr(*e, t_decs)?)));
                 }
 
                 Ok(Expr::Struct(id, fields))
@@ -124,80 +124,86 @@ impl PExpr {
             PExpr::Tuple(v) => {
                 let mut tuple = Vec::new();
                 for e in v {
-                    tuple.push(Box::new(e.to_expr(t_context, t_decs)?));
+                    tuple.push(Box::new(Expr::from_pexpr(*e, t_decs)?));
                 }
 
                 Ok(Expr::Tuple(tuple))
             }
             PExpr::Fn(args, e) => {
-                let mut t_args = Vec::new();
-                for (s, t) in args {
-                    t_args.push((s.clone(), t.to_type(t_context.clone(), t_decs)?));
+                let mut e = Expr::from_pexpr(*e, t_decs)?;
+                for s in args.iter().rev() {
+                    e = Expr::Fn(s.clone(), Box::new(e));
                 }
 
-                Ok(Expr::Fn(t_args, Box::new(e.to_expr(t_context, t_decs)?)))
+                Ok(e)
             }
             PExpr::If(e1, e2, e3) => {
                 Ok(Expr::If(
-                    Box::new(e1.to_expr(t_context, t_decs)?), 
-                    Box::new(e2.to_expr(t_context, t_decs)?),
-                    Box::new(e3.to_expr(t_context, t_decs)?)
+                    Box::new(Expr::from_pexpr(*e1, t_decs)?), 
+                    Box::new(Expr::from_pexpr(*e2, t_decs)?),
+                    Box::new(Expr::from_pexpr(*e3, t_decs)?)
                 ))
             }
             PExpr::Block(v) => {
-                let mut exprs = Vec::new();
-                for e in v {
-                    exprs.push(Box::new(e.to_expr(t_context, t_decs)?));
+                let mut v_iter = v.into_iter();
+                // v will always be of length at least one
+                let mut e = Expr::from_pexpr(*v_iter.next().unwrap(), t_decs)?;
+                for e2 in v_iter {
+                    e = Expr::Seq(Box::new(e), Box::new(Expr::from_pexpr(*e2, t_decs)?));
                 }
 
-                Ok(Expr::Block(exprs))
+                Ok(e)
             }
             PExpr::App(e1, e2) => Ok(Expr::App(
-                Box::new(e1.to_expr(t_context, t_decs)?), 
-                Box::new(e2.to_expr(t_context, t_decs)?)
+                Box::new(Expr::from_pexpr(*e1, t_decs)?), 
+                Box::new(Expr::from_pexpr(*e2, t_decs)?)
             )),
-            PExpr::ProjTuple(e, i) => Ok(Expr::ProjTuple(Box::new(e.to_expr(t_context, t_decs)?), i)),
-            PExpr::ProjStruct(e, s) => Ok(Expr::ProjStruct(Box::new(e.to_expr(t_context, t_decs)?), s)),
+            PExpr::ProjTuple(e, i) => Ok(Expr::ProjTuple(Box::new(Expr::from_pexpr(*e, t_decs)?), i)),
+            PExpr::ProjStruct(e, s) => Ok(Expr::ProjStruct(Box::new(Expr::from_pexpr(*e, t_decs)?), s)),
             PExpr::Variant(id, o) => match o {
                 None => Ok(Expr::Variant(id, None)),
-                Some(e) => e.to_expr(t_context, t_decs)
+                Some(e) => Ok(Expr::Variant(id, Some(Box::new(Expr::from_pexpr(*e, t_decs)?))))
                 
             }
             PExpr::Match(e, v) => {
                 let mut p_es = Vec::new();
                 for (p, e) in v {
-                    p_es.push((*p, Box::new(e.to_expr(t_context, t_decs)?)));
+                    p_es.push((*p, Box::new(Expr::from_pexpr(*e, t_decs)?)));
                 }
-                Ok(Expr::Match(Box::new(e.to_expr(t_context, t_decs)?), p_es))
+                Ok(Expr::Match(Box::new(Expr::from_pexpr(*e, t_decs)?), p_es))
             }
             PExpr::Var(s) => Ok(Expr::Var(s)),
             // Recursive functions are translated to fix points to ensure guarded recursion
-            PExpr::Let(id, _, e) => match e.to_expr(t_context, t_decs)? {
-                Expr::Fn(ts, fn_e) => {
+            PExpr::Let(id, e) => match Expr::from_pexpr(*e.clone(), t_decs)? {
+                Expr::Fn(arg, fn_e) => {
+                    let fix_var = format!("rec_{}", id);
                     let (is_rec, rec_e) = fn_e.clone().substitute(&id, 
-                        &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(id.clone()))))));
+                        &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))));
                     if is_rec {
                         Ok(Expr::Let(
                             id.clone(),
-                            Box::new(Expr::Fix(id, Box::new(Expr::Fn(ts, Box::new(rec_e))))
+                            Box::new(Expr::Fix(fix_var, Box::new(Expr::Fn(arg, Box::new(rec_e))))
                         )))
                     } else {
                         Ok(Expr::Let(
                             id,
-                            Box::new(Expr::Fn(ts, fn_e))
+                            Box::new(Expr::Fn(arg, fn_e))
                         ))
                     }
                 }
-                e => Ok(Expr::Let(id, Box::new(e)))
+                // If e_ is recursive and not a function, then fail
+                e_ => if e_.clone().substitute(&id, &Expr::Unit).0 {
+                    Err(InvalidExprError::IllegalRecursiveExpr(e.head_string()).into())
+                } else {
+                    Ok(Expr::Let(id, Box::new(e_)))
+                }
             }
             _ => unreachable!(),
         }
     }
-}
 
-impl Expr {
     // Substitues var for val, returning true if substitution took place
-    pub fn substitute(self, var: &String, val: &Expr) -> (bool, Expr) {
+    pub fn substitute(self, var: &String, term: &Expr) -> (bool, Expr) {
         use Expr::*;
         match self {
             Bool(_) => (false, self),
@@ -206,43 +212,43 @@ impl Expr {
             String(_) => (false, self),
             Unit => (false, self),
             BinOp(e1, op, e2) => {
-                let (b1, e1_) = e1.substitute(var, val);
-                let (b2, e2_) = e2.substitute(var, val);
+                let (b1, e1_) = e1.substitute(var, term);
+                let (b2, e2_) = e2.substitute(var, term);
 
                 (b1 || b2, BinOp(Box::new(e1_), op, Box::new(e2_)))
             },
             UnOp(op, e) => {
-                let (b, e_) = e.substitute(var, val);
+                let (b, e_) = e.substitute(var, term);
 
                 (b, UnOp(op, Box::new(e_)))
             },
             Delay(e) => {
-                let (b, e_) = e.substitute(var, val);
+                let (b, e_) = e.substitute(var, term);
 
                 (b, Delay(Box::new(e_)))
             }
             Stable(e) => {
-                let (b, e_) = e.substitute(var, val);
+                let (b, e_) = e.substitute(var, term);
 
                 (b, Stable(Box::new(e_)))
             }
             Adv(e) => {
-                let (b, e_) = e.substitute(var, val);
+                let (b, e_) = e.substitute(var, term);
 
                 (b, Adv(Box::new(e_)))
             }
             Unbox(e) => {
-                let (b, e_) = e.substitute(var, val);
+                let (b, e_) = e.substitute(var, term);
 
                 (b, Unbox(Box::new(e_)))
             }
             Into(e) => {
-                let (b, e_) = e.substitute(var, val);
+                let (b, e_) = e.substitute(var, term);
 
                 (b, Into(Box::new(e_)))
             }
             Out(e) => {
-                let (b, e_) = e.substitute(var, val);
+                let (b, e_) = e.substitute(var, term);
 
                 (b, Out(Box::new(e_)))
             }
@@ -250,7 +256,7 @@ impl Expr {
                 let mut list = Vec::new();
                 let mut b = false;
                 for e in v {
-                    let (b_, e_) = e.substitute(var, val);
+                    let (b_, e_) = e.substitute(var, term);
                     b = b || b_;
                     list.push(Box::new(e_));
                 }
@@ -261,7 +267,7 @@ impl Expr {
                 let mut fields = Vec::new();
                 let mut b = false;
                 for (f, e) in v {
-                    let (b_, e_) = e.substitute(var, val);
+                    let (b_, e_) = e.substitute(var, term);
                     b = b || b_;
                     fields.push((f, Box::new(e_)));
                 }
@@ -272,88 +278,72 @@ impl Expr {
                 let mut tuple = Vec::new();
                 let mut b = false;
                 for e in v {
-                    let (b_, e_) = e.substitute(var, val);
+                    let (b_, e_) = e.substitute(var, term);
                     b = b || b_;
                     tuple.push(Box::new(e_));
                 }
 
                 (b, Tuple(tuple))
             }
-            Fn(args, e) => {
-                for (arg, _) in &args {
-                    // Tighter binding variable
-                    if arg == var {
-                        return (false, Fn(args.clone(), e));
-                    } 
-                }
-                let (b, e_) = e.substitute(var, val);
-                (b, Fn(args, Box::new(e_)))
+            Fn(arg, e) => {
+                // Tighter binding variable
+                if arg == var.clone() {
+                    return (false, Fn(arg, e.clone()));
+                } 
+                let (b, e_) = e.substitute(var, term);
+                (b, Fn(arg, Box::new(e_)))
             }
             Fix(alpha, e) => {
                 // Tighter binding variable
                 if alpha == var.clone() {
-                    return (false, Fix(alpha.clone(), e));
+                    return (false, Fix(alpha, e.clone()));
                 } 
-                let (b, e_) = e.substitute(var, val);
+                let (b, e_) = e.substitute(var, term);
                 (b, Fix(alpha, Box::new(e_)))
             }
             If(e1, e2, e3) => {
-                let (b1, e1_) = e1.substitute(var, val);
-                let (b2, e2_) = e2.substitute(var, val);
-                let (b3, e3_) = e3.substitute(var, val);
+                let (b1, e1_) = e1.substitute(var, term);
+                let (b2, e2_) = e2.substitute(var, term);
+                let (b3, e3_) = e3.substitute(var, term);
 
                 (b1 || b2 || b3, If(Box::new(e1_), Box::new(e2_), Box::new(e3_)))
             },
-            Block(v) => {
-                let mut exprs = Vec::new();
-                let mut b = false;
-                for e in v {
-                    match *e.clone() {
-                        // Tighter binding variable
-                        Let(id, _) => if id == var.clone() {
-                            break;
-                        } 
-                        _ => ()
-                        
-                    }
+            Seq(e1, e2) => {
+                let (b1, e1_) = e1.substitute(var, term);
+                let (b2, e2_) = e2.substitute(var, term);
 
-                    let (b_, e_) = e.substitute(var, val);
-                    b = b || b_;
-                    exprs.push(Box::new(e_));
-                }
-
-                (b, Block(exprs))
+                (b1 || b2, App(Box::new(e1_), Box::new(e2_)))
             }
             App(e1, e2) => {
-                let (b1, e1_) = e1.substitute(var, val);
-                let (b2, e2_) = e2.substitute(var, val);
+                let (b1, e1_) = e1.substitute(var, term);
+                let (b2, e2_) = e2.substitute(var, term);
 
                 (b1 || b2, App(Box::new(e1_), Box::new(e2_)))
             },
             ProjTuple(e, i) => {
-                let (b, e_) = e.substitute(var, val);
+                let (b, e_) = e.substitute(var, term);
 
                 (b, ProjTuple(Box::new(e_), i))
             },
             ProjStruct(e, s) => {
-                let (b, e_) = e.substitute(var, val);
+                let (b, e_) = e.substitute(var, term);
 
                 (b, ProjStruct(Box::new(e_), s))
             },
             Variant(id, o) => match o {
                     Some(e) => {
-                        let (b, e_) = e.substitute(var, val);
+                        let (b, e_) = e.substitute(var, term);
                         (b, Variant(id, Some(Box::new(e_))))
                     }
                     None => (false, Variant(id, None))
                 }
             Match(e, v) => {
-                let (mut b, e_) = e.substitute(var, val);
+                let (mut b, e_) = e.substitute(var, term);
 
                 let mut patterns = Vec::new();
                 for (p, e_p) in v {
                     //TODO: do not substitute it p binds var
-                    let (b_p, e_p_) = e_p.substitute(var, val);
+                    let (b_p, e_p_) = e_p.substitute(var, term);
                     b = b || b_p;
                     patterns.push((p, Box::new(e_p_)));
                 }
@@ -361,7 +351,7 @@ impl Expr {
                 (b, Match(Box::new(e_), patterns))
             }
             Var(s) => if s == var.clone() {
-                (true, val.clone())
+                (true, term.clone())
             } else {
                 (false, Var(s))
             }
@@ -370,7 +360,7 @@ impl Expr {
                     // Tighter binding variable 
                     (false, Let(x, e))
                 } else {
-                    let (b, e_) = e.substitute(var, val);
+                    let (b, e_) = e.substitute(var, term);
                     (b, Let(x, Box::new(e_)))
                 }
             }

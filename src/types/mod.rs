@@ -1,6 +1,6 @@
-pub mod check;
+//pub mod check;
 mod errors;
-mod tests;
+//mod tests;
 
 use crate::parser::ast::TypeExpr;
 pub use errors::TypeError;
@@ -8,8 +8,6 @@ pub use errors::TypeError;
 use std::collections::HashMap;
 
 use anyhow::Result;
-
-type GenericParams = Vec<(bool, String)>; // Pairs of the parameter name and a stability bool
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -25,38 +23,212 @@ pub enum Type {
     Stable(Box<Type>),
     Fix(String, Box<Type>),
     FixVar(String), // These have their own types
-    Generic(GenericParams, Box<Type>), // A pair of generic parameters with the type definition
-    GenericVar(bool, String),
+    Generic(String, Box<Type>), // A pair of generic parameters with the type definition
+    GenericVar(String),
     Struct(HashMap<String, Box<Type>>), // A map from the struct fields to their respective type
     Enum(HashMap<String, Option<Box<Type>>>), // A map from each variant constructor to an Option
-    App(Box<Type>, Vec<Box<Type>>), // A type applied to a generic (e.g. Stream<int> => App(Stream, int))
-    User(String),                   // The name of an Enum, Struct or Type alias
 }
 
 #[derive(Clone)]
 pub struct TypeContext {
     // Θ type contexts that hold generic type variables from System F
-    types: GenericParams,
+    vars: Vec<String>,
+}
+
+impl TypeContext {
+    pub fn new() -> Self {
+        TypeContext { vars: Vec::new() }
+    }
+
+    fn extend(&mut self, var: String) {
+        self.vars.push(var);
+    }
 }
 
 impl Type {
-    #![allow(unreachable_code)]
-    fn substitute(&self, v: &String, t: &Type) -> Type {
+    pub fn from_texpr(t: TypeExpr, t_context: TypeContext, t_decs: &HashMap<String, Type>) -> Result<Type> {
+        use Type::*;
+        use TypeExpr::*;
+        match t {
+            TEUnit => Ok(Unit),
+            TEInt => Ok(Int),
+            TEFloat => Ok(Float),
+            TEString => Ok(String),
+            TEBool => Ok(Bool),
+            TETuple(v) => {
+                let mut types = Vec::new();
+                for t_expr in v {
+                    types.push(Box::new(
+                        Type::from_texpr(*t_expr, t_context.clone(), t_decs)?,
+                    ));
+                }
+                Ok(Tuple(types))
+            }
+            TEList(t) => Ok(List(Box::new(Type::from_texpr(*t, t_context, t_decs)?))),
+            // All generic arguments and user declared types are "dereferenced"
+            TEUser(id, v) => {
+                for s in &t_context.vars {
+                    // Check if the ident is a Generic Argument
+                    if id == s.clone() {
+                        return Ok(GenericVar(s.clone()));
+                    }
+                }
+
+                let mut t = match t_decs.get(&id) {
+                    Some(t) => t.clone(),
+                    None => return Err(TypeError::UserTypeNotFound(id).into()), 
+                };
+
+                for t_expr in v {
+                    match t {
+                        Generic(arg, t_) => t = t_.sub_generic(&arg, &Type::from_texpr(*t_expr, t_context.clone(), t_decs)?),
+                        _ => return Err(TypeError::ImproperTypeArguments.into()),
+                    }
+                }
+
+                Ok(t)
+            }
+            TEFunction(t1, t2) => Ok(Function(
+                Box::new(Type::from_texpr(*t1, t_context.clone(), t_decs)?),
+                Box::new(Type::from_texpr(*t2, t_context.clone(), t_decs)?),
+            )),
+            TEDelay(t) => Ok(Delay(Box::new(Type::from_texpr(*t, t_context, t_decs)?))),
+            TEStable(t) => Ok(Stable(Box::new(Type::from_texpr(*t, t_context, t_decs)?))),
+        }
+    }
+
+    pub fn from_typedef(id: String, params: Vec<String>, t: TypeExpr, t_decs: &HashMap<String, Type>) -> Result<Type> {
+        let mut t_decs = t_decs.clone();
+        t_decs.insert(id.clone(), Type::GenericVar(id.clone()));
+
+        let t_context = TypeContext { vars: params.clone() }; 
+        let mut t = Type::from_texpr(t, t_context, &t_decs)?;
+
+        for param in params.iter().rev() {
+            t = Type::Generic(param.clone(), Box::new(t))
+        }
+
+        let fix_var = format!("rec_{}", id);
+        t = t.sub_delay(&id, &fix_var);
+
+        t = Type::Fix(fix_var, Box::new(t));       
+
+        Ok(t)
+    }
+
+    pub fn from_structdef(id: String, params: Vec<String>, fields: Vec<(String, Box<TypeExpr>)>, t_decs: &HashMap<String, Type>) -> Result<Type> {
+        let mut t_decs = t_decs.clone();
+        t_decs.insert(id.clone(), Type::GenericVar(id.clone()));
+
+        let t_context = TypeContext { vars: params.clone() }; 
+
+        let mut field_map = HashMap::new();
+
+        for (s, t) in fields {
+            field_map.insert(s, Box::new(Type::from_texpr(*t, t_context.clone(), &t_decs)?));
+        }
+
+        let mut t = Type::Struct(field_map);
+
+        for param in params.iter().rev() {
+            t = Type::Generic(param.clone(), Box::new(t))
+        }
+
+        Ok(t)
+    }
+
+    pub fn from_enumdef(id: String, params: Vec<String>, variants: Vec<(String, Option<Box<TypeExpr>>)>, t_decs: &HashMap<String, Type>) -> Result<Type> {
+        let mut t_decs = t_decs.clone();
+        t_decs.insert(id.clone(), Type::GenericVar(id.clone()));
+
+        let t_context = TypeContext { vars: params.clone() }; 
+
+        let mut var_map = HashMap::new();
+
+        for (s, o) in variants {
+            let t = match o {
+                None => None,
+                Some(t_expr) => Some(Box::new(Type::from_texpr(*t_expr, t_context.clone(), &t_decs)?))
+            };
+            var_map.insert(s, t);
+        }
+
+        let mut t = Type::Enum(var_map);
+
+        for param in params.iter().rev() {
+            t = Type::Generic(param.clone(), Box::new(t))
+        }
+
+        Ok(t)
+    }
+
+    fn sub_delay(&self, var: &String, fix_var: &String) -> Type {
         use Type::*;
         match self {
             Unit | Int | Float | String | Bool => self.clone(),
-            Tuple(ts) => Tuple(ts.iter().map(|t_| Box::new(t_.substitute(v, t))).collect()),
-            List(t_) => List(Box::new(t_.substitute(v, t))),
+            Tuple(ts) => Tuple(ts.iter().map(|t_| Box::new(t_.sub_delay(var, fix_var))).collect()),
+            List(t_) => List(Box::new(t_.sub_delay(var, fix_var))),
             Function(t1, t2) => {
-                Function(Box::new(t1.substitute(v, t)), Box::new(t2.substitute(v, t)))
+                Function(Box::new(t1.sub_delay(var, fix_var)), Box::new(t2.sub_delay(var, fix_var)))
             }
-            Delay(t_) => Delay(Box::new(t_.substitute(v, t))),
-            Stable(t_) => Stable(Box::new(t_.substitute(v, t))),
-            Fix(alpha, t_) => Fix(alpha.clone(), Box::new(t_.substitute(v, t))),
+            Delay(t) => match &**t {
+                GenericVar(id) => if id == var {
+                    FixVar(fix_var.clone())
+                } else {
+                    Delay(Box::new(t.sub_delay(var, fix_var))) 
+                }
+                _ => Delay(Box::new(t.sub_delay(var, fix_var))) 
+
+            } 
+            Stable(t_) => Stable(Box::new(t_.sub_delay(var, fix_var))),
+            Fix(alpha, t_) => Fix(alpha.clone(), Box::new(t_.sub_delay(var, fix_var))),
             FixVar(_) => self.clone(),
-            Generic(..) => !unreachable!("Can't have nested Generic Types"),
-            GenericVar(.., id) => {
-                if id == v {
+            Generic(arg, t_) => if arg == var {
+                // var is now a different bound variable
+                self.clone()
+            } else {
+                Generic(arg.clone(), Box::new(t_.sub_delay(var, fix_var)))
+            },
+            GenericVar(_) => self.clone(),
+            Struct(map) => Struct(
+                map.iter()
+                    .map(|(id, t_)| (id.clone(), Box::new(t_.sub_delay(var, fix_var))))
+                    .collect(),
+            ),
+            Enum(map) => Enum(
+                map.iter()
+                    .map(|(c, o)| {
+                        (
+                            c.clone(),
+                            o.as_ref().map(|t_| Box::new(t_.sub_delay(var, fix_var))),
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    fn sub_generic(&self, var: &String, t: &Type) -> Type {
+        use Type::*;
+        match self {
+            Unit | Int | Float | String | Bool => self.clone(),
+            Tuple(ts) => Tuple(ts.iter().map(|t_| Box::new(t_.sub_generic(var, t))).collect()),
+            List(t_) => List(Box::new(t_.sub_generic(var, t))),
+            Function(t1, t2) => 
+                Function(Box::new(t1.sub_generic(var, t)), Box::new(t2.sub_generic(var, t))),
+            
+            Delay(t_) => Delay(Box::new(t_.sub_generic(var, t))),
+            Stable(t_) => Stable(Box::new(t_.sub_generic(var, t))),
+            Fix(alpha, t_) => Fix(alpha.clone(), Box::new(t_.sub_generic(var, t))),
+            FixVar(_) => self.clone(),
+            Generic(arg, t_) => if arg == var {
+                // var is now a different bound variable
+                self.clone()
+            } else {
+                Generic(arg.clone(), Box::new(t_.sub_generic(var, t)))
+            },
+            GenericVar(id) => {
+                if id == var {
                     // Substitute if the GenericVar matches
                     t.clone()
                 } else {
@@ -65,7 +237,7 @@ impl Type {
             }
             Struct(map) => Struct(
                 map.iter()
-                    .map(|(id, t_)| (id.clone(), Box::new(t_.substitute(v, t))))
+                    .map(|(id, t_)| (id.clone(), Box::new(t_.sub_generic(var, t))))
                     .collect(),
             ),
             Enum(map) => Enum(
@@ -73,21 +245,80 @@ impl Type {
                     .map(|(c, o)| {
                         (
                             c.clone(),
-                            o.as_ref().map(|t_| Box::new(t_.substitute(v, t))),
+                            o.as_ref().map(|t_| Box::new(t_.sub_generic(var, t))),
                         )
                     })
                     .collect(),
             ),
-            App(t1, args) => App(
-                Box::new(t1.substitute(v, t)),
-                args.iter()
-                    .map(|t_| Box::new(t_.substitute(v, t)))
-                    .collect(),
-            ),
-            User(_) => self.clone(),
         }
     }
 
+    pub fn well_formed(&self, t_context: TypeContext, t_decs: &HashMap<String, Type>) -> Result<()> {
+        use Type::*;
+        match self {
+            Unit | Int | Float | String | Bool => Ok(()), // All primitive types are well formed
+            Tuple(v) => {
+                for t in v {
+                    t.well_formed(t_context.clone(), t_decs)?;
+                }
+                Ok(())
+            }
+            List(t) => t.well_formed(t_context, t_decs),
+            Function(t1, t2) => {
+                t1.well_formed(t_context.clone(), t_decs)?;
+                t2.well_formed(t_context, t_decs)
+            }
+            Delay(t) => t.well_formed(t_context, t_decs),
+            Stable(t) => t.well_formed(t_context, t_decs),
+            Fix(alpha, t) => {
+                let mut context = t_context.clone();
+                context.extend(alpha.clone());
+
+                t.well_formed(context, t_decs)
+            }
+            // Fixed vars are lower case while generic vars are upper case 
+            FixVar(alpha) => {
+                // makes sure that the generic parameter has been declared
+                if t_context.vars.contains(alpha) {
+                    Ok(())
+                } else {
+                    Err(TypeError::FixedPointVariableNotFound(alpha.clone()).into())
+                }
+            }
+            Struct(m) => {
+                for (_, t) in m {
+                    t.well_formed(t_context.clone(), t_decs)?;
+                }
+                Ok(())
+            }
+            Enum(m) => {
+                for (_, o) in m {
+                    match o {
+                        None => (),
+                        Some(t) => t.well_formed(t_context.clone(), t_decs)?,
+                    };
+                }
+                Ok(())
+            }
+            Generic(arg, t) => {
+                // the ∀ type in System F
+                let mut context = t_context.clone();
+                context.extend(arg.clone());
+
+                t.well_formed(context, t_decs)
+            }
+            // makes sure that the generic parameter has been declared
+            GenericVar(s) => if t_context.vars.contains(s) {
+                    Ok(())
+                } else {
+                    Err(TypeError::GenericVariableNotFound(s.clone()).into())
+            }
+        }
+    }
+}
+
+/*
+impl Type {
     pub fn is_stable(&self, t_decs: &HashMap<String, Type>) -> Result<bool> {
         use self::Type::*;
         match self {
@@ -162,188 +393,4 @@ impl Type {
         }
     }
 }
-
-impl TypeExpr {
-    pub fn to_type(self, t_context: TypeContext, t_decs: &HashMap<String, Type>) -> Result<Type> {
-        use Type::*;
-        use TypeExpr::*;
-        match self {
-            TEUnit => Ok(Unit),
-            TEInt => Ok(Int),
-            TEFloat => Ok(Float),
-            TEString => Ok(String),
-            TEBool => Ok(Bool),
-            TETuple(v) => {
-                let mut types = Vec::new();
-                for t_expr in v {
-                    types.push(Box::new(
-                        t_expr.to_owned().to_type(t_context.clone(), t_decs)?,
-                    ));
-                }
-                Ok(Tuple(types))
-            }
-            TEList(t) => Ok(List(Box::new(t.to_type(t_context, t_decs)?))),
-            TEUser(id, v) => {
-                // All generic arguments and user declared types are "dereferenced"
-                for (b, s) in &t_context.types {
-                    // Check if the ident is a Generic Argument
-                    if id == s.clone() {
-                        return Ok(GenericVar(*b, s.clone()));
-                    }
-                }
-
-                let mut args = Vec::new(); // The generic type arguments to a user defined type
-                for t_expr in &v {
-                    args.push(Box::new(
-                        t_expr.to_owned().to_type(t_context.clone(), t_decs)?,
-                    ));
-                }
-
-                match t_decs.get(&id) {
-                    // Find the user type in the type declarations
-                    Some(_) => {
-                        if v.is_empty() {
-                            Ok(User(id))
-                        } else {
-                            Ok(App(Box::new(User(id)), args))
-                        }
-                    }
-                    None => Err(TypeError::UserTypeNotFound(id).into()),
-                }
-            }
-            TEFunction(t1, t2) => Ok(Function(
-                Box::new(t1.to_type(t_context.clone(), t_decs)?),
-                Box::new(t2.to_type(t_context.clone(), t_decs)?),
-            )),
-            TEDelay(t) => Ok(Delay(Box::new(t.to_type(t_context, t_decs)?))),
-            TEStable(t) => Ok(Stable(Box::new(t.to_type(t_context, t_decs)?))),
-        }
-    }
-}
-
-impl crate::exprs::VarContext {
-    pub fn stable(&self, t_decs: &HashMap<String, Type>) -> Result<Self> {
-        use crate::exprs::VarTerm;
-
-        let mut terms = Vec::new();
-        for term in &self.terms {
-            match term {
-                VarTerm::Tick => (),
-                VarTerm::Var(x, t) => {
-                    if t.is_stable(t_decs)? {
-                        terms.push(VarTerm::Var(x.clone(), t.clone()));
-                    }
-                }
-            }
-        }
-
-        Ok(Self {
-            terms,
-            ticks: Vec::new(),
-        })
-    }
-}
-
-impl TypeContext {
-    pub fn new() -> Self {
-        TypeContext { types: Vec::new() }
-    }
-
-    fn extend(&mut self, params: &mut GenericParams) {
-        self.types.append(params);
-    }
-
-    pub fn well_formed(&self, t: &Type, t_decs: &HashMap<String, Type>) -> Result<()> {
-        use Type::*;
-        match t {
-            Unit | Int | Float | String | Bool => Ok(()), // All primitive types are well formed
-            Tuple(v) => {
-                for t in v {
-                    self.well_formed(t, t_decs)?;
-                }
-                Ok(())
-            }
-            List(t) => self.well_formed(t, t_decs),
-            Function(t1, t2) => {
-                self.well_formed(t1, t_decs)?;
-                self.well_formed(t2, t_decs)
-            }
-            Delay(t) => self.well_formed(t, t_decs),
-            Stable(t) => self.well_formed(t, t_decs),
-            Fix(alpha, t) => {
-                let mut context = self.clone();
-                context.extend(&mut vec![(true, alpha.clone())]);
-
-                context.well_formed(t, t_decs)
-            }
-
-            FixVar(alpha) => {
-                // makes sure that the generic parameter has been declared
-                for (_, s) in &self.types {
-                    if  alpha == s {
-                        return Ok(());
-                    }
-                }
-                Err(TypeError::FixedPointVariableNotFound(alpha.clone()).into())
-            }
-            Struct(m) => {
-                for (_, t) in m {
-                    self.well_formed(t, t_decs)?;
-                }
-                Ok(())
-            }
-            Enum(m) => {
-                for (_, o) in m {
-                    match o {
-                        None => (),
-                        Some(t) => self.well_formed(t, t_decs)?,
-                    };
-                }
-                Ok(())
-            }
-            Generic(params, t) => {
-                // the ∀ type in System F
-                let mut context = self.clone();
-                context.extend(&mut params.clone());
-
-                context.well_formed(t, t_decs)
-            }
-            GenericVar(b, s) => {
-                // makes sure that the generic parameter has been declared
-                for (b_prime, s_prime) in &self.types {
-                    if b == b_prime && s == s_prime {
-                        return Ok(());
-                    }
-                }
-                Err(TypeError::GenericVariableNotFound(s.clone()).into())
-            }
-            App(t, v) => match &**t {
-                // Concrete type applied to a generic type e.g. Option<int>
-                Generic(params, t) => {
-                    if v.len() > params.len() {
-                        // List of args cannot be longer than allowed params
-                        return Err(TypeError::ImproperTypeArguments.into());
-                    }
-                    for (i, t) in v.iter().enumerate() {
-                        // Check that a non-stable type is not passed as a stable arg
-                        if params[i].0 && !t.is_stable(t_decs).unwrap() {
-                            return Err(TypeError::ImproperUnstableType(format!("{:?}", t)).into());
-                        }
-                        self.well_formed(t, t_decs)?;
-                    }
-                    self.well_formed(&Generic(params.clone(), t.clone()), t_decs)
-                }
-                User(id) => match t_decs.get(id) {
-                    Some(t) => self.well_formed(&App(Box::new(t.clone()), v.clone()), t_decs),
-                    None => Err(TypeError::UserTypeNotFound(id.clone()).into()),
-                },
-
-                _ => Err(TypeError::ImproperTypeArguments.into()),
-            },
-            User(id) => match t_decs.get(id) {
-                Some(t) => self.well_formed(t, t_decs),
-                None => Err(TypeError::UserTypeNotFound(id.clone()).into()),
-            },
-        }
-    }
-}
+*/

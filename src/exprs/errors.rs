@@ -17,4 +17,6 @@ pub enum InvalidExprError {
     InvalidBinaryOperator(String),
     #[error("Adv expressions must always be inside Delay expressions")]
     ImproperAdvExpr,
+    #[error("{0} is not allowed to be recursive")]
+    IllegalRecursiveExpr(String),
 }
