@@ -1,4 +1,4 @@
-//pub mod check;
+pub mod check;
 mod errors;
 mod tests;
 
@@ -23,13 +23,13 @@ pub enum Type {
     Stable(Box<Type>),
     Fix(String, Box<Type>),
     FixVar(String),             // These have their own types
-    Generic(String, Box<Type>), // A pair of generic parameters with the type definition
+    Generic(Vec<String>, Box<Type>), // A pair of generic parameters with the type definition
     GenericVar(String),
     Struct(HashMap<String, Box<Type>>), // A map from the struct fields to their respective type
     Enum(HashMap<String, Option<Box<Type>>>), // A map from each variant constructor to an Option
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TypeContext {
     // Θ type contexts that hold generic type variables from System F
     vars: Vec<String>,
@@ -40,8 +40,8 @@ impl TypeContext {
         TypeContext { vars: Vec::new() }
     }
 
-    fn extend(&mut self, var: String) {
-        self.vars.push(var);
+    fn extend(&mut self, vars: &mut Vec<String>) {
+        self.vars.append(vars);
     }
 }
 
@@ -85,13 +85,18 @@ impl Type {
                     None => return Err(TypeError::UserTypeNotFound(id).into()),
                 };
 
-                for t_expr in v {
-                    match t {
-                        Generic(arg, t_) => {
-                            t = t_.sub_generic(
-                                &arg,
-                                &Type::from_texpr(*t_expr, t_context.clone(), t_decs)?,
-                            )
+                if v.len() > 0 {
+                    match t.clone() {
+                        Generic(args, t_) => {
+                            for (i, t_expr) in v.iter().enumerate() {
+                                t = t_.sub_generic(
+                                    &args[i],
+                                    &Type::from_texpr(*t_expr.clone(), t_context.clone(), t_decs)?,
+                                )
+                            }
+                            if v.len() < args.len() {
+                                t = Generic(args[v.len()..].to_vec(), Box::new(t))
+                            }
                         }
                         _ => return Err(TypeError::ImproperTypeArguments.into()),
                     }
@@ -122,14 +127,15 @@ impl Type {
         };
         let mut t = Type::from_texpr(t, t_context, &t_decs)?;
 
-        for param in params.iter().rev() {
-            t = Type::Generic(param.clone(), Box::new(t))
+        let fix_var = format!("rec_{}", id);
+        let (b, t_) = t.sub_delay(&id, &fix_var);
+        if b {
+            t = Type::Fix(fix_var, Box::new(t_));
         }
 
-        let fix_var = format!("rec_{}", id);
-        t = t.sub_delay(&id, &fix_var);
-
-        t = Type::Fix(fix_var, Box::new(t));
+        if params.len() > 0 {
+            t = Type::Generic(params, Box::new(t))
+        }
 
         Ok(t)
     }
@@ -158,8 +164,8 @@ impl Type {
 
         let mut t = Type::Struct(field_map);
 
-        for param in params.iter().rev() {
-            t = Type::Generic(param.clone(), Box::new(t))
+        if params.len() > 0 {
+            t = Type::Generic(params, Box::new(t))
         }
 
         Ok(t)
@@ -194,68 +200,100 @@ impl Type {
 
         let mut t = Type::Enum(var_map);
 
-        for param in params.iter().rev() {
-            t = Type::Generic(param.clone(), Box::new(t))
+        if params.len() > 0 {
+            t = Type::Generic(params, Box::new(t))
         }
 
         Ok(t)
     }
 
-    fn sub_delay(&self, var: &String, fix_var: &String) -> Type {
+    // Substitutes a fix var for @(Var) and if the substitution took place
+    fn sub_delay(&self, var: &String, fix_var: &String) -> (bool, Type) {
         use Type::*;
         match self {
-            Unit | Int | Float | String | Bool => self.clone(),
-            Tuple(ts) => Tuple(
-                ts.iter()
-                    .map(|t_| Box::new(t_.sub_delay(var, fix_var)))
-                    .collect(),
-            ),
-            List(t_) => List(Box::new(t_.sub_delay(var, fix_var))),
-            Function(t1, t2) => Function(
-                Box::new(t1.sub_delay(var, fix_var)),
-                Box::new(t2.sub_delay(var, fix_var)),
-            ),
+            Unit | Int | Float | String | Bool => (false, self.clone()),
+            Tuple(ts) => {
+                let mut tuple = Vec::new();
+                let mut b = false;
+                for t in ts {
+                    let (b_, t_) = t.sub_delay(var, fix_var);
+                    b = b || b_;
+                    tuple.push(Box::new(t_));
+                }
+
+                (b, Tuple(tuple))
+            }
+            List(t) => {
+                let (b, t_) = t.sub_delay(var, fix_var);
+                (b, List(Box::new(t_)))
+            }
+            Function(t1, t2) => {
+                let (b1, t1_) = t1.sub_delay(var, fix_var);
+                let (b2, t2_) = t2.sub_delay(var, fix_var);
+
+                (b1 || b2, Function(Box::new(t1_), Box::new(t2_)))
+            }
+
             Delay(t) => match &**t {
-                GenericVar(id) => {
-                    if id == var {
-                        FixVar(fix_var.clone())
-                    } else {
-                        Delay(Box::new(t.sub_delay(var, fix_var)))
+                GenericVar(id) => if id == var {
+                    (true, FixVar(fix_var.clone()))
+                } else {
+                    let (b, t_) = t.sub_delay(var, fix_var);
+                    (b, Delay(Box::new(t_)))
+                }
+                _ => {
+                    let (b, t_) = t.sub_delay(var, fix_var);
+                    (b, Delay(Box::new(t_)))
+                }
+            },
+            Stable(t) => {
+                let (b, t_) = t.sub_delay(var, fix_var);
+                (b, Stable(Box::new(t_)))
+            }
+            Fix(alpha, t) => { 
+                let (b, t_) = t.sub_delay(var, fix_var);
+                (b, Fix(alpha.clone(), Box::new(t_)))
+            }
+            FixVar(_) => (false, self.clone()),
+            Generic(args, t) => if args.contains(var) {
+                // var is now a different bound variable
+                (false, self.clone())
+            } else  { 
+                let (b, t_) = t.sub_delay(var, fix_var);
+                (b, Generic(args.clone(), Box::new(t_)))
+            }
+            GenericVar(_) => (false, self.clone()),
+            Struct(map) => {
+                let mut fields = HashMap::new();
+                let mut b = false;
+                for (f, t) in map {
+                    let (b_, t_) = t.sub_delay(var, fix_var);
+                    b = b || b_;
+                    fields.insert(f.clone(), Box::new(t_));
+                }
+
+                (b, Struct(fields))
+            }
+            Enum(map) => {
+                let mut variants = HashMap::new();
+                let mut b = false;
+                for (v, o) in map {
+                    match o {
+                        None => { variants.insert(v.clone(), None); },
+                        Some(t) => {
+                            let (b_, t_) = t.sub_delay(var, fix_var);
+                            b = b || b_;
+                            variants.insert(v.clone(), Some(Box::new(t_)));
+                        }
                     }
                 }
-                _ => Delay(Box::new(t.sub_delay(var, fix_var))),
-            },
-            Stable(t_) => Stable(Box::new(t_.sub_delay(var, fix_var))),
-            Fix(alpha, t_) => Fix(alpha.clone(), Box::new(t_.sub_delay(var, fix_var))),
-            FixVar(_) => self.clone(),
-            Generic(arg, t_) => {
-                if arg == var {
-                    // var is now a different bound variable
-                    self.clone()
-                } else {
-                    Generic(arg.clone(), Box::new(t_.sub_delay(var, fix_var)))
-                }
+
+                (b, Enum(variants))
             }
-            GenericVar(_) => self.clone(),
-            Struct(map) => Struct(
-                map.iter()
-                    .map(|(id, t_)| (id.clone(), Box::new(t_.sub_delay(var, fix_var))))
-                    .collect(),
-            ),
-            Enum(map) => Enum(
-                map.iter()
-                    .map(|(c, o)| {
-                        (
-                            c.clone(),
-                            o.as_ref().map(|t_| Box::new(t_.sub_delay(var, fix_var))),
-                        )
-                    })
-                    .collect(),
-            ),
         }
     }
 
-    fn sub_generic(&self, var: &String, t: &Type) -> Type {
+    pub fn sub_generic(&self, var: &String, t: &Type) -> Type {
         use Type::*;
         match self {
             Unit | Int | Float | String | Bool => self.clone(),
@@ -274,13 +312,11 @@ impl Type {
             Stable(t_) => Stable(Box::new(t_.sub_generic(var, t))),
             Fix(alpha, t_) => Fix(alpha.clone(), Box::new(t_.sub_generic(var, t))),
             FixVar(_) => self.clone(),
-            Generic(arg, t_) => {
-                if arg == var {
-                    // var is now a different bound variable
-                    self.clone()
-                } else {
-                    Generic(arg.clone(), Box::new(t_.sub_generic(var, t)))
-                }
+            Generic(args, t_) => if args.contains(var) {
+                // var is now a different bound variable
+                self.clone()
+            } else {
+                Generic(args.clone(), Box::new(t_.sub_generic(var, t)))
             }
             GenericVar(id) => {
                 if id == var {
@@ -327,7 +363,7 @@ impl Type {
             Stable(t) => t.well_formed(t_context),
             Fix(alpha, t) => {
                 let mut context = t_context.clone();
-                context.extend(alpha.clone());
+                context.extend(&mut vec![alpha.clone()]);
 
                 t.well_formed(context)
             }
@@ -355,10 +391,10 @@ impl Type {
                 }
                 Ok(())
             }
-            Generic(arg, t) => {
+            Generic(args, t) => {
                 // the ∀ type in System F
                 let mut context = t_context.clone();
-                context.extend(arg.clone());
+                context.extend(&mut args.clone());
 
                 t.well_formed(context)
             }

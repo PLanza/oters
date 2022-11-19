@@ -14,4 +14,8 @@ pub enum TypeError {
     ImproperUnstableType(String),
     #[error("Expected {0}, got {1} instead")]
     ImproperType(String, String),
+    #[error("The variable {0}, cannot be found in the current context")]
+    UnboundVariableError(String),
+    #[error("The variable {0}, cannot be accessed in the current context")]
+    InvalidVariableAccess(String)
 }

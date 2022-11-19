@@ -1,7 +1,11 @@
 mod errors;
 
 use crate::parser::ast::{Opcode, PExpr, Pattern};
-use crate::types::Type;
+use crate::types::{Type, TypeError};
+
+use std::cell::RefCell;
+use std::env::VarError;
+use std::rc::Rc;
 
 use anyhow::{Ok, Result};
 
@@ -10,7 +14,7 @@ pub use errors::InvalidExprError;
 #[derive(Clone, Debug, PartialEq)]
 pub enum VarTerm {
     Tick,
-    Var(String, Type),
+    Var(Rc<RefCell<(String, Type)>>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -21,7 +25,7 @@ pub struct VarContext {
 
 // The actual expressions of the language.
 // These don't include top-level expressions
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Expr {
     Bool(bool),
     Int(i64),
@@ -52,7 +56,7 @@ pub enum Expr {
     Let(String, Box<Expr>),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum BOpcode {
     Mul,
     Div,
@@ -67,7 +71,7 @@ pub enum BOpcode {
     Or,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum UOpcode {
     Neg,
     Not,
@@ -93,24 +97,16 @@ impl Expr {
                 op.to_bopcode(),
                 Box::new(Expr::from_pexpr(*e2)?),
             )),
-            PExpr::UnOp(Opcode::Neg, e) => Ok(Expr::UnOp(
-                UOpcode::Neg,
-                Box::new(Expr::from_pexpr(*e)?),
-            )),
-            PExpr::UnOp(Opcode::Not, e) => Ok(Expr::UnOp(
-                UOpcode::Neg,
-                Box::new(Expr::from_pexpr(*e)?),
-            )),
-            PExpr::UnOp(Opcode::Delay, e) => {
-                Ok(Expr::Delay(Box::new(Expr::from_pexpr(*e)?)))
+            PExpr::UnOp(Opcode::Neg, e) => {
+                Ok(Expr::UnOp(UOpcode::Neg, Box::new(Expr::from_pexpr(*e)?)))
             }
-            PExpr::UnOp(Opcode::Stable, e) => {
-                Ok(Expr::Stable(Box::new(Expr::from_pexpr(*e)?)))
+            PExpr::UnOp(Opcode::Not, e) => {
+                Ok(Expr::UnOp(UOpcode::Neg, Box::new(Expr::from_pexpr(*e)?)))
             }
+            PExpr::UnOp(Opcode::Delay, e) => Ok(Expr::Delay(Box::new(Expr::from_pexpr(*e)?))),
+            PExpr::UnOp(Opcode::Stable, e) => Ok(Expr::Stable(Box::new(Expr::from_pexpr(*e)?))),
             PExpr::UnOp(Opcode::Adv, e) => Ok(Expr::Adv(Box::new(Expr::from_pexpr(*e)?))),
-            PExpr::UnOp(Opcode::Unbox, e) => {
-                Ok(Expr::Unbox(Box::new(Expr::from_pexpr(*e)?)))
-            }
+            PExpr::UnOp(Opcode::Unbox, e) => Ok(Expr::Unbox(Box::new(Expr::from_pexpr(*e)?))),
             PExpr::UnOp(Opcode::Into, e) => Ok(Expr::Into(Box::new(Expr::from_pexpr(*e)?))),
             PExpr::UnOp(Opcode::Out, e) => Ok(Expr::Out(Box::new(Expr::from_pexpr(*e)?))),
             PExpr::List(v) => {
@@ -164,18 +160,11 @@ impl Expr {
                 Box::new(Expr::from_pexpr(*e1)?),
                 Box::new(Expr::from_pexpr(*e2)?),
             )),
-            PExpr::ProjTuple(e, i) => {
-                Ok(Expr::ProjTuple(Box::new(Expr::from_pexpr(*e)?), i))
-            }
-            PExpr::ProjStruct(e, s) => {
-                Ok(Expr::ProjStruct(Box::new(Expr::from_pexpr(*e)?), s))
-            }
+            PExpr::ProjTuple(e, i) => Ok(Expr::ProjTuple(Box::new(Expr::from_pexpr(*e)?), i)),
+            PExpr::ProjStruct(e, s) => Ok(Expr::ProjStruct(Box::new(Expr::from_pexpr(*e)?), s)),
             PExpr::Variant(id, o) => match o {
                 None => Ok(Expr::Variant(id, None)),
-                Some(e) => Ok(Expr::Variant(
-                    id,
-                    Some(Box::new(Expr::from_pexpr(*e)?)),
-                )),
+                Some(e) => Ok(Expr::Variant(id, Some(Box::new(Expr::from_pexpr(*e)?)))),
             },
             PExpr::Match(e, v) => {
                 let mut p_es = Vec::new();
@@ -418,13 +407,67 @@ impl VarContext {
         let mut terms = Vec::new();
         for term in &self.terms {
             match term {
-                VarTerm::Var(_, t) => if t.is_stable()? {
-                    terms.push(term.clone());
+                VarTerm::Var(cell) => {
+                    let t = cell.try_borrow()?.1.clone();
+                    if t.is_stable()? {
+                        terms.push(term.clone());
+                    }
                 }
                 VarTerm::Tick => (),
             }
         }
 
-        Ok(VarContext { terms, ticks: Vec::new() })
+        Ok(VarContext {
+            terms,
+            ticks: Vec::new(),
+        })
+    }
+
+    pub fn push_var(&mut self, var: String, t: Type) {
+        self.terms.push(VarTerm::Var(Rc::new(RefCell::new((var, t)))))
+    }
+
+    pub fn push_tick(&mut self) {
+        self.ticks.push(self.terms.len());
+        self.terms.push(VarTerm::Tick);
+    }
+
+    pub fn get_var(self, var: &String) -> Result<Type> {
+        for (i, term) in self.terms.iter().enumerate() {
+            match term {
+                VarTerm::Tick => (),
+                VarTerm::Var(cell) => {
+                    let term = cell.try_borrow()?.clone();
+                    let (x, t) = (term.0, term.1);
+
+                    if &x == var {
+                    if t.is_stable()? {
+                        return Ok(t.clone());
+                    } else {
+                        if i > self.ticks[0] {
+                            return Ok(t.clone());
+                        } else {
+                            return Err(TypeError::InvalidVariableAccess(var.clone()).into());
+                        }
+                    }
+                }
+            }}
+        }
+
+        Err(TypeError::UnboundVariableError(var.clone()).into())
+    }
+
+    pub fn apply_subs(&mut self, subs: &Vec<(String, Type)>) {
+        for (var, t) in subs {
+            for term in &mut self.terms {
+                match term {
+                    VarTerm::Tick => (),
+                    VarTerm::Var(cell) => {
+                        let mut term = cell.try_borrow_mut().unwrap();
+                        term.1 = term.1.sub_generic(&var, &t); 
+                    }
+                }
+            }
+        }
     }
 }
