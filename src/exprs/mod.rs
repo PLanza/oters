@@ -4,7 +4,7 @@ use crate::parser::ast::{Opcode, PExpr, Pattern};
 use crate::types::{Type, TypeError};
 
 use std::cell::RefCell;
-use std::env::VarError;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use anyhow::{Ok, Result};
@@ -423,8 +423,22 @@ impl VarContext {
         })
     }
 
+    pub fn pre_tick(&self) -> Result<Self> {
+        if self.ticks.len() > 0 {
+            let terms = self.terms.clone()[0..*self.ticks.last().unwrap()].to_vec();
+
+            Ok(Self {
+                terms,
+                ticks: self.ticks[0..self.ticks.len() - 1].to_vec(),
+            })
+        } else {
+            Err(InvalidExprError::ImproperAdvExpr.into())
+        }
+    }
+
     pub fn push_var(&mut self, var: String, t: Type) {
-        self.terms.push(VarTerm::Var(Rc::new(RefCell::new((var, t)))))
+        self.terms
+            .push(VarTerm::Var(Rc::new(RefCell::new((var, t)))))
     }
 
     pub fn push_tick(&mut self) {
@@ -441,17 +455,18 @@ impl VarContext {
                     let (x, t) = (term.0, term.1);
 
                     if &x == var {
-                    if t.is_stable()? {
-                        return Ok(t.clone());
-                    } else {
-                        if i > self.ticks[0] {
+                        if t.is_stable()? {
                             return Ok(t.clone());
                         } else {
-                            return Err(TypeError::InvalidVariableAccess(var.clone()).into());
+                            if self.ticks.len() < 1 || i > self.ticks[0] {
+                                return Ok(t.clone());
+                            } else {
+                                return Err(TypeError::InvalidVariableAccess(var.clone()).into());
+                            }
                         }
                     }
                 }
-            }}
+            }
         }
 
         Err(TypeError::UnboundVariableError(var.clone()).into())
@@ -464,10 +479,25 @@ impl VarContext {
                     VarTerm::Tick => (),
                     VarTerm::Var(cell) => {
                         let mut term = cell.try_borrow_mut().unwrap();
-                        term.1 = term.1.sub_generic(&var, &t); 
+                        term.1 = term.1.sub_generic(&var, &t);
                     }
                 }
             }
         }
+    }
+
+    pub fn get_free_vars(&self) -> HashSet<String> {
+        let mut free_vars = HashSet::new();
+        for term in &self.terms {
+            match term {
+                VarTerm::Tick => (),
+                VarTerm::Var(cell) => {
+                    let t = &cell.borrow().1;
+                    free_vars.extend(t.get_free_vars());
+                },
+            }
+        }
+
+        free_vars
     }
 }

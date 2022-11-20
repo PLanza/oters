@@ -19,4 +19,6 @@ pub enum InvalidExprError {
     ImproperAdvExpr,
     #[error("{0} is not allowed to be recursive")]
     IllegalRecursiveExpr(String),
+    #[error("Let expressions must be top-level or inside blocks")]
+    IllegalLetExpr,
 }
