@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use super::{Type, TypeContext, TypeError};
 use crate::exprs::{BOpcode, Expr, InvalidExprError, InvalidPatternError, UOpcode, VarContext};
-use crate::parser::ast::{PExpr, Program, Pattern};
+use crate::parser::ast::{PExpr, Pattern, Program};
 
 use anyhow::Result;
 
@@ -123,7 +123,6 @@ impl ProgramChecker {
             }
         }
 
-        println!("{:?}", self.type_decs);
         Ok(())
     }
 
@@ -164,7 +163,6 @@ impl ProgramChecker {
                 let t = self.infer(e, ctx.clone())?;
                 let mut subs = unify(VecDeque::from([(t.clone(), Type::Int)]))?;
                 self.substitutions.append(&mut subs);
-                println!("{:?}", self.substitutions);
                 ctx.apply_subs(&self.substitutions);
 
                 Ok(Type::Int)
@@ -323,7 +321,7 @@ impl ProgramChecker {
             Variant(id, o) => {
                 let t = match o {
                     Some(e) => Some(self.infer(&e, ctx.clone())?),
-                    None => None
+                    None => None,
                 };
 
                 let t_enum = match self.variant_map.get(id) {
@@ -338,24 +336,22 @@ impl ProgramChecker {
                             t_
                         }
                         t => t.clone(),
-                    }
-                    None => return Err(TypeError::EnumVariantDoesNotExist(id.clone()).into())
+                    },
+                    None => return Err(TypeError::EnumVariantDoesNotExist(id.clone()).into()),
                 };
-                
-                match &t_enum {
-                    Type::Enum(map) => {
-                        match (t, map.get(id).unwrap()) { 
-                            (None, None) => Ok(t_enum),
-                            (Some(t1), Some(t2)) => {
-                                let mut subs = unify(VecDeque::from([(t1.clone(), *t2.clone())]))?;
-                                self.substitutions.append(&mut subs);
-                                ctx.apply_subs(&self.substitutions);
 
-                                Ok(t_enum.clone())
-                            }
-                            _ => Err(TypeError::VariantFieldsDoNotMatch(id.clone()).into()),
+                match &t_enum {
+                    Type::Enum(map) => match (t, map.get(id).unwrap()) {
+                        (None, None) => Ok(t_enum),
+                        (Some(t1), Some(t2)) => {
+                            let mut subs = unify(VecDeque::from([(t1.clone(), *t2.clone())]))?;
+                            self.substitutions.append(&mut subs);
+                            ctx.apply_subs(&self.substitutions);
+
+                            Ok(t_enum.clone())
                         }
-                    }
+                        _ => Err(TypeError::VariantFieldsDoNotMatch(id.clone()).into()),
+                    },
                     _ => Err(TypeError::NotAnEnum(id.clone()).into()),
                 }
             }
@@ -371,7 +367,10 @@ impl ProgramChecker {
             Fix(alpha, e) => {
                 let mut ctx = ctx.clone().stable()?;
                 let t_ret = Type::GenericVar(self.fresh_type_var());
-                ctx.push_var(alpha.clone(), Type::Stable(Box::new(Type::Delay(Box::new(t_ret.clone())))));
+                ctx.push_var(
+                    alpha.clone(),
+                    Type::Stable(Box::new(Type::Delay(Box::new(t_ret.clone())))),
+                );
 
                 let t = self.infer(e, ctx.clone())?;
                 let mut subs = unify(VecDeque::from([(t.clone(), t_ret.clone())]))?;
@@ -386,8 +385,8 @@ impl ProgramChecker {
                 let t3 = self.infer(e3, ctx.clone())?;
 
                 let mut subs = unify(VecDeque::from([
-                        (t1.clone(), Type::Bool),
-                        (t2.clone(), t3.clone())
+                    (t1.clone(), Type::Bool),
+                    (t2.clone(), t3.clone()),
                 ]))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
@@ -402,27 +401,26 @@ impl ProgramChecker {
 
                     for var in ctx_free_vars {
                         t_e_free_vars.remove(&var);
-
                     }
 
                     let mut ctx = ctx.clone();
-                    ctx.push_var(id, Type::Generic(t_e_free_vars.into_iter().collect(), Box::new(t_e.clone())));
+                    ctx.push_var(
+                        id,
+                        Type::Generic(t_e_free_vars.into_iter().collect(), Box::new(t_e.clone())),
+                    );
 
                     Ok(self.infer(e2, ctx)?)
                 }
                 _ => {
                     let t = self.infer(&e, ctx.clone())?;
 
-                    let mut subs = unify(VecDeque::from([(
-                        t.clone(),
-                        Type::Unit
-                    )]))?;
+                    let mut subs = unify(VecDeque::from([(t.clone(), Type::Unit)]))?;
                     self.substitutions.append(&mut subs);
                     ctx.apply_subs(&self.substitutions);
 
                     Ok(self.infer(e2, ctx)?)
-                } 
-            }
+                }
+            },
             App(e1, e2) => {
                 let t1 = self.infer(e1, ctx.clone())?;
                 let t2 = self.infer(e2, ctx.clone())?;
@@ -442,9 +440,7 @@ impl ProgramChecker {
                 let field_type = Type::GenericVar(self.fresh_type_var());
                 let map = HashMap::from([(f.clone(), Box::new(field_type))]);
 
-                let mut subs = unify(VecDeque::from([
-                    (t.clone(), Type::Struct(map))
-                ]))?;
+                let mut subs = unify(VecDeque::from([(t.clone(), Type::Struct(map))]))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
@@ -459,7 +455,7 @@ impl ProgramChecker {
                     // Add p's variables into the context
                     let (t_p, p_vars) = self.check_pattern(p.clone())?;
                     constraints.push_back((t_e.clone(), t_p.clone()));
-                    
+
                     let mut p_ctx = ctx.clone();
                     for (var, t_var) in p_vars {
                         p_ctx.push_var(var, t_var);
@@ -644,13 +640,13 @@ impl ProgramChecker {
     pub fn check_pattern(&mut self, p: Pattern) -> Result<(Type, HashMap<String, Type>)> {
         use Pattern::*;
         match p {
-            Underscore => Ok((Type::GenericVar(self.fresh_type_var()),HashMap::new())),
-            True => Ok((Type::Bool,HashMap::new())),
-            False => Ok((Type::Bool,HashMap::new())),
-            Int(_) => Ok((Type::Int,HashMap::new())),
-            Float(_) => Ok((Type::Float,HashMap::new())),
-            String(_) => Ok((Type::String,HashMap::new())),
-            Unit => Ok((Type::Unit,HashMap::new())),
+            Underscore => Ok((Type::GenericVar(self.fresh_type_var()), HashMap::new())),
+            True => Ok((Type::Bool, HashMap::new())),
+            False => Ok((Type::Bool, HashMap::new())),
+            Int(_) => Ok((Type::Int, HashMap::new())),
+            Float(_) => Ok((Type::Float, HashMap::new())),
+            String(_) => Ok((Type::String, HashMap::new())),
+            Unit => Ok((Type::Unit, HashMap::new())),
             Tuple(v) => {
                 let mut vars = HashMap::new();
                 let mut types = Vec::new();
@@ -660,8 +656,14 @@ impl ProgramChecker {
                     for (var, t_var) in p_vars {
                         match vars.insert(var.clone(), t_var) {
                             None => (),
-                            Some(_) => return Err(InvalidPatternError::SimultaneousPatternBinding(var.clone(), format!("{:?}", p.clone())).into()),
-                        } 
+                            Some(_) => {
+                                return Err(InvalidPatternError::SimultaneousPatternBinding(
+                                    var.clone(),
+                                    format!("{:?}", p.clone()),
+                                )
+                                .into())
+                            }
+                        }
                     }
                 }
                 Ok((Type::Tuple(types), vars))
@@ -674,10 +676,12 @@ impl ProgramChecker {
                     // Check all sub patterns correspond to the same type
                     t_list = match t_list {
                         None => Some(t),
-                        Some(t_) => if t == t_ {
-                            Some(t_)
-                        } else {
-                            return Err(InvalidPatternError::InvalidListPattern.into())
+                        Some(t_) => {
+                            if t == t_ {
+                                Some(t_)
+                            } else {
+                                return Err(InvalidPatternError::InvalidListPattern.into());
+                            }
                         }
                     };
 
@@ -685,14 +689,23 @@ impl ProgramChecker {
                     for (var, t_var) in p_vars {
                         match vars.insert(var.clone(), t_var) {
                             None => (),
-                            Some(_) => return Err(InvalidPatternError::SimultaneousPatternBinding(var.clone(), format!("{:?}", p.clone())).into()),
-                        } 
+                            Some(_) => {
+                                return Err(InvalidPatternError::SimultaneousPatternBinding(
+                                    var.clone(),
+                                    format!("{:?}", p.clone()),
+                                )
+                                .into())
+                            }
+                        }
                     }
                 }
 
                 // If empty list then return generic list
                 match t_list {
-                    None => Ok((Type::List(Box::new(Type::GenericVar(self.fresh_type_var()))), vars)),
+                    None => Ok((
+                        Type::List(Box::new(Type::GenericVar(self.fresh_type_var()))),
+                        vars,
+                    )),
                     Some(t) => Ok((Type::List(Box::new(t)), vars)),
                 }
             }
@@ -702,7 +715,7 @@ impl ProgramChecker {
                         let (t_, p_vars) = self.check_pattern(*p.clone())?;
                         (Some(t_), p_vars)
                     }
-                    None => (None, HashMap::new())
+                    None => (None, HashMap::new()),
                 };
 
                 let t_enum = match self.variant_map.get(&c) {
@@ -717,23 +730,21 @@ impl ProgramChecker {
                             t_
                         }
                         t => t.clone(),
-                    }
-                    None => return Err(TypeError::EnumVariantDoesNotExist(c.clone()).into())
+                    },
+                    None => return Err(TypeError::EnumVariantDoesNotExist(c.clone()).into()),
                 };
-                
-                match &t_enum {
-                    Type::Enum(map) => {
-                        match (t, map.get(&c).unwrap()) { 
-                            (None, None) => Ok((t_enum, vars)),
-                            (Some(t1), Some(t2)) => {
-                                let mut subs = unify(VecDeque::from([(t1.clone(), *t2.clone())]))?;
-                                self.substitutions.append(&mut subs);
 
-                                Ok((t_enum.clone(), vars))
-                            }
-                            _ => Err(TypeError::VariantFieldsDoNotMatch(c.clone()).into()),
+                match &t_enum {
+                    Type::Enum(map) => match (t, map.get(&c).unwrap()) {
+                        (None, None) => Ok((t_enum, vars)),
+                        (Some(t1), Some(t2)) => {
+                            let mut subs = unify(VecDeque::from([(t1.clone(), *t2.clone())]))?;
+                            self.substitutions.append(&mut subs);
+
+                            Ok((t_enum.clone(), vars))
                         }
-                    }
+                        _ => Err(TypeError::VariantFieldsDoNotMatch(c.clone()).into()),
+                    },
                     _ => Err(TypeError::NotAnEnum(c.clone()).into()),
                 }
             }
@@ -750,8 +761,14 @@ impl ProgramChecker {
                     for (var, t_var) in p_vars {
                         match vars.insert(var.clone(), t_var) {
                             None => (),
-                            Some(_) => return Err(InvalidPatternError::SimultaneousPatternBinding(var.clone(), format!("{:?}", p.clone())).into()),
-                        } 
+                            Some(_) => {
+                                return Err(InvalidPatternError::SimultaneousPatternBinding(
+                                    var.clone(),
+                                    format!("{:?}", p.clone()),
+                                )
+                                .into())
+                            }
+                        }
                     }
                 }
 
@@ -803,28 +820,39 @@ impl ProgramChecker {
                 for (var, t_var) in vars2 {
                     match vars1.insert(var.clone(), t_var) {
                         None => (),
-                        Some(_) => return Err(InvalidPatternError::SimultaneousPatternBinding(var.clone(), format!("{:?}", Cons(p1.clone(), p2.clone()))).into()),
-                    } 
+                        Some(_) => {
+                            return Err(InvalidPatternError::SimultaneousPatternBinding(
+                                var.clone(),
+                                format!("{:?}", Cons(p1.clone(), p2.clone())),
+                            )
+                            .into())
+                        }
+                    }
                 }
 
-
                 let t_ret = match (t1.clone(), t2.clone()) {
-                    (Type::GenericVar(v1), Type::GenericVar(_)) => Type::List(Box::new(Type::GenericVar(v1))),
-                    (t1, Type::List(t2)) => if t1 == *t2 {
-                        Type::List(Box::new(t1))
-                    } else {
+                    (Type::GenericVar(v1), Type::GenericVar(_)) => {
+                        Type::List(Box::new(Type::GenericVar(v1)))
+                    }
+                    (t1, Type::List(t2)) => {
+                        if t1 == *t2 {
+                            Type::List(Box::new(t1))
+                        } else {
+                            return Err(TypeError::ImproperType(
+                                format!("{:?} and [{:?}]", t1, t1),
+                                format!("{:?} and {:?}", t1, Type::List(t2)),
+                            )
+                            .into());
+                        }
+                    }
+                    (t, Type::GenericVar(_)) => Type::List(Box::new(t)),
+                    (t1, t2) => {
                         return Err(TypeError::ImproperType(
                             format!("{:?} and [{:?}]", t1, t1),
-                            format!("{:?} and {:?}", t1, Type::List(t2)),
+                            format!("{:?} and {:?}", t1, t2),
                         )
                         .into())
                     }
-                    (t, Type::GenericVar(_)) => Type::List(Box::new(t)),
-                    (t1, t2) => return Err(TypeError::ImproperType(
-                        format!("{:?} and [{:?}]", t1, t1),
-                        format!("{:?} and {:?}", t1, t2),
-                    )
-                    .into()),
                 };
 
                 let mut subs = unify(VecDeque::from([
@@ -840,10 +868,22 @@ impl ProgramChecker {
                 match *xs {
                     Var(xs) => {
                         let fix_var = self.fresh_type_var();
-                        let t_ret = Type::Fix(fix_var.clone(), Box::new(Type::Tuple(vec![Box::new(t.clone()), Box::new(Type::FixVar(fix_var))])));
+                        let t_ret = Type::Fix(
+                            fix_var.clone(),
+                            Box::new(Type::Tuple(vec![
+                                Box::new(t.clone()),
+                                Box::new(Type::FixVar(fix_var)),
+                            ])),
+                        );
                         match vars.insert(xs.clone(), Type::Delay(Box::new(t_ret.clone()))) {
                             None => (),
-                            Some(_) => return Err(InvalidPatternError::SimultaneousPatternBinding(xs.clone(), format!("{:?} << {}", x.clone(), xs.clone())).into()),
+                            Some(_) => {
+                                return Err(InvalidPatternError::SimultaneousPatternBinding(
+                                    xs.clone(),
+                                    format!("{:?} << {}", x.clone(), xs.clone()),
+                                )
+                                .into())
+                            }
                         }
                         Ok((t_ret, vars))
                     }
@@ -856,8 +896,14 @@ impl ProgramChecker {
                 for (var, t_var) in vars2 {
                     match vars1.insert(var.clone(), t_var) {
                         None => (),
-                        Some(_) => return Err(InvalidPatternError::SimultaneousPatternBinding(var.clone(), format!("{:?}", Cons(p1.clone(), p2.clone()))).into()),
-                    } 
+                        Some(_) => {
+                            return Err(InvalidPatternError::SimultaneousPatternBinding(
+                                var.clone(),
+                                format!("{:?}", Cons(p1.clone(), p2.clone())),
+                            )
+                            .into())
+                        }
+                    }
                 }
 
                 let mut subs = unify(VecDeque::from([(t1.clone(), t2.clone())]))?;
@@ -913,7 +959,10 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                     }
                     (Tuple(v1), Tuple(v2)) => {
                         if v1.len() != v2.len() {
-                            Err(TypeError::ImproperType(format!("{:?}", t1), format!("{:?}", t2)).into())
+                            Err(
+                                TypeError::ImproperType(format!("{:?}", t1), format!("{:?}", t2))
+                                    .into(),
+                            )
                         } else {
                             for (t1, t2) in v1.iter().zip(v2) {
                                 constraints.push_front((*t1.clone(), *t2.clone()));
@@ -968,30 +1017,43 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                         unify(constraints)
                     }
                     (Struct(map1), Struct(map2)) => {
-                        let (smaller, bigger) = if map1.len() < map2.len() { (map1, map2) } else { (map2, map1) };
+                        let (smaller, bigger) = if map1.len() < map2.len() {
+                            (map1, map2)
+                        } else {
+                            (map2, map1)
+                        };
                         for (field, t1) in smaller {
                             match bigger.get(field) {
-                                None => return Err(TypeError::StructFieldDoesNotExist(format!("{:?}", Struct(bigger.clone())), field.clone()).into()),
+                                None => {
+                                    return Err(TypeError::StructFieldDoesNotExist(
+                                        format!("{:?}", Struct(bigger.clone())),
+                                        field.clone(),
+                                    )
+                                    .into())
+                                }
                                 Some(t2) => constraints.push_front((*t1.clone(), *t2.clone())),
                             }
                         }
                         unify(constraints)
-                    } 
+                    }
                     (Enum(map1), Enum(map2)) => {
                         for (c1, o1) in map1 {
                             match map2.get(c1) {
                                 None => return Err(TypeError::EnumsDoNotMatch.into()),
                                 Some(o2) => match (o1, o2) {
-                                    (Some(t1), Some(t2)) => constraints.push_front((*t1.clone(), *t2.clone())),
+                                    (Some(t1), Some(t2)) => {
+                                        constraints.push_front((*t1.clone(), *t2.clone()))
+                                    }
                                     (None, None) => (),
-                                    _ => return Err(TypeError::EnumsDoNotMatch.into())
-                                }
-                                
+                                    _ => return Err(TypeError::EnumsDoNotMatch.into()),
+                                },
                             }
                         }
                         unify(constraints)
                     }
-                    _ => Err(TypeError::ImproperType(format!("{:?}", t1), format!("{:?}", t2)).into())
+                    _ => Err(
+                        TypeError::ImproperType(format!("{:?}", t1), format!("{:?}", t2)).into(),
+                    ),
                 }
             }
         }

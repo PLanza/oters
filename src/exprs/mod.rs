@@ -487,7 +487,7 @@ impl VarContext {
                 VarTerm::Var(cell) => {
                     let t = &cell.borrow().1;
                     free_vars.extend(t.get_free_vars());
-                },
+                }
             }
         }
 

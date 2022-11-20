@@ -538,8 +538,8 @@ impl Type {
                 let mut result = t1.get_free_vars();
                 result.extend(t2.get_free_vars());
                 result
-            }, // Functions can have temporal values in their closure
-            Delay(t) => t.get_free_vars(),    
+            } // Functions can have temporal values in their closure
+            Delay(t) => t.get_free_vars(),
             Stable(t) => t.get_free_vars(),
             Fix(_, t) => t.get_free_vars(),
             FixVar(..) => HashSet::new(),
@@ -557,7 +557,6 @@ impl Type {
                         Some(t) => result.extend(t.get_free_vars()),
                         None => (),
                     };
-
                 }
                 result
             }
@@ -567,9 +566,8 @@ impl Type {
                     result.remove(var);
                 }
                 result
-            } 
+            }
             GenericVar(var) => HashSet::from([var.clone()]),
         }
-
     }
 }

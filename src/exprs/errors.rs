@@ -24,7 +24,7 @@ pub enum InvalidExprError {
 }
 
 #[derive(Error, Debug)]
-pub enum InvalidPatternError{
+pub enum InvalidPatternError {
     #[error("The variable {0} is bound multiple times in pattern {1}")]
     SimultaneousPatternBinding(String, String),
     #[error("List patterns must contain elements of the same type")]
