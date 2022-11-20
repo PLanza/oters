@@ -20,7 +20,6 @@ pub enum PExpr {
     If(Box<PExpr>, Box<PExpr>, Box<PExpr>),
     Block(Vec<Box<PExpr>>),
     App(Box<PExpr>, Box<PExpr>),
-    ProjTuple(Box<PExpr>, i64),
     ProjStruct(Box<PExpr>, String),
     Variant(String, Option<Box<PExpr>>),
     Match(Box<PExpr>, Vec<(Box<Pattern>, Box<PExpr>)>),

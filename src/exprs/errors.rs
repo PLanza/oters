@@ -22,3 +22,13 @@ pub enum InvalidExprError {
     #[error("Let expressions must be top-level or inside blocks")]
     IllegalLetExpr,
 }
+
+#[derive(Error, Debug)]
+pub enum InvalidPatternError{
+    #[error("The variable {0} is bound multiple times in pattern {1}")]
+    SimultaneousPatternBinding(String, String),
+    #[error("List patterns must contain elements of the same type")]
+    InvalidListPattern,
+    #[error("Stream patterns can only be bound to variables")]
+    InvalidStreamPattern,
+}

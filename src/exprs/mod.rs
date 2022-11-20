@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use anyhow::{Ok, Result};
 
-pub use errors::InvalidExprError;
+pub use errors::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum VarTerm {
@@ -49,7 +49,6 @@ pub enum Expr {
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Seq(Box<Expr>, Box<Expr>),
     App(Box<Expr>, Box<Expr>),
-    ProjTuple(Box<Expr>, i64),
     ProjStruct(Box<Expr>, String),
     Match(Box<Expr>, Vec<(Pattern, Box<Expr>)>),
     Var(String),
@@ -160,7 +159,6 @@ impl Expr {
                 Box::new(Expr::from_pexpr(*e1)?),
                 Box::new(Expr::from_pexpr(*e2)?),
             )),
-            PExpr::ProjTuple(e, i) => Ok(Expr::ProjTuple(Box::new(Expr::from_pexpr(*e)?), i)),
             PExpr::ProjStruct(e, s) => Ok(Expr::ProjStruct(Box::new(Expr::from_pexpr(*e)?), s)),
             PExpr::Variant(id, o) => match o {
                 None => Ok(Expr::Variant(id, None)),
@@ -325,11 +323,6 @@ impl Expr {
 
                 (b1 || b2, App(Box::new(e1_), Box::new(e2_)))
             }
-            ProjTuple(e, i) => {
-                let (b, e_) = e.substitute(var, term);
-
-                (b, ProjTuple(Box::new(e_), i))
-            }
             ProjStruct(e, s) => {
                 let (b, e_) = e.substitute(var, term);
 
@@ -347,7 +340,7 @@ impl Expr {
 
                 let mut patterns = Vec::new();
                 for (p, e_p) in v {
-                    //TODO: do not substitute it p binds var
+                    //TODO: do not substitute if p binds var
                     let (b_p, e_p_) = e_p.substitute(var, term);
                     b = b || b_p;
                     patterns.push((p, Box::new(e_p_)));

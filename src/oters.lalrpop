@@ -208,7 +208,6 @@ VariantStructExpr: Box<PExpr> = {
 
 // Left associative 
 DotExpr: Box<PExpr> = {
-  <DotExpr> "." <Int> => Box::new(PExpr::ProjTuple(<>)),
   <DotExpr> "." <LowerId> => Box::new(PExpr::ProjStruct(<>)),
   Prefix
 };

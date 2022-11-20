@@ -1,0 +1,1 @@
+let is_even = fn x y -> ~(x + !#y)

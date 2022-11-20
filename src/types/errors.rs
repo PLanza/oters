@@ -28,4 +28,6 @@ pub enum TypeError {
     VariantFieldsDoNotMatch(String),
     #[error("The variable {0}, is not a enum")]
     NotAnEnum(String),
+    #[error("Enums do not match")]
+    EnumsDoNotMatch,
 }
