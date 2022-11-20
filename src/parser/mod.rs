@@ -17,17 +17,13 @@ fn parsing_error_message(source: &String, location: (usize, usize)) -> Result<St
 
     // The token's position within its line by number of characters
     let mut token_pos = 0;
-    let mut char_count = 0;
 
     for (i, c) in source.char_indices() {
         if c == '\n' && i < location.0 {
             line_start = i + 1;
             line_number += 1;
+            token_pos = 0;
             continue;
-        }
-
-        if i == location.0 {
-            token_pos = char_count;
         }
 
         if c == '\n' && i >= location.0 {
@@ -35,7 +31,9 @@ fn parsing_error_message(source: &String, location: (usize, usize)) -> Result<St
             break;
         }
 
-        char_count += 1;
+        if i < location.0 {
+            token_pos += 1;
+        }
     }
 
     // The source code line where the error occurs

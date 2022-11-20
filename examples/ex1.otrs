@@ -1,4 +1,4 @@
-type Str<A> = fix a -> (A, a)
+type Str<A> = (A, @Str)
 
 enum Option<T> {
   None, 
@@ -7,12 +7,12 @@ enum Option<T> {
 
 type Event<A> = Str<Option<A>>
 
-let map<A, B> = fn (f: #(A -> B)) (xs: Str<A>) ->
+let map = fn f xs ->
   match xs with { 
     x << xs => unbox f x << @(map f !@xs),
   }
 
-let scan<A, #B> = fn (f: #(B -> A -> B)) (acc: B) (as: Str<A>) ->
+let scan = fn f acc as ->
   match as with {
     a << as => {
       let acc' = !#f acc a;
@@ -20,7 +20,7 @@ let scan<A, #B> = fn (f: #(B -> A -> B)) (acc: B) (as: Str<A>) ->
     }
   }
 
-let switch<A> = fn (xs: Str<A>) (es: Event<Str<A>>) -> 
+let switch = fn xs es -> 
   match (xs, es) with {
     (x << xs, e << es) => match e with {
       None => x << @(switch !@xs !@es),
@@ -28,7 +28,7 @@ let switch<A> = fn (xs: Str<A>) (es: Event<Str<A>>) ->
     }
   }
 
-let const<#A> = fn (x: A) -> 
+let const = fn x -> 
   x << @(const x)
 
-let twos = map #(fn (x: int) -> x + 1) (const 1)
+let twos = map #(fn x -> x + 1) (const 1)

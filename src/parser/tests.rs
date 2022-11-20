@@ -218,14 +218,13 @@ fn test_list() {
 
 #[cfg(test)]
 fn primitive_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
-    use super::ast::TypeExpr::{TEBool, TEFloat, TEInt, TEString, TEUnit, TEUser, TEVar};
+    use super::ast::TypeExpr::{TEBool, TEFloat, TEInt, TEString, TEUnit, TEUser};
     vec![
         ("bool".to_string(), Box::new(TEBool)),
         ("int".to_string(), Box::new(TEInt)),
         ("float".to_string(), Box::new(TEFloat)),
         ("string".to_string(), Box::new(TEString)),
         ("()".to_string(), Box::new(TEUnit)),
-        ("alpha".to_string(), Box::new(TEVar("alpha".to_string()))),
         (
             "T".to_string(),
             Box::new(TEUser("T".to_string(), Vec::with_capacity(0))),
@@ -321,38 +320,6 @@ fn test_function_types() {
 }
 
 #[cfg(test)]
-fn fix_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
-    use super::ast::TypeExpr::TEFix;
-
-    let mut types = primitive_types();
-    types.append(&mut prefix_types());
-    types.append(&mut list_types());
-    types.append(&mut function_types());
-
-    let mut fix_types = Vec::new();
-
-    for t in types.iter() {
-        let code = format!("fix alpha -> {}", t.0);
-
-        let expr = std::boxed::Box::new(TEFix("alpha".to_string(), t.1.clone()));
-
-        fix_types.push((code, expr));
-    }
-
-    fix_types
-}
-
-#[test]
-fn test_fix_types() {
-    let parser = super::oters::TypeParser::new();
-
-    for t in fix_types() {
-        let result = parser.parse(&t.0);
-        assert_eq!(result.unwrap(), t.1)
-    }
-}
-
-#[cfg(test)]
 fn user_type() -> (String, Box<super::ast::TypeExpr>) {
     use super::ast::TypeExpr::TEUser;
 
@@ -360,7 +327,6 @@ fn user_type() -> (String, Box<super::ast::TypeExpr>) {
     types.append(&mut prefix_types());
     types.append(&mut list_types());
     types.append(&mut function_types());
-    types.append(&mut fix_types());
 
     let mut code = "MyType <".to_string();
     let mut generics_vec = Vec::new();
@@ -394,7 +360,6 @@ fn types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
     types.append(&mut prefix_types());
     types.append(&mut list_types());
     types.append(&mut function_types());
-    types.append(&mut fix_types());
     types.push(user_type());
 
     types
@@ -404,12 +369,12 @@ fn types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
 fn test_type_alias() {
     use super::ast::PExpr::TypeDef;
 
-    let params = vec![(true, "A".to_string()), (false, "B".to_string())];
+    let params = vec!["A".to_string(), "B".to_string()];
 
     let parser = super::oters::ItemParser::new();
 
     for t in types() {
-        let code = format!("type MyAlias<#A, B> = {}", t.0);
+        let code = format!("type MyAlias<A, B> = {}", t.0);
 
         let result = parser.parse(&code);
         assert_eq!(
@@ -423,11 +388,11 @@ fn test_type_alias() {
 fn test_struct_def() {
     use super::ast::PExpr::StructDef;
 
-    let params = vec![(true, "A".to_string()), (false, "B".to_string())];
+    let params = vec!["A".to_string(), "B".to_string()];
 
     let parser = super::oters::ItemParser::new();
 
-    let mut code = "struct MyStruct<#A, B> {".to_string();
+    let mut code = "struct MyStruct<A, B> {".to_string();
     let mut fields = Vec::new();
 
     for (i, t) in types().iter().enumerate() {
@@ -448,11 +413,11 @@ fn test_struct_def() {
 fn test_enum_def() {
     use super::ast::PExpr::EnumDef;
 
-    let params = vec![(true, "A".to_string()), (false, "B".to_string())];
+    let params = vec!["A".to_string(), "B".to_string()];
 
     let parser = super::oters::ItemParser::new();
 
-    let mut code = "enum MyEnum<#A, B> {".to_string();
+    let mut code = "enum MyEnum<A, B> {".to_string();
     let mut fields = Vec::new();
 
     for (i, t) in types().iter().enumerate() {
@@ -564,15 +529,12 @@ fn functions() -> Vec<(String, Box<super::ast::PExpr>)> {
 
     let mut fn_vecs = Vec::new();
 
-    let types = types();
-
-    for (i, t) in types.iter().enumerate() {
-        let e = &exprs[i];
-        let code = format!("fn (arg : {}) -> {}", t.0, e.0);
+    for e in exprs {
+        let code = format!("fn arg -> {}", e.0);
 
         fn_vecs.push((
             code.to_string(),
-            Box::new(Fn(vec![("arg".to_string(), t.1.clone())], e.1.clone())),
+            Box::new(Fn(vec!["arg".to_string()], e.1.clone())),
         ));
     }
 
@@ -584,39 +546,6 @@ fn test_fn_exprs() {
     let parser = super::oters::ExprParser::new();
 
     for v in functions() {
-        let result = parser.parse(&v.0);
-        assert_eq!(result.unwrap(), v.1);
-    }
-}
-
-#[cfg(test)]
-fn fix_points() -> Vec<(String, Box<super::ast::PExpr>)> {
-    use super::ast::PExpr::Fix;
-
-    let mut exprs = binops();
-    exprs.append(&mut unops());
-    exprs.append(&mut ifs());
-    exprs.push(block_expr());
-
-    let mut fix_vecs = Vec::new();
-
-    for e in exprs {
-        let code = format!("fix f -> {}", e.0);
-
-        fix_vecs.push((
-            code.to_string(),
-            Box::new(Fix("f".to_string(), e.1.clone())),
-        ));
-    }
-
-    fix_vecs
-}
-
-#[test]
-fn test_fix_exprs() {
-    let parser = super::oters::ExprParser::new();
-
-    for v in fix_points() {
         let result = parser.parse(&v.0);
         assert_eq!(result.unwrap(), v.1);
     }
@@ -652,7 +581,7 @@ fn variant_exprs() -> Vec<(String, Box<super::ast::PExpr>)> {
 fn test_variant_exprs() {
     let parser = super::oters::ExprParser::new();
 
-    for v in fix_points() {
+    for v in functions() {
         let result = parser.parse(&v.0);
         assert_eq!(result.unwrap(), v.1);
     }

@@ -76,11 +76,6 @@ Unit: () = {
 // -------------------- Types --------------------
 // Presented with lowest precedence at the top
 
-FixType: Box<TypeExpr> = {
-  "fix" <v: LowerId> "->" <t: FixType> => Box::new(TypeExpr::TEFix(v,t)),
-  FunctionType,
-}
-
 FunctionType: Box<TypeExpr> = {
   <PrefixType> "->" <FunctionType> => Box::new(TypeExpr::TEFunction(<>)),
   PrefixType,
@@ -118,11 +113,10 @@ TypeTerm: Box<TypeExpr> = {
   TupleType,
   "[" <Type> "]" => Box::new(TypeExpr::TEList(<>)),
   UserType,
-  LowerId => Box::new(TypeExpr::TEVar(<>)),
   "(" <Type> ")",
 };
 
-pub Type: Box<TypeExpr> = FixType;
+pub Type: Box<TypeExpr> = FunctionType;
 
  
 // -------------------- Operators --------------------
@@ -214,7 +208,6 @@ VariantStructExpr: Box<PExpr> = {
 
 // Left associative 
 DotExpr: Box<PExpr> = {
-  <DotExpr> "." <Int> => Box::new(PExpr::ProjTuple(<>)),
   <DotExpr> "." <LowerId> => Box::new(PExpr::ProjStruct(<>)),
   Prefix
 };
@@ -325,7 +318,7 @@ Pattern: Box<Pattern> = OrPattern;
 OpExpr = OrExpr;
 
 BlockTerm: Box<PExpr> = {
-  "let" <i: LowerId> "=" <e: Expr> ";" => Box::new(PExpr::Let(i, Vec::new(), e)),
+  "let" <i: LowerId> "=" <e: Expr> ";" => Box::new(PExpr::Let(i, e)),
   <e: Expr> ";" => e
 };
 
@@ -340,22 +333,14 @@ IfExpr: Box<PExpr> = {
   "if" <e1: Expr> "then" <e2: Expr> "else" <e3: Expr> => Box::new(PExpr::If(e1, e2, e3))
 };
 
-FnArg: (String, Box<TypeExpr>) = {
-  "(" <i: LowerId> ":" <t: Type> ")" => (i, t),
+FnArgList: Vec<String> = {
+  <v: LowerId+> => v,
   // Add pattern variants for Lists, Tuples, Streams
 };
 
-FnArgList: Vec<(String, Box<TypeExpr>)> = {
-  <v: FnArg+> => v,
-};
-
 FnExpr: Box<PExpr> = {
-  "fn" Unit "->" <e: Expr> => Box::new(PExpr::Fn(vec![("_".to_string(), Box::new(TypeExpr::TEUnit))], e)),
+  "fn" Unit "->" <e: Expr> => Box::new(PExpr::Fn(Vec::new(), e)),
   "fn" <a: FnArgList> "->" <e: Expr> => Box::new(PExpr::Fn(a, e)),
-};
-
-FixExpr: Box<PExpr> = {
-  "fix" <LowerId> "->" <Expr> => Box::new(PExpr::Fix(<>)),
 };
 
 MatchItem: (Box<Pattern>, Box<PExpr>) = {
@@ -371,7 +356,6 @@ pub Expr: Box<PExpr> = {
   BlockExpr,
   IfExpr,
   FnExpr,
-  FixExpr,
   MatchExpr,
   <UpperId> => Box::new(PExpr::Variant(<>, None)), 
 };
@@ -379,17 +363,11 @@ pub Expr: Box<PExpr> = {
 // -------------------- Top-Level Expressions -------------------- 
 
 LetExpr: Box<PExpr> = {
-  "let" <i: LowerId> "=" <e: Expr> => Box::new(PExpr::Let(i, Vec::new(), e)),
-  "let" <i: LowerId> <p: GenericParams> "=" <e: Expr> => Box::new(PExpr::Let(i, p, e))
+  "let" <i: LowerId> "=" <e: Expr> => Box::new(PExpr::Let(i, e)),
 };
 
-GenericParam: (bool, String) = {
-  "#" <UpperId> => (true, <>),
-  UpperId => (false, <>),
-};
-
-GenericParams: Vec<(bool, String)> = {
-  "<" <Comma<GenericParam>> ">"
+GenericParams: Vec<String> = {
+  "<" <Comma<UpperId>> ">"
 };
 
 TypeExpr: Box<PExpr> = {

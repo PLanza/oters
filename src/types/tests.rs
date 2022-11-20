@@ -1,9 +1,10 @@
-#[allow(unused_imports)]
-use std::collections::HashMap;
+#![allow(unused_imports)]
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[test]
 fn test_stable_context() {
-    let type_decs = HashMap::new();
     use super::Type;
     use crate::exprs::{
         VarContext,
@@ -12,14 +13,17 @@ fn test_stable_context() {
 
     let context = VarContext {
         terms: vec![
-            Var("name".to_owned(), Type::String),
-            Var(
+            Var(Rc::new(RefCell::new(("name".to_owned(), Type::String)))),
+            Var(Rc::new(RefCell::new((
                 "f".to_owned(),
                 Type::Function(Box::new(Type::Int), Box::new(Type::Int)),
-            ),
+            )))),
             VarTerm::Tick,
-            Var("later".to_owned(), Type::Delay(Box::new(Type::Float))),
-            Var(
+            Var(Rc::new(RefCell::new((
+                "later".to_owned(),
+                Type::Delay(Box::new(Type::Float)),
+            )))),
+            Var(Rc::new(RefCell::new((
                 "boxed".to_owned(),
                 Type::Stable(Box::new(Type::Fix(
                     "alpha".to_owned(),
@@ -28,15 +32,15 @@ fn test_stable_context() {
                         Box::new(Type::FixVar("alpha".to_owned())),
                     ])),
                 ))),
-            ),
+            )))),
         ],
         ticks: vec![2],
     };
 
     let stable = VarContext {
         terms: vec![
-            Var("name".to_owned(), Type::String),
-            Var(
+            Var(Rc::new(RefCell::new(("name".to_owned(), Type::String)))),
+            Var(Rc::new(RefCell::new((
                 "boxed".to_owned(),
                 Type::Stable(Box::new(Type::Fix(
                     "alpha".to_owned(),
@@ -45,12 +49,12 @@ fn test_stable_context() {
                         Box::new(Type::FixVar("alpha".to_owned())),
                     ])),
                 ))),
-            ),
+            )))),
         ],
         ticks: vec![],
     };
 
-    assert_eq!(context.stable(&type_decs).unwrap(), stable);
+    assert_eq!(context.stable().unwrap(), stable);
 }
 
 // Test substitution

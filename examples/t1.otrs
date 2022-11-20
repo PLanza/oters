@@ -3,9 +3,11 @@ enum Option<T> {
   Some T,
 }
 
-type Str<A> = fix a -> (A, a)
+type Str<A> = (A, @Str)
 
 struct Circle {
   pos: Str<(int,int)>,
   r: Str<float>,
 }
+
+type Event<A> = Str<Option<A>>
