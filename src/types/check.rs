@@ -111,7 +111,25 @@ impl ProgramChecker {
                     };
 
                     // Type check the expression
-                    let t = self.infer(&e, VarContext::new())?;
+                    let mut t = self.infer(&e, VarContext::new())?;
+
+                    // Unify the substitutions
+                    self.unify_subs()?;
+
+                    // Apply the substitutions
+                    t = t.apply_subs(&self.substitutions);
+
+                    // Reduce Fix types
+                    t = t.sub_delay_fix(&"".to_owned());
+
+                    // Convert free variables to generics
+                    let free_vars = t.get_free_vars();
+
+                    let t = if !free_vars.is_empty() {
+                        Type::Generic(free_vars.into_iter().collect(), Box::new(t))
+                    } else {
+                        t
+                    };
 
                     // Make sure the resulting type is well formed
                     t.well_formed(TypeContext::new())?;
@@ -234,15 +252,14 @@ impl ProgramChecker {
                 match t {
                     Type::Fix(_, t_) => Ok(t_.sub_delay_fix(&fix_var)),
                     Type::GenericVar(_) => Ok(a),
-                    _ => unreachable!(),
+                    _ => Err(TypeError::ImproperType("Fix α.t".to_string(), format!("{:?}", t)).into()),
                 }
             }
             Into(e) => {
                 let t = self.infer(e, ctx.clone())?;
                 let fix_var = self.fresh_type_var();
-                let t_ret = t.sub_delay_fix(&fix_var);
 
-                Ok(Type::Fix(fix_var, Box::new(t_ret)))
+                Ok(Type::Fix(fix_var, Box::new(t)))
             }
             List(v) => {
                 let mut types = Vec::new();
@@ -373,11 +390,11 @@ impl ProgramChecker {
                 );
 
                 let t = self.infer(e, ctx.clone())?;
-                let mut subs = unify(VecDeque::from([(t.clone(), t_ret.clone())]))?;
+                let mut subs = unify(VecDeque::from([(t_ret.clone(), t.clone())]))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
-                Ok(t_ret)
+                Ok(t)
             }
             If(e1, e2, e3) => {
                 let t1 = self.infer(e1, ctx.clone())?;
@@ -427,8 +444,8 @@ impl ProgramChecker {
                 let t3 = Type::GenericVar(self.fresh_type_var());
 
                 let mut subs = unify(VecDeque::from([(
-                    t1,
-                    Type::Function(Box::new(t2), Box::new(t3.clone())),
+                    t1.clone(),
+                    Type::Function(Box::new(t2.clone()), Box::new(t3.clone())),
                 )]))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
@@ -932,6 +949,30 @@ impl ProgramChecker {
 
         format!("__t{}", x)
     }
+
+    fn unify_subs(&mut self) -> Result<()>{
+        let mut sub_map = HashMap::new();
+        let mut i = 0;
+        while i < self.substitutions.len() {
+            let (x1, t) = self.substitutions[i].clone();
+
+            match sub_map.get_mut(&x1) {
+                None => { sub_map.insert(x1.clone(), vec![i]); },
+                Some(indices) => {
+                    let mut constraints = VecDeque::new();
+                    for index in indices.clone() {
+                        constraints.push_back((t.clone(), self.substitutions[index].1.clone()));
+                    }
+                    let mut subs = unify(constraints)?;
+                    self.substitutions.append(&mut subs);
+
+                    (*indices).push(i);
+                },
+            }
+            i += 1;
+        }
+        Ok(())
+    }
 }
 
 fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>> {
@@ -952,9 +993,9 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                     }
                     (t1, GenericVar(alpha)) => {
                         sub_constraints(&mut constraints, &GenericVar(alpha.clone()), &t1);
-                        let mut subs = vec![(alpha.clone(), t2.clone())];
-                        subs.append(&mut unify(constraints)?);
+                        let mut subs = unify(constraints)?;
 
+                        subs.push((alpha.clone(), t1.clone()));
                         Ok(subs)
                     }
                     (Tuple(v1), Tuple(v2)) => {

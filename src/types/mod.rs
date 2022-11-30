@@ -313,7 +313,6 @@ impl Type {
                 Box::new(t1.sub_delay_fix(fix_var)),
                 Box::new(t2.sub_delay_fix(fix_var)),
             ),
-
             Delay(t) => match &**t {
                 Fix(alpha, _) => {
                     if alpha == fix_var {
@@ -327,10 +326,9 @@ impl Type {
             Stable(t_) => Stable(Box::new(t_.sub_delay_fix(fix_var))),
             Fix(alpha, t_) => {
                 if alpha == fix_var {
-                    // var is now a different bound variable
                     self.clone()
                 } else {
-                    Fix(alpha.clone(), Box::new(t_.sub_delay_fix(fix_var)))
+                    Fix(alpha.clone(), Box::new(t_.sub_delay_fix(&alpha)))
                 }
             }
             FixVar(_) => self.clone(),
@@ -569,5 +567,13 @@ impl Type {
             }
             GenericVar(var) => HashSet::from([var.clone()]),
         }
+    }
+
+    pub fn apply_subs(&self, subs: &Vec<(String, Type)>) -> Type {
+        let mut result = self.clone();
+        for (var, t) in subs {
+            result = result.sub_generic(&var, &t);
+        }
+        result 
     }
 }
