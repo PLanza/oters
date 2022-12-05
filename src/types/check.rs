@@ -134,6 +134,8 @@ impl ProgramChecker {
                     // Make sure the resulting type is well formed
                     t.well_formed(TypeContext::new())?;
 
+                    println!("{:?}", t);
+
                     // Add it to the map of value declarations
                     self.value_decs.insert(id.clone(), t);
                 }
@@ -377,7 +379,12 @@ impl ProgramChecker {
                 let mut ctx = ctx.clone();
                 ctx.push_var(var.clone(), t1.clone());
 
-                let t2 = self.infer(e, ctx.clone())?;
+                let t2 = Type::GenericVar(self.fresh_type_var());
+                let t_fn_ret = self.infer(e, ctx.clone())?;
+
+                let mut subs = unify(VecDeque::from([(t_fn_ret.clone(), t2.clone())]))?;
+                self.substitutions.append(&mut subs);
+                ctx.apply_subs(&self.substitutions);
 
                 Ok(Type::Function(Box::new(ctx.get_var(var)?), Box::new(t2)))
             }
@@ -420,10 +427,16 @@ impl ProgramChecker {
                         t_e_free_vars.remove(&var);
                     }
 
+                    let t_let = if t_e_free_vars.is_empty() {
+                        t_e.clone()
+                    } else {
+                        Type::Generic(t_e_free_vars.into_iter().collect(), Box::new(t_e.clone()))
+                    };
+
                     let mut ctx = ctx.clone();
                     ctx.push_var(
                         id,
-                        Type::Generic(t_e_free_vars.into_iter().collect(), Box::new(t_e.clone())),
+                        t_let,
                     );
 
                     Ok(self.infer(e2, ctx)?)
@@ -963,8 +976,12 @@ impl ProgramChecker {
                     for index in indices.clone() {
                         constraints.push_back((t.clone(), self.substitutions[index].1.clone()));
                     }
-                    let mut subs = unify(constraints)?;
-                    self.substitutions.append(&mut subs);
+                    let subs = unify(constraints)?;
+                    for sub in subs {
+                        if !self.substitutions.contains(&sub){
+                            self.substitutions.push(sub);
+                        }
+                    }
 
                     (*indices).push(i);
                 },

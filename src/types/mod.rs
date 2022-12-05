@@ -515,8 +515,7 @@ impl Type {
                 Ok(result)
             }
             Generic(..) => Ok(false),
-            // This is probably wrong
-            GenericVar(_) => Ok(true),
+            GenericVar(_) => Ok(false),
         }
     }
 
@@ -571,8 +570,13 @@ impl Type {
 
     pub fn apply_subs(&self, subs: &Vec<(String, Type)>) -> Type {
         let mut result = self.clone();
-        for (var, t) in subs {
-            result = result.sub_generic(&var, &t);
+        let mut prev = Type::Int;
+        while &result != &prev {
+            prev = result.clone();
+            for (var, t) in subs {
+                result = result.sub_generic(&var, &t);
+            }
+            result = result.sub_delay_fix(&"".to_owned());
         }
         result 
     }

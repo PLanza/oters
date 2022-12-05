@@ -9,14 +9,14 @@ type Event<A> = Str<Option<A>>
 
 let map = fn f xs ->
   match xs with { 
-    x << xs => unbox f x << @(map f !@xs),
+    x << xs => !#f x << @(map f !@xs),
   }
 
 let scan = fn f acc as ->
   match as with {
     a << as => {
-      let acc' = !#f acc a;
-      acc' << @(scan f acc' !@as)
+      let acc' = !#f !#acc a;
+      !#acc' << @(scan f !#acc' !@as)
     }
   }
 
@@ -28,7 +28,6 @@ let switch = fn xs es ->
     }
   }
 
-let const = fn x -> 
-  x << @(const x)
+let const = fn x -> !#x << @(const x)
 
-let twos = map #(fn x -> x + 1) (const 1)
+let twos = map #(fn x -> x + 1) (const #1)

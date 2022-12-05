@@ -315,7 +315,7 @@ impl Expr {
                 let (b1, e1_) = e1.substitute(var, term);
                 let (b2, e2_) = e2.substitute(var, term);
 
-                (b1 || b2, App(Box::new(e1_), Box::new(e2_)))
+                (b1 || b2, Seq(Box::new(e1_), Box::new(e2_)))
             }
             App(e1, e2) => {
                 let (b1, e1_) = e1.substitute(var, term);
@@ -440,7 +440,7 @@ impl VarContext {
     }
 
     pub fn get_var(self, var: &String) -> Result<Type> {
-        for (i, term) in self.terms.iter().enumerate() {
+        for (i, term) in self.terms.iter().rev().enumerate() {
             match term {
                 VarTerm::Tick => (),
                 VarTerm::Var(cell) => {
