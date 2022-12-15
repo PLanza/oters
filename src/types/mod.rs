@@ -1,9 +1,11 @@
 pub mod check;
 mod errors;
 mod tests;
+mod utils;
 
 use crate::parser::ast::TypeExpr;
 pub use errors::TypeError;
+pub use utils::*;
 
 use std::collections::{HashMap, HashSet};
 
@@ -578,6 +580,6 @@ impl Type {
             }
             result = result.sub_delay_fix(&"".to_owned());
         }
-        result 
+        result
     }
 }

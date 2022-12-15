@@ -134,7 +134,7 @@ impl ProgramChecker {
                     // Make sure the resulting type is well formed
                     t.well_formed(TypeContext::new())?;
 
-                    println!("{:?}", t);
+                    println!("{}", t);
 
                     // Add it to the map of value declarations
                     self.value_decs.insert(id.clone(), t);
@@ -254,7 +254,11 @@ impl ProgramChecker {
                 match t {
                     Type::Fix(_, t_) => Ok(t_.sub_delay_fix(&fix_var)),
                     Type::GenericVar(_) => Ok(a),
-                    _ => Err(TypeError::ImproperType("Fix α.t".to_string(), format!("{:?}", t)).into()),
+                    _ => Err(TypeError::ImproperType(
+                        Type::Fix("α".to_string(), Box::new(Type::Unit)),
+                        t,
+                    )
+                    .into()),
                 }
             }
             Into(e) => {
@@ -434,10 +438,7 @@ impl ProgramChecker {
                     };
 
                     let mut ctx = ctx.clone();
-                    ctx.push_var(
-                        id,
-                        t_let,
-                    );
+                    ctx.push_var(id, t_let);
 
                     Ok(self.infer(e2, ctx)?)
                 }
@@ -548,81 +549,60 @@ impl ProgramChecker {
             (Float, Add, Float) | (Float, Add, GenericVar(_)) | (GenericVar(_), Add, Float) => {
                 Ok(Float)
             }
-            (t1, Add, t2) => Err(ImproperType(
-                "Float or Int".to_string(),
-                format!("{:?} and {:?}", t1, t2),
-            )
-            .into()),
+            (_, Add, _) => {
+                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
+            }
 
             (GenericVar(v1), Sub, GenericVar(_)) => Ok(GenericVar(v1)),
             (Int, Sub, Int) | (Int, Sub, GenericVar(_)) | (GenericVar(_), Sub, Int) => Ok(Int),
             (Float, Sub, Float) | (Float, Sub, GenericVar(_)) | (GenericVar(_), Sub, Float) => {
                 Ok(Float)
             }
-            (t1, Sub, t2) => Err(ImproperType(
-                "Float or Int".to_string(),
-                format!("{:?} and {:?}", t1, t2),
-            )
-            .into()),
+            (_, Sub, _) => {
+                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
+            }
 
             (GenericVar(v1), Mul, GenericVar(_)) => Ok(GenericVar(v1)),
             (Int, Mul, Int) | (Int, Mul, GenericVar(_)) | (GenericVar(_), Mul, Int) => Ok(Int),
             (Float, Mul, Float) | (Float, Mul, GenericVar(_)) | (GenericVar(_), Mul, Float) => {
                 Ok(Float)
             }
-            (t1, Mul, t2) => Err(ImproperType(
-                "Float or Int".to_string(),
-                format!("{:?} and {:?}", t1, t2),
-            )
-            .into()),
-
+            (_, Mul, _) => {
+                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
+            }
             (GenericVar(v1), Div, GenericVar(_)) => Ok(GenericVar(v1)),
             (Int, Div, Int) | (Int, Div, GenericVar(_)) | (GenericVar(_), Div, Int) => Ok(Int),
             (Float, Div, Float) | (Float, Div, GenericVar(_)) | (GenericVar(_), Div, Float) => {
                 Ok(Float)
             }
-            (t1, Div, t2) => Err(ImproperType(
-                "Float or Int".to_string(),
-                format!("{:?} and {:?}", t1, t2),
-            )
-            .into()),
+            (_, Div, _) => {
+                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
+            }
 
             (GenericVar(_), Mod, GenericVar(_))
             | (Int, Mod, Int)
             | (Int, Mod, GenericVar(_))
             | (GenericVar(_), Mod, Int) => Ok(Int),
-            (t1, Mod, t2) => Err(ImproperType(
-                "Float or Int".to_string(),
-                format!("{:?} and {:?}", t1, t2),
-            )
-            .into()),
+            (_, Mod, _) => {
+                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
+            }
 
             (GenericVar(v1), Cons, GenericVar(_)) => Ok(List(Box::new(GenericVar(v1)))),
             (t1, Cons, List(t2)) => {
                 if t1 == *t2 {
                     Ok(List(Box::new(t1)))
                 } else {
-                    Err(ImproperType(
-                        format!("{:?} and [{:?}]", t1, t1),
-                        format!("{:?} and {:?}", t1, List(t2)),
-                    )
-                    .into())
+                    Err(ImproperType(List(Box::new(t1)), List(t2)).into())
                 }
             }
             (t, Cons, GenericVar(_)) => Ok(List(Box::new(t))),
-            (t1, Cons, t2) => Err(ImproperType(
-                format!("{:?} and [{:?}]", t1, t1),
-                format!("{:?} and {:?}", t1, t2),
-            )
-            .into()),
-
+            (t1, Cons, t2) => Err(ImproperType(List(Box::new(t1)), t2).into()),
             (GenericVar(_), Eq, GenericVar(_))
             | (_, Eq, GenericVar(_))
             | (GenericVar(_), Eq, _) => Ok(Bool),
-            (t1, Eq, t2) => {
-                Err(ImproperType("same types".to_string(), format!("{:?} and {:?}", t1, t2)).into())
+            (_, Eq, _) => {
+                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
             }
-
             (GenericVar(_), Lt, GenericVar(_))
             | (Int, Lt, Int)
             | (Int, Lt, GenericVar(_))
@@ -630,11 +610,9 @@ impl ProgramChecker {
             | (Float, Lt, Float)
             | (Float, Lt, GenericVar(_))
             | (GenericVar(_), Lt, Float) => Ok(Bool),
-            (t1, Lt, t2) => Err(ImproperType(
-                "Float or Int".to_string(),
-                format!("{:?} and {:?}", t1, t2),
-            )
-            .into()),
+            (_, Lt, _) => {
+                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
+            }
 
             (GenericVar(_), Gt, GenericVar(_))
             | (Int, Gt, Int)
@@ -643,27 +621,25 @@ impl ProgramChecker {
             | (Float, Gt, Float)
             | (Float, Gt, GenericVar(_))
             | (GenericVar(_), Gt, Float) => Ok(Bool),
-            (t1, Gt, t2) => Err(ImproperType(
-                "Float or Int".to_string(),
-                format!("{:?} and {:?}", t1, t2),
-            )
-            .into()),
+            (_, Gt, _) => {
+                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
+            }
 
             (GenericVar(_), And, GenericVar(_))
             | (Bool, And, Bool)
             | (Bool, And, GenericVar(_))
             | (GenericVar(_), And, Bool) => Ok(Bool),
-            (t1, And, t2) => {
-                Err(ImproperType("two Bools".to_string(), format!("{:?} and {:?}", t1, t2)).into())
-            }
+            (Bool, And, t2) => Err(ImproperType(Bool, t2).into()),
+            (t1, And, Bool) => Err(ImproperType(Bool, t1).into()),
+            (t1, And, _) => Err(ImproperType(Bool, t1).into()),
 
             (GenericVar(_), Or, GenericVar(_))
             | (Bool, Or, Bool)
             | (Bool, Or, GenericVar(_))
             | (GenericVar(_), Or, Bool) => Ok(Bool),
-            (t1, Or, t2) => {
-                Err(ImproperType("two Bools".to_string(), format!("{:?} and {:?}", t1, t2)).into())
-            }
+            (Bool, Or, t2) => Err(ImproperType(Bool, t2).into()),
+            (t1, Or, Bool) => Err(ImproperType(Bool, t1).into()),
+            (t1, Or, _) => Err(ImproperType(Bool, t1).into()),
         }
     }
 
@@ -869,19 +845,15 @@ impl ProgramChecker {
                             Type::List(Box::new(t1))
                         } else {
                             return Err(TypeError::ImproperType(
-                                format!("{:?} and [{:?}]", t1, t1),
-                                format!("{:?} and {:?}", t1, Type::List(t2)),
+                                Type::List(Box::new(t1)),
+                                Type::List(t2),
                             )
                             .into());
                         }
                     }
                     (t, Type::GenericVar(_)) => Type::List(Box::new(t)),
                     (t1, t2) => {
-                        return Err(TypeError::ImproperType(
-                            format!("{:?} and [{:?}]", t1, t1),
-                            format!("{:?} and {:?}", t1, t2),
-                        )
-                        .into())
+                        return Err(TypeError::ImproperType(Type::List(Box::new(t1)), t2).into())
                     }
                 };
 
@@ -963,14 +935,16 @@ impl ProgramChecker {
         format!("__t{}", x)
     }
 
-    fn unify_subs(&mut self) -> Result<()>{
+    fn unify_subs(&mut self) -> Result<()> {
         let mut sub_map = HashMap::new();
         let mut i = 0;
         while i < self.substitutions.len() {
             let (x1, t) = self.substitutions[i].clone();
 
             match sub_map.get_mut(&x1) {
-                None => { sub_map.insert(x1.clone(), vec![i]); },
+                None => {
+                    sub_map.insert(x1.clone(), vec![i]);
+                }
                 Some(indices) => {
                     let mut constraints = VecDeque::new();
                     for index in indices.clone() {
@@ -978,13 +952,13 @@ impl ProgramChecker {
                     }
                     let subs = unify(constraints)?;
                     for sub in subs {
-                        if !self.substitutions.contains(&sub){
+                        if !self.substitutions.contains(&sub) {
                             self.substitutions.push(sub);
                         }
                     }
 
                     (*indices).push(i);
-                },
+                }
             }
             i += 1;
         }
@@ -1017,10 +991,7 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                     }
                     (Tuple(v1), Tuple(v2)) => {
                         if v1.len() != v2.len() {
-                            Err(
-                                TypeError::ImproperType(format!("{:?}", t1), format!("{:?}", t2))
-                                    .into(),
-                            )
+                            Err(TypeError::ImproperType(t1.clone(), t2.clone()).into())
                         } else {
                             for (t1, t2) in v1.iter().zip(v2) {
                                 constraints.push_front((*t1.clone(), *t2.clone()));
@@ -1109,9 +1080,7 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                         }
                         unify(constraints)
                     }
-                    _ => Err(
-                        TypeError::ImproperType(format!("{:?}", t1), format!("{:?}", t2)).into(),
-                    ),
+                    _ => Err(TypeError::ImproperType(t1.clone(), t2.clone()).into()),
                 }
             }
         }

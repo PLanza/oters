@@ -1,3 +1,4 @@
+use super::Type;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -11,9 +12,9 @@ pub enum TypeError {
     #[error("Generic Type Variable {0} has not been declared")]
     GenericVariableNotFound(String),
     #[error("Expexted a Stable type, got {0} instead")]
-    ImproperUnstableType(String),
+    ImproperUnstableType(Type),
     #[error("Expected {0}, got {1} instead")]
-    ImproperType(String, String),
+    ImproperType(Type, Type),
     #[error("The variable {0}, cannot be found in the current context")]
     UnboundVariableError(String),
     #[error("The variable {0}, cannot be accessed in the current context")]
