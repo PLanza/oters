@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 mod exprs;
+mod interpret;
 mod parser;
 mod types;
 
@@ -12,7 +13,6 @@ fn main() -> Result<()> {
     let mut checker = ProgramChecker::new();
 
     checker.type_check_program(&program)?;
-    println!("{:?}", checker);
 
     Ok(())
 }

@@ -34,13 +34,13 @@ pub enum Expr {
     Unit,
     BinOp(Box<Expr>, BOpcode, Box<Expr>),
     UnOp(UOpcode, Box<Expr>),
-    Delay(Box<Expr>),  // From Patrick Bahr's Rattus
-    Stable(Box<Expr>), // From Patrick Bahr's Rattus
-    Adv(Box<Expr>),    // From Patrick Bahr's Rattus
-    Unbox(Box<Expr>),  // From Patrick Bahr's Rattus
-    Out(Box<Expr>),    // From Patrick Bahr's Rattus
-    Into(Box<Expr>),   // From Patrick Bahr's Rattus
-    List(Vec<Box<Expr>>),
+    Delay(Box<Expr>),     // From Patrick Bahr's Rattus
+    Stable(Box<Expr>),    // From Patrick Bahr's Rattus
+    Adv(Box<Expr>),       // From Patrick Bahr's Rattus
+    Unbox(Box<Expr>),     // From Patrick Bahr's Rattus
+    Out(Box<Expr>),       // From Patrick Bahr's Rattus
+    Into(Box<Expr>),      // From Patrick Bahr's Rattus
+    List(Vec<Box<Expr>>), // Should change to other data structure
     Tuple(Vec<Box<Expr>>),
     Struct(String, Vec<(String, Box<Expr>)>),
     Variant(String, Option<Box<Expr>>),
@@ -52,7 +52,8 @@ pub enum Expr {
     ProjStruct(Box<Expr>, String),
     Match(Box<Expr>, Vec<(Pattern, Box<Expr>)>),
     Var(String),
-    Let(String, Box<Expr>),
+    Let(String, Box<Expr>), // Should change to let x = t in e
+    Location(u64),          // Only created by the interpreter
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -206,11 +207,7 @@ impl Expr {
     pub fn substitute(self, var: &String, term: &Expr) -> (bool, Expr) {
         use Expr::*;
         match self {
-            Bool(_) => (false, self),
-            Int(_) => (false, self),
-            Float(_) => (false, self),
-            String(_) => (false, self),
-            Unit => (false, self),
+            Bool(_) | Int(_) | Float(_) | String(_) | Unit | Location(_) => (false, self),
             BinOp(e1, op, e2) => {
                 let (b1, e1_) = e1.substitute(var, term);
                 let (b2, e2_) = e2.substitute(var, term);
@@ -456,6 +453,7 @@ impl Expr {
                 Match(Box::new(ret_e), _patterns)
             }
             Let(var, e) => Let(var.clone(), Box::new(e.single_tick(new_vs))),
+            Location(_) => unreachable!("Locations should only appear during interpretation"),
         }
     }
 
@@ -603,6 +601,7 @@ impl Expr {
                 let (r, e) = e.sub_single_tick(sub_var, for_fn);
                 (r, Let(var.clone(), Box::new(e)))
             }
+            Location(_) => unreachable!("Locations should only appear during interpretation"),
         }
     }
 }

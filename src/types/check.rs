@@ -179,11 +179,12 @@ impl ProgramChecker {
             }
             UnOp(UOpcode::Neg, e) => {
                 let t = self.infer(e, ctx.clone())?;
-                let mut subs = unify(VecDeque::from([(t.clone(), Type::Int)]))?;
-                self.substitutions.append(&mut subs);
-                ctx.apply_subs(&self.substitutions);
-
-                Ok(Type::Int)
+                match t {
+                    Type::Int => Ok(Type::Int),
+                    Type::Float => Ok(Type::Float),
+                    Type::GenericVar(_) => Ok(t),
+                    _ => Err(TypeError::ImproperType(Type::Int, t).into()),
+                }
             }
             UnOp(UOpcode::Not, e) => {
                 let t = self.infer(e, ctx.clone())?;
@@ -542,6 +543,7 @@ impl ProgramChecker {
                 },
             },
             Let(..) => Err(InvalidExprError::IllegalLetExpr.into()),
+            Location(_) => Err(InvalidExprError::IllegalLocation.into()),
         }
     }
 
@@ -603,6 +605,7 @@ impl ProgramChecker {
             }
             (t, Cons, GenericVar(_)) => Ok(List(Box::new(t))),
             (t1, Cons, t2) => Err(ImproperType(List(Box::new(t1)), t2).into()),
+
             (GenericVar(_), Eq, GenericVar(_))
             | (_, Eq, GenericVar(_))
             | (GenericVar(_), Eq, _) => Ok(Bool),

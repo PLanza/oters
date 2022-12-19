@@ -21,6 +21,8 @@ pub enum InvalidExprError {
     IllegalRecursiveExpr(String),
     #[error("Let expressions must be top-level or inside blocks")]
     IllegalLetExpr,
+    #[error("Locations can only be created by the interpreter")]
+    IllegalLocation,
 }
 
 #[derive(Error, Debug)]
