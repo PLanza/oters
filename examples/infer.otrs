@@ -1,8 +1,0 @@
-type Str<A> = (A, @Str)
-
-enum Option<A> {
-  None,
-  Some A
-}
-
-let const = fn x -> !#x << @(const x)

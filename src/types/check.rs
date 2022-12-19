@@ -82,7 +82,7 @@ impl ProgramChecker {
                 }
                 PExpr::Let(id, expr) => {
                     // If e is a recursive function then convert it into a fix expression
-                    let e = match Expr::from_pexpr(*expr.clone())? {
+                    let mut e = match Expr::from_pexpr(*expr.clone())? {
                         Expr::Fn(arg, fn_e) => {
                             let fix_var = format!("rec_{}", id);
                             let (is_rec, rec_e) = fn_e.clone().substitute(
@@ -109,6 +109,7 @@ impl ProgramChecker {
                             }
                         }
                     };
+                    e = e.single_tick(0);
 
                     // Type check the expression
                     let mut t = self.infer(&e, VarContext::new())?;
@@ -118,9 +119,6 @@ impl ProgramChecker {
 
                     // Apply the substitutions
                     t = t.apply_subs(&self.substitutions);
-
-                    // Reduce Fix types
-                    t = t.sub_delay_fix(&"".to_owned());
 
                     // Convert free variables to generics
                     let free_vars = t.get_free_vars();
@@ -197,6 +195,7 @@ impl ProgramChecker {
             }
             Delay(e) => {
                 let mut ctx = ctx.clone();
+                ctx = ctx.one_tick()?;
                 ctx.push_tick();
 
                 let t = self.infer(e, ctx)?;
@@ -381,6 +380,7 @@ impl ProgramChecker {
             Fn(var, e) => {
                 let t1 = Type::GenericVar(self.fresh_type_var());
                 let mut ctx = ctx.clone();
+                ctx = ctx.one_tick()?;
                 ctx.push_var(var.clone(), t1.clone());
 
                 let t2 = Type::GenericVar(self.fresh_type_var());
@@ -508,10 +508,16 @@ impl ProgramChecker {
                     // Instantiate generic variables
                     Type::Generic(scheme, t) => {
                         let mut t_ = *t.clone();
+
+                        let mut constraints = VecDeque::new();
                         for arg in scheme {
                             let fresh_t = Type::GenericVar(self.fresh_type_var());
                             t_ = t_.sub_generic(&arg, &fresh_t);
+                            constraints.push_back((Type::GenericVar(arg), fresh_t));
                         }
+                        let mut subs = unify(constraints)?;
+                        self.substitutions.append(&mut subs);
+                        ctx.apply_subs(&subs);
 
                         Ok(t_)
                     }

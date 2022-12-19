@@ -20,7 +20,7 @@ impl Display for Type {
                 write!(f, "{}", t_str)
             }
             List(t) => write!(f, "[{}]", t),
-            Function(t1, t2) => write!(f, "{} -> {}", t1, t2),
+            Function(t1, t2) => write!(f, "({} -> {})", t1, t2),
             Delay(t) => write!(f, "@{}", t),
             Stable(t) => write!(f, "#{}", t),
             Fix(v, t) => match *t.clone() {

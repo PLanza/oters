@@ -25,7 +25,7 @@ pub struct VarContext {
 
 // The actual expressions of the language.
 // These don't include top-level expressions
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Bool(bool),
     Int(i64),
@@ -55,7 +55,7 @@ pub enum Expr {
     Let(String, Box<Expr>),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BOpcode {
     Mul,
     Div,
@@ -70,7 +70,7 @@ pub enum BOpcode {
     Or,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum UOpcode {
     Neg,
     Not,
@@ -202,7 +202,7 @@ impl Expr {
         }
     }
 
-    // Substitues var for val, returning true if substitution took place
+    // Substitues var for term, returning true if substitution took place
     pub fn substitute(self, var: &String, term: &Expr) -> (bool, Expr) {
         use Expr::*;
         match self {
@@ -366,6 +366,245 @@ impl Expr {
             }
         }
     }
+
+    // convert expression to λ✓
+    pub fn single_tick(&self, new_vs: u32) -> Expr {
+        use Expr::*;
+        match self {
+            Unit | Int(_) | Float(_) | Bool(_) | String(_) | Var(_) => self.clone(),
+            BinOp(e1, op, e2) => BinOp(
+                Box::new(e1.single_tick(new_vs)),
+                *op,
+                Box::new(e2.single_tick(new_vs)),
+            ),
+            UnOp(op, e1) => UnOp(*op, Box::new(e1.single_tick(new_vs))),
+            Delay(e) => {
+                let (r, sub_e) = e.sub_single_tick(&format!("_d{}", new_vs), false);
+                match r {
+                    None => Delay(Box::new(e.single_tick(new_vs))),
+                    Some(r_e) => Seq(
+                        Box::new(Let(format!("_d{}", new_vs), Box::new(r_e))),
+                        Box::new(Delay(Box::new(sub_e)).single_tick(new_vs + 1)),
+                    ),
+                }
+            }
+            Stable(e) => Stable(Box::new(e.single_tick(new_vs))),
+            Adv(e) => Adv(Box::new(e.single_tick(new_vs))),
+            Unbox(e) => Unbox(Box::new(e.single_tick(new_vs))),
+            Out(e) => Out(Box::new(e.single_tick(new_vs))),
+            Into(e) => Into(Box::new(e.single_tick(new_vs))),
+            List(v) => {
+                let mut list = Vec::new();
+                for e in v {
+                    list.push(Box::new(e.single_tick(new_vs)));
+                }
+
+                List(list)
+            }
+            Tuple(v) => {
+                let mut list = Vec::new();
+                for e in v {
+                    list.push(Box::new(e.single_tick(new_vs)));
+                }
+
+                Tuple(list)
+            }
+            Struct(str, fields) => {
+                let mut _fields = Vec::new();
+                for (field, e) in fields {
+                    _fields.push((field.clone(), Box::new(e.single_tick(new_vs))));
+                }
+
+                Struct(str.clone(), _fields)
+            }
+            Variant(id, o) => match o {
+                None => self.clone(),
+                Some(e) => Variant(id.clone(), Some(Box::new(e.single_tick(new_vs)))),
+            },
+            Fn(var, e) => {
+                let (r, sub_e) = e.sub_single_tick(&format!("_d{}", new_vs), true);
+                match r {
+                    None => Fn(var.clone(), Box::new(e.single_tick(new_vs))),
+                    Some(r_e) => Seq(
+                        Box::new(Let(format!("_d{}", new_vs), Box::new(Adv(Box::new(r_e))))),
+                        Box::new(Fn(var.clone(), Box::new(sub_e)).single_tick(new_vs + 1)),
+                    ),
+                }
+            }
+            Fix(var, e) => Fix(var.clone(), Box::new(e.single_tick(new_vs))),
+            If(e1, e2, e3) => If(
+                Box::new(e1.single_tick(new_vs)),
+                Box::new(e2.single_tick(new_vs)),
+                Box::new(e3.single_tick(new_vs)),
+            ),
+            Seq(e1, e2) => Seq(
+                Box::new(e1.single_tick(new_vs)),
+                Box::new(e2.single_tick(new_vs)),
+            ),
+            App(e1, e2) => App(
+                Box::new(e1.single_tick(new_vs)),
+                Box::new(e2.single_tick(new_vs)),
+            ),
+            ProjStruct(e, field) => ProjStruct(Box::new(e.single_tick(new_vs)), field.clone()),
+            Match(e, patterns) => {
+                let ret_e = e.single_tick(new_vs);
+                let mut _patterns = Vec::new();
+                for (p, e) in patterns {
+                    _patterns.push((p.clone(), Box::new(e.single_tick(new_vs))));
+                }
+
+                Match(Box::new(ret_e), _patterns)
+            }
+            Let(var, e) => Let(var.clone(), Box::new(e.single_tick(new_vs))),
+        }
+    }
+
+    pub fn sub_single_tick(&self, sub_var: &String, for_fn: bool) -> (Option<Expr>, Expr) {
+        use Expr::*;
+        match self {
+            Unit | Int(_) | Float(_) | Bool(_) | String(_) => (None, self.clone()),
+            BinOp(e1, op, e2) => {
+                let (r1, e1) = e1.sub_single_tick(sub_var, for_fn);
+                if !matches!(r1, None) {
+                    (r1, BinOp(Box::new(e1), *op, e2.clone()))
+                } else {
+                    let (r2, e2) = e2.sub_single_tick(sub_var, for_fn);
+                    (r2, BinOp(Box::new(e1), *op, Box::new(e2)))
+                }
+            }
+            UnOp(op, e) => {
+                let (r, e) = e.sub_single_tick(sub_var, for_fn);
+                (r, UnOp(*op, Box::new(e)))
+            }
+            Delay(_) | Stable(_) | Fix(_, _) | Fn(_, _) | Var(_) => (None, self.clone()),
+            Adv(e) => match *e.clone() {
+                Var(_) => (None, self.clone()),
+                _ => {
+                    if for_fn {
+                        (Some(*e.clone()), Var(sub_var.clone()))
+                    } else {
+                        (Some(*e.clone()), Adv(Box::new(Var(sub_var.clone()))))
+                    }
+                }
+            },
+            Unbox(e) => {
+                let (r, e) = e.sub_single_tick(sub_var, for_fn);
+                (r, Unbox(Box::new(e)))
+            }
+            Out(e) => {
+                let (r, e) = e.sub_single_tick(sub_var, for_fn);
+                (r, Out(Box::new(e)))
+            }
+            Into(e) => {
+                let (r, e) = e.sub_single_tick(sub_var, for_fn);
+                (r, Into(Box::new(e)))
+            }
+            List(v) => {
+                let mut ret_es = Vec::new();
+                let mut r_ret = None;
+                for e in v {
+                    if matches!(r_ret, None) {
+                        let (r, e) = e.sub_single_tick(sub_var, for_fn);
+                        r_ret = r;
+                        ret_es.push(Box::new(e));
+                    } else {
+                        ret_es.push(e.clone());
+                    }
+                }
+                (r_ret, List(ret_es))
+            }
+            Tuple(v) => {
+                let mut ret_es = Vec::new();
+                let mut r_ret = None;
+                for e in v {
+                    if matches!(r_ret, None) {
+                        let (r, e) = e.sub_single_tick(sub_var, for_fn);
+                        r_ret = r;
+                        ret_es.push(Box::new(e));
+                    } else {
+                        ret_es.push(e.clone());
+                    }
+                }
+                (r_ret, Tuple(ret_es))
+            }
+            Struct(str, v) => {
+                let mut ret_es = Vec::new();
+                let mut r_ret = None;
+                for (f, e) in v {
+                    if matches!(r_ret, None) {
+                        let (r, e) = e.sub_single_tick(sub_var, for_fn);
+                        r_ret = r;
+                        ret_es.push((f.clone(), Box::new(e)));
+                    } else {
+                        ret_es.push((f.clone(), e.clone()));
+                    }
+                }
+                (r_ret, Struct(str.clone(), ret_es))
+            }
+            Variant(s, o) => match o {
+                None => (None, self.clone()),
+                Some(e) => {
+                    let (r, e) = e.sub_single_tick(sub_var, for_fn);
+                    (r, Variant(s.clone(), Some(Box::new(e))))
+                }
+            },
+            If(e1, e2, e3) => {
+                let (r1, e1) = e1.sub_single_tick(sub_var, for_fn);
+                if !matches!(r1, None) {
+                    (r1, If(Box::new(e1), e2.clone(), e3.clone()))
+                } else {
+                    let (r2, e2) = e2.sub_single_tick(sub_var, for_fn);
+                    if !matches!(r2, None) {
+                        (r2, If(Box::new(e1), Box::new(e2), e3.clone()))
+                    } else {
+                        let (r3, e3) = e3.sub_single_tick(sub_var, for_fn);
+                        (r3, If(Box::new(e1), Box::new(e2), Box::new(e3)))
+                    }
+                }
+            }
+            Seq(e1, e2) => {
+                let (r1, e1) = e1.sub_single_tick(sub_var, for_fn);
+                if !matches!(r1, None) {
+                    (r1, Seq(Box::new(e1), e2.clone()))
+                } else {
+                    let (r2, e2) = e2.sub_single_tick(sub_var, for_fn);
+                    (r2, Seq(Box::new(e1), Box::new(e2)))
+                }
+            }
+            App(e1, e2) => {
+                let (r1, e1) = e1.sub_single_tick(sub_var, for_fn);
+                if !matches!(r1, None) {
+                    (r1, App(Box::new(e1), e2.clone()))
+                } else {
+                    let (r2, e2) = e2.sub_single_tick(sub_var, for_fn);
+                    (r2, App(Box::new(e1), Box::new(e2)))
+                }
+            }
+            ProjStruct(e, f) => {
+                let (r, e) = e.sub_single_tick(sub_var, for_fn);
+                (r, ProjStruct(Box::new(e), f.clone()))
+            }
+            Match(e, v) => {
+                let (mut r_ret, e) = e.sub_single_tick(sub_var, for_fn);
+                let mut ret_es = Vec::new();
+
+                for (p, p_e) in v {
+                    if matches!(r_ret, None) {
+                        let (r, p_e) = p_e.sub_single_tick(sub_var, for_fn);
+                        r_ret = r;
+                        ret_es.push((p.clone(), Box::new(p_e)));
+                    } else {
+                        ret_es.push((p.clone(), p_e.clone()));
+                    }
+                }
+                (r_ret, Match(Box::new(e), ret_es))
+            }
+            Let(var, e) => {
+                let (r, e) = e.sub_single_tick(sub_var, for_fn);
+                (r, Let(var.clone(), Box::new(e)))
+            }
+        }
+    }
 }
 
 impl Opcode {
@@ -414,6 +653,24 @@ impl VarContext {
             terms,
             ticks: Vec::new(),
         })
+    }
+
+    pub fn one_tick(&self) -> Result<Self> {
+        match self.ticks.last() {
+            None => Ok(self.clone()),
+            Some(i) => {
+                let mut pre_tick = self.pre_tick()?;
+                pre_tick = pre_tick.stable()?;
+
+                let mut terms = pre_tick.terms.clone();
+                terms.append(&mut self.terms.clone()[*i..].to_vec());
+
+                Ok(Self {
+                    terms,
+                    ticks: Vec::new(),
+                })
+            }
+        }
     }
 
     pub fn pre_tick(&self) -> Result<Self> {
