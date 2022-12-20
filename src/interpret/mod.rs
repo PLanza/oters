@@ -1,11 +1,13 @@
 mod errors;
 
 use std::collections::HashMap;
+use std::vec;
 
 use self::errors::InterpretError::*;
 use crate::exprs::{BOpcode, Expr, UOpcode};
+use crate::parser::ast::Pattern;
 
-use anyhow::Result;
+use anyhow::{Ok, Result};
 
 pub struct Interpreter {
     new_loc: u64,
@@ -183,7 +185,22 @@ impl Interpreter {
                     _ => Err(UncaughtTypeError(format!("{:?}", e)).into()),
                 }
             }
-            Match(..) => todo!(),
+            Match(e, patterns) => {
+                let (val, _s) = self.eval(*e.clone(), s)?;
+                for (p, e_) in patterns {
+                    let (matches, subs) = Self::match_pattern(&val, &p)?;
+                    if !matches {
+                        continue;
+                    }
+
+                    let mut e_ = *e_.clone();
+                    for (var, term) in subs {
+                        e_ = e_.substitute(&var, &term).1;
+                    }
+                    return self.eval(e_, _s);
+                }
+                Err(NoPatternMatchesError(format!("{:?}", e)).into())
+            }
             Var(x) => Err(UnboundVariableError(x).into()),
             Let(..) => unreachable!("Let expression found outside block"),
         }
@@ -232,6 +249,231 @@ impl Interpreter {
         let loc = self.new_loc;
         self.new_loc += 1;
         loc
+    }
+
+    fn match_pattern(val: &Expr, pattern: &Pattern) -> Result<(bool, Vec<(String, Expr)>)> {
+        use Pattern::*;
+        match pattern {
+            Underscore => Ok((true, Vec::with_capacity(0))),
+            True => {
+                if matches!(val, Expr::Bool(true)) {
+                    Ok((true, Vec::with_capacity(0)))
+                } else if matches!(val, Expr::Bool(false)) {
+                    Ok((false, Vec::with_capacity(0)))
+                } else {
+                    Err(PatternMatchError(format!("{:?}", True), format!("{:?}", val)).into())
+                }
+            }
+            False => {
+                if matches!(val, Expr::Bool(false)) {
+                    Ok((true, Vec::with_capacity(0)))
+                } else if matches!(val, Expr::Bool(true)) {
+                    Ok((false, Vec::with_capacity(0)))
+                } else {
+                    Err(PatternMatchError(format!("{:?}", True), format!("{:?}", val)).into())
+                }
+            }
+            Int(i1) => match val {
+                Expr::Int(i2) => {
+                    if i1 == i2 {
+                        Ok((true, Vec::with_capacity(0)))
+                    } else {
+                        Ok((false, Vec::with_capacity(0)))
+                    }
+                }
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            Float(f1) => match val {
+                Expr::Float(f2) => {
+                    if f1 == f2 {
+                        Ok((true, Vec::with_capacity(0)))
+                    } else {
+                        Ok((false, Vec::with_capacity(0)))
+                    }
+                }
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            String(s1) => match val {
+                Expr::String(s2) => {
+                    if s1 == s2 {
+                        Ok((true, Vec::with_capacity(0)))
+                    } else {
+                        Ok((false, Vec::with_capacity(0)))
+                    }
+                }
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            Unit => match val {
+                Expr::Unit => Ok((true, Vec::with_capacity(0))),
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            Tuple(patterns) => match val.clone() {
+                Expr::Tuple(vals) => {
+                    if patterns.len() == vals.len() {
+                        let (mut matches, mut subs) = (true, Vec::new());
+                        for (p, v) in patterns.into_iter().zip(vals) {
+                            let (b, mut ss) = Self::match_pattern(&v, &p)?;
+
+                            matches = matches && b;
+                            subs.append(&mut ss);
+                        }
+                        Ok((matches, subs))
+                    } else {
+                        Err(
+                            PatternMatchError(format!("{:?}", pattern), format!("{:?}", val))
+                                .into(),
+                        )
+                    }
+                }
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            List(patterns) => match val.clone() {
+                Expr::List(vals) => {
+                    if patterns.len() == vals.len() {
+                        let (mut matches, mut subs) = (true, Vec::new());
+                        for (p, v) in patterns.into_iter().zip(vals) {
+                            let (b, mut ss) = Self::match_pattern(&v, &p)?;
+
+                            matches = matches && b;
+                            subs.append(&mut ss);
+                        }
+                        Ok((matches, subs))
+                    } else {
+                        Ok((false, Vec::with_capacity(0)))
+                    }
+                }
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            Variant(c1, o1) => match val {
+                Expr::Variant(c2, o2) => {
+                    if c1 != c2 {
+                        return Err(PatternMatchError(
+                            format!("{:?}", pattern),
+                            format!("{:?}", val),
+                        )
+                        .into());
+                    }
+                    if o1.is_none() && o2.is_none() {
+                        return Ok((true, Vec::with_capacity(0)));
+                    }
+                    if o1.is_some() && o2.is_some() {
+                        let (p, v) = (*o1.clone().unwrap(), *o2.clone().unwrap());
+                        return Self::match_pattern(&v, &p);
+                    }
+                    Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into())
+                }
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            Struct(s1, patterns) => match val {
+                Expr::Struct(s2, vals) => {
+                    if s1 != s2 {
+                        return Err(PatternMatchError(
+                            format!("{:?}", pattern),
+                            format!("{:?}", val),
+                        )
+                        .into());
+                    }
+
+                    let (mut matches, mut subs) = (true, Vec::new());
+                    for (i, (field, o)) in patterns.into_iter().enumerate() {
+                        if i >= vals.len() {
+                            return Err(PatternMatchError(
+                                format!("{:?}", pattern),
+                                format!("{:?}", val),
+                            )
+                            .into());
+                        }
+                        if o.is_none() {
+                            break;
+                        }
+
+                        if field != &vals[i].0 {
+                            return Err(PatternMatchError(
+                                format!("{:?}", pattern),
+                                format!("{:?}", val),
+                            )
+                            .into());
+                        }
+
+                        let (b, mut ss) = Self::match_pattern(&vals[i].1, &o.clone().unwrap())?;
+
+                        matches = matches && b;
+                        subs.append(&mut ss);
+                    }
+                    Ok((matches, subs))
+                }
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            Cons(p1, p2) => match val {
+                Expr::List(vals) => {
+                    let (b1, mut subs1) = Self::match_pattern(&vals[0], p1)?;
+                    let (b2, mut subs2) = Self::match_pattern(&Expr::List(vals[1..].into()), p2)?;
+
+                    subs1.append(&mut subs2);
+                    Ok((b1 && b2, subs1))
+                }
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            Stream(p1, p2) => match val {
+                Expr::Fix(fix_var, fix_body) => match *fix_body.clone() {
+                    Expr::Tuple(vals) => {
+                        if vals.len() != 2 {
+                            return Err(PatternMatchError(
+                                format!("{:?}", pattern),
+                                format!("{:?}", val),
+                            )
+                            .into());
+                        }
+                        match *vals[1].clone() {
+                            Expr::Var(var) => {
+                                if &var != fix_var {
+                                    return Err(PatternMatchError(
+                                        format!("{:?}", pattern),
+                                        format!("{:?}", val),
+                                    )
+                                    .into());
+                                }
+                            }
+                            _ => {
+                                return Err(PatternMatchError(
+                                    format!("{:?}", pattern),
+                                    format!("{:?}", val),
+                                )
+                                .into())
+                            }
+                        }
+
+                        let (b1, mut subs1) = Self::match_pattern(&vals[0], p1)?;
+                        let (b2, mut subs2) =
+                            Self::match_pattern(&Expr::Delay(vals[1].clone()), p2)?;
+
+                        subs1.append(&mut subs2);
+                        Ok((b1 && b2, subs1))
+                    }
+                    _ => Err(
+                        PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into(),
+                    ),
+                },
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            Or(p1, p2) => {
+                let (b, subs) = Self::match_pattern(val, p1)?;
+                if b {
+                    Ok((b, subs))
+                } else {
+                    Self::match_pattern(val, p2)
+                }
+            }
+            Delay(p) => match val {
+                Expr::Delay(v) => Self::match_pattern(v, p),
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            Stable(p) => match val {
+                Expr::Stable(v) => Self::match_pattern(v, p),
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
+            Var(var) => Ok((true, vec![(var.clone(), val.clone())])),
+        }
     }
 }
 

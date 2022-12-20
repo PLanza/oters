@@ -8,6 +8,10 @@ pub enum InterpretError {
     UnboundLocationError(String),
     #[error("Unbound variable {0}")]
     UnboundVariableError(String),
-    #[error("Field {1} missing in expression {1}")]
+    #[error("Field {0} missing in expression {1}")]
     StructFieldMissingError(String, String),
+    #[error("Pattern {0} doesn't match {1}")]
+    PatternMatchError(String, String),
+    #[error("No pattern matches expression {0}")]
+    NoPatternMatchesError(String),
 }
