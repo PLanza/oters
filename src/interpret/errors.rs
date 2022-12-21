@@ -14,4 +14,6 @@ pub enum InterpretError {
     PatternMatchError(String, String),
     #[error("No pattern matches expression {0}")]
     NoPatternMatchesError(String),
+    #[error("Expression {0} cannot take a step forward")]
+    ExpressionDoesNotStepError(String),
 }

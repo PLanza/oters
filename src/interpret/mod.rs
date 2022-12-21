@@ -14,13 +14,17 @@ pub struct Interpreter {
 }
 
 // Potentially change locations to be shared references
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Store {
     pub(super) now: HashMap<u64, Expr>,
     pub(super) later: HashMap<u64, Expr>,
 }
 
 impl Interpreter {
+    pub fn new() -> Self {
+        Interpreter { new_loc: 0 }
+    }
+
     pub fn eval(&mut self, e: Expr, s: Store) -> Result<(Expr, Store)> {
         use Expr::*;
         match e {
@@ -109,7 +113,7 @@ impl Interpreter {
                     store = _s;
                 }
 
-                Ok((List(tuple_vec), store))
+                Ok((Tuple(tuple_vec), store))
             }
             Struct(str, fields) => {
                 let mut field_vec = Vec::new();
@@ -242,6 +246,35 @@ impl Interpreter {
             _ => Err(
                 UncaughtTypeError(format!("{:?}", BinOp(Box::new(e1), op, Box::new(e2)))).into(),
             ),
+        }
+    }
+
+    // Step an expression e, forward
+    pub fn step(&mut self, e: Expr, s: Store) -> Result<(Expr, (Expr, Store))> {
+        let (e, s) = self.eval(e, s)?;
+
+        use Expr::{Adv, Into, Location, Tuple};
+        match &e {
+            Into(tuple) => match &**tuple {
+                Tuple(pair) => {
+                    if pair.len() != 2 {
+                        return Err(ExpressionDoesNotStepError(format!("{:?}", e)).into());
+                    }
+
+                    if !matches!(&*pair[1], Location(_)) {
+                        return Err(ExpressionDoesNotStepError(format!("{:?}", e)).into());
+                    }
+
+                    let s = Store {
+                        now: s.later,
+                        later: HashMap::new(),
+                    };
+
+                    Ok((*pair[0].clone(), (Adv(pair[1].clone()), s)))
+                }
+                _ => Err(ExpressionDoesNotStepError(format!("{:?}", e)).into()),
+            },
+            _ => Err(ExpressionDoesNotStepError(format!("{:?}", e)).into()),
         }
     }
 
@@ -478,6 +511,13 @@ impl Interpreter {
 }
 
 impl Store {
+    pub fn new() -> Self {
+        Store {
+            now: HashMap::new(),
+            later: HashMap::new(),
+        }
+    }
+
     fn extend(&mut self, loc: u64, term: Expr) {
         self.later.insert(loc, term);
     }

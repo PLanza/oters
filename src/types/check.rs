@@ -28,7 +28,9 @@ impl ProgramChecker {
         }
     }
 
-    pub fn type_check_program(&mut self, program: &Program) -> Result<()> {
+    pub fn type_check_program(&mut self, program: &Program) -> Result<Vec<Expr>> {
+        let mut checked_exprs = Vec::new();
+
         for expr in program {
             match expr.as_ref() {
                 // Type Aliases
@@ -100,6 +102,7 @@ impl ProgramChecker {
                         // If e_ is recursive and not a function, then fail
                         e_ => {
                             if e_.clone().substitute(&id, &Expr::Unit).0 {
+                                println!("hello");
                                 return Err(InvalidExprError::IllegalRecursiveExpr(
                                     expr.head_string(),
                                 )
@@ -132,16 +135,16 @@ impl ProgramChecker {
                     // Make sure the resulting type is well formed
                     t.well_formed(TypeContext::new())?;
 
-                    println!("{}", t);
-
                     // Add it to the map of value declarations
                     self.value_decs.insert(id.clone(), t);
+
+                    checked_exprs.push(e);
                 }
                 _ => return Err(InvalidExprError::InvalidTopLevelExpr(expr.head_string()).into()),
             }
         }
 
-        Ok(())
+        Ok(checked_exprs)
     }
 
     pub fn infer(&mut self, e: &Expr, mut ctx: VarContext) -> Result<Type> {

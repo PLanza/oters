@@ -339,7 +339,7 @@ FnArgList: Vec<String> = {
 };
 
 FnExpr: Box<PExpr> = {
-  "fn" Unit "->" <e: Expr> => Box::new(PExpr::Fn(Vec::new(), e)),
+  "fn" "_" "->" <e: Expr> => Box::new(PExpr::Fn(Vec::new(), e)),
   "fn" <a: FnArgList> "->" <e: Expr> => Box::new(PExpr::Fn(a, e)),
 };
 

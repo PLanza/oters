@@ -1,0 +1,8 @@
+let ones = {
+  let aux = fn _ -> 1 << @(aux ());
+  aux ()
+}
+
+let const = fn x -> !#x << @(const x)
+
+let twos = const #2

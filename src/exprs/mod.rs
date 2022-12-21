@@ -139,6 +139,10 @@ impl Expr {
                     e = Expr::Fn(s.clone(), Box::new(e));
                 }
 
+                if args.is_empty() {
+                    return Ok(Expr::Fn("_".to_string(), Box::new(e)));
+                }
+
                 Ok(e)
             }
             PExpr::If(e1, e2, e3) => Ok(Expr::If(
