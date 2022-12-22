@@ -102,7 +102,6 @@ impl ProgramChecker {
                         // If e_ is recursive and not a function, then fail
                         e_ => {
                             if e_.clone().substitute(&id, &Expr::Unit).0 {
-                                println!("hello");
                                 return Err(InvalidExprError::IllegalRecursiveExpr(
                                     expr.head_string(),
                                 )
@@ -134,9 +133,11 @@ impl ProgramChecker {
 
                     // Make sure the resulting type is well formed
                     t.well_formed(TypeContext::new())?;
+                    println!("{}\n", t);
 
                     // Add it to the map of value declarations
                     self.value_decs.insert(id.clone(), t);
+                    self.substitutions = Vec::new();
 
                     checked_exprs.push(e);
                 }
@@ -185,7 +186,7 @@ impl ProgramChecker {
                 match t {
                     Type::Int => Ok(Type::Int),
                     Type::Float => Ok(Type::Float),
-                    Type::GenericVar(_) => Ok(t),
+                    Type::GenericVar(..) => Ok(t),
                     _ => Err(TypeError::ImproperType(Type::Int, t).into()),
                 }
             }
@@ -217,7 +218,7 @@ impl ProgramChecker {
                 let mut ctx = ctx.pre_tick()?;
 
                 let t = self.infer(e, ctx.clone())?;
-                let t_ret = Type::GenericVar(self.fresh_type_var());
+                let t_ret = Type::GenericVar(self.fresh_type_var(), false);
 
                 let mut subs = unify(VecDeque::from([(
                     t.clone(),
@@ -230,7 +231,7 @@ impl ProgramChecker {
             }
             Unbox(e) => {
                 let t = self.infer(e, ctx.clone())?;
-                let t_ret = Type::GenericVar(self.fresh_type_var());
+                let t_ret = Type::GenericVar(self.fresh_type_var(), false);
 
                 let mut subs = unify(VecDeque::from([(
                     t.clone(),
@@ -243,7 +244,7 @@ impl ProgramChecker {
             }
             Out(e) => {
                 let t = self.infer(e, ctx.clone())?;
-                let a = Type::GenericVar(self.fresh_type_var());
+                let a = Type::GenericVar(self.fresh_type_var(), false);
 
                 let fix_var = self.fresh_type_var();
 
@@ -256,7 +257,7 @@ impl ProgramChecker {
 
                 match t {
                     Type::Fix(_, t_) => Ok(t_.sub_delay_fix(&fix_var)),
-                    Type::GenericVar(_) => Ok(a),
+                    Type::GenericVar(..) => Ok(a),
                     _ => Err(TypeError::ImproperType(
                         Type::Fix("α".to_string(), Box::new(Type::Unit)),
                         t,
@@ -275,7 +276,7 @@ impl ProgramChecker {
                 for e in v {
                     types.push(self.infer(e, ctx.clone())?);
                 }
-                let t_ret = Type::GenericVar(self.fresh_type_var());
+                let t_ret = Type::GenericVar(self.fresh_type_var(), false);
 
                 let mut constraints = VecDeque::new();
                 for t in &types {
@@ -307,7 +308,7 @@ impl ProgramChecker {
                         Type::Generic(scheme, t) => {
                             let mut t_ = *t.clone();
                             for arg in scheme {
-                                let fresh_t = Type::GenericVar(self.fresh_type_var());
+                                let fresh_t = Type::GenericVar(self.fresh_type_var(), false);
                                 t_ = t_.sub_generic(&arg, &fresh_t);
                             }
 
@@ -355,7 +356,7 @@ impl ProgramChecker {
                         Type::Generic(scheme, t) => {
                             let mut t_ = *t.clone();
                             for arg in scheme {
-                                let fresh_t = Type::GenericVar(self.fresh_type_var());
+                                let fresh_t = Type::GenericVar(self.fresh_type_var(), false);
                                 t_ = t_.sub_generic(&arg, &fresh_t);
                             }
 
@@ -381,24 +382,24 @@ impl ProgramChecker {
                     _ => Err(TypeError::NotAnEnum(id.clone()).into()),
                 }
             }
-            Fn(var, e) => {
-                let t1 = Type::GenericVar(self.fresh_type_var());
+            Fn((var, stability), e) => {
+                let t1 = Type::GenericVar(self.fresh_type_var(), *stability);
                 let mut ctx = ctx.clone();
                 ctx = ctx.one_tick()?;
                 ctx.push_var(var.clone(), t1.clone());
 
-                let t2 = Type::GenericVar(self.fresh_type_var());
+                let t2 = Type::GenericVar(self.fresh_type_var(), false);
                 let t_fn_ret = self.infer(e, ctx.clone())?;
 
                 let mut subs = unify(VecDeque::from([(t_fn_ret.clone(), t2.clone())]))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
-                Ok(Type::Function(Box::new(ctx.get_var(var)?), Box::new(t2)))
+                Ok(Type::Function(Box::new(ctx.get_var(var)?.0), Box::new(t2)))
             }
             Fix(alpha, e) => {
                 let mut ctx = ctx.clone().stable()?;
-                let t_ret = Type::GenericVar(self.fresh_type_var());
+                let t_ret = Type::GenericVar(self.fresh_type_var(), false);
                 ctx.push_var(
                     alpha.clone(),
                     Type::Stable(Box::new(Type::Delay(Box::new(t_ret.clone())))),
@@ -459,7 +460,7 @@ impl ProgramChecker {
             App(e1, e2) => {
                 let t1 = self.infer(e1, ctx.clone())?;
                 let t2 = self.infer(e2, ctx.clone())?;
-                let t3 = Type::GenericVar(self.fresh_type_var());
+                let t3 = Type::GenericVar(self.fresh_type_var(), false);
 
                 let mut subs = unify(VecDeque::from([(
                     t1.clone(),
@@ -472,7 +473,7 @@ impl ProgramChecker {
             }
             ProjStruct(e, f) => {
                 let t = self.infer(e, ctx.clone())?;
-                let field_type = Type::GenericVar(self.fresh_type_var());
+                let field_type = Type::GenericVar(self.fresh_type_var(), false);
                 let map = HashMap::from([(f.clone(), Box::new(field_type))]);
 
                 let mut subs = unify(VecDeque::from([(t.clone(), Type::Struct(map))]))?;
@@ -483,7 +484,7 @@ impl ProgramChecker {
             }
             Match(e, v) => {
                 let t_e = self.infer(e, ctx.clone())?;
-                let t_ret = Type::GenericVar(self.fresh_type_var());
+                let t_ret = Type::GenericVar(self.fresh_type_var(), false);
 
                 let mut constraints = VecDeque::new();
                 for (p, e_p) in v {
@@ -508,16 +509,16 @@ impl ProgramChecker {
                 Ok(t_ret)
             }
             Var(var) => match ctx.clone().get_var(var) {
-                Ok(t) => match t {
-                    // Instantiate generic variables
+                Ok((t, true)) => match t {
+                    // Instantiate generic variables of ∀ types
                     Type::Generic(scheme, t) => {
                         let mut t_ = *t.clone();
 
                         let mut constraints = VecDeque::new();
                         for arg in scheme {
-                            let fresh_t = Type::GenericVar(self.fresh_type_var());
+                            let fresh_t = Type::GenericVar(self.fresh_type_var(), false);
                             t_ = t_.sub_generic(&arg, &fresh_t);
-                            constraints.push_back((Type::GenericVar(arg), fresh_t));
+                            constraints.push_back((Type::GenericVar(arg, false), fresh_t));
                         }
                         let mut subs = unify(constraints)?;
                         self.substitutions.append(&mut subs);
@@ -527,16 +528,35 @@ impl ProgramChecker {
                     }
                     t => Ok(t),
                 },
+                // Variable access is in wrong time but we can assume stable
+                Ok((t, false)) => match &t {
+                    Type::GenericVar(_var, false) => {
+                        let t_ = Type::GenericVar(self.fresh_type_var(), true);
+                        let mut subs = unify(VecDeque::from([(t.clone(), t_.clone())]))?;
+                        self.substitutions.append(&mut subs);
+                        ctx.apply_subs(&subs);
+
+                        Ok(t_)
+                    }
+                    _ => Err(TypeError::InvalidVariableAccess(var.clone()).into()),
+                },
                 // Check that it's not a global variable
                 Err(e) => match self.value_decs.clone().get(var) {
                     Some(t) => match t {
                         // Instantiate generic variables
                         Type::Generic(scheme, t) => {
                             let mut t_ = *t.clone();
+
+                            let mut constraints = VecDeque::new();
                             for arg in scheme {
-                                let fresh_t = Type::GenericVar(self.fresh_type_var());
-                                t_ = t_.sub_generic(&arg, &fresh_t);
+                                let fresh_t = Type::GenericVar(self.fresh_type_var(), false);
+                                t_ = t_.sub_generic(arg, &fresh_t);
+                                constraints
+                                    .push_back((Type::GenericVar(arg.clone(), false), fresh_t));
                             }
+                            let mut subs = unify(constraints)?;
+                            self.substitutions.append(&mut subs);
+                            ctx.apply_subs(&subs);
 
                             Ok(t_)
                         }
@@ -555,50 +575,41 @@ impl ProgramChecker {
         use Type::*;
         use TypeError::ImproperType;
         match (t1, op, t2) {
-            (GenericVar(v1), Add, GenericVar(_)) => Ok(GenericVar(v1)),
-            (Int, Add, Int) | (Int, Add, GenericVar(_)) | (GenericVar(_), Add, Int) => Ok(Int),
-            (Float, Add, Float) | (Float, Add, GenericVar(_)) | (GenericVar(_), Add, Float) => {
+            (GenericVar(v1, _), Add, GenericVar(..)) => Ok(GenericVar(v1, true)),
+            (Int, Add, Int) | (Int, Add, GenericVar(..)) | (GenericVar(..), Add, Int) => Ok(Int),
+            (Float, Add, Float) | (Float, Add, GenericVar(..)) | (GenericVar(..), Add, Float) => {
                 Ok(Float)
             }
-            (_, Add, _) => {
-                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
-            }
+            (t1, Add, t2) => Err(ImproperType(t1, t2).into()),
 
-            (GenericVar(v1), Sub, GenericVar(_)) => Ok(GenericVar(v1)),
-            (Int, Sub, Int) | (Int, Sub, GenericVar(_)) | (GenericVar(_), Sub, Int) => Ok(Int),
-            (Float, Sub, Float) | (Float, Sub, GenericVar(_)) | (GenericVar(_), Sub, Float) => {
+            (GenericVar(v1, _), Sub, GenericVar(..)) => Ok(GenericVar(v1, true)),
+            (Int, Sub, Int) | (Int, Sub, GenericVar(..)) | (GenericVar(..), Sub, Int) => Ok(Int),
+            (Float, Sub, Float) | (Float, Sub, GenericVar(..)) | (GenericVar(..), Sub, Float) => {
                 Ok(Float)
             }
-            (_, Sub, _) => {
-                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
-            }
+            (t1, Sub, t2) => Err(ImproperType(t1, t2).into()),
 
-            (GenericVar(v1), Mul, GenericVar(_)) => Ok(GenericVar(v1)),
-            (Int, Mul, Int) | (Int, Mul, GenericVar(_)) | (GenericVar(_), Mul, Int) => Ok(Int),
-            (Float, Mul, Float) | (Float, Mul, GenericVar(_)) | (GenericVar(_), Mul, Float) => {
+            (GenericVar(v1, _), Mul, GenericVar(..)) => Ok(GenericVar(v1, true)),
+            (Int, Mul, Int) | (Int, Mul, GenericVar(..)) | (GenericVar(..), Mul, Int) => Ok(Int),
+            (Float, Mul, Float) | (Float, Mul, GenericVar(..)) | (GenericVar(..), Mul, Float) => {
                 Ok(Float)
             }
-            (_, Mul, _) => {
-                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
-            }
-            (GenericVar(v1), Div, GenericVar(_)) => Ok(GenericVar(v1)),
-            (Int, Div, Int) | (Int, Div, GenericVar(_)) | (GenericVar(_), Div, Int) => Ok(Int),
-            (Float, Div, Float) | (Float, Div, GenericVar(_)) | (GenericVar(_), Div, Float) => {
-                Ok(Float)
-            }
-            (_, Div, _) => {
-                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
-            }
+            (t1, Mul, t2) => Err(ImproperType(t1, t2).into()),
 
-            (GenericVar(_), Mod, GenericVar(_))
+            (GenericVar(v1, _), Div, GenericVar(..)) => Ok(GenericVar(v1, true)),
+            (Int, Div, Int) | (Int, Div, GenericVar(..)) | (GenericVar(..), Div, Int) => Ok(Int),
+            (Float, Div, Float) | (Float, Div, GenericVar(..)) | (GenericVar(..), Div, Float) => {
+                Ok(Float)
+            }
+            (t1, Div, t2) => Err(ImproperType(t1, t2).into()),
+
+            (GenericVar(..), Mod, GenericVar(..))
             | (Int, Mod, Int)
-            | (Int, Mod, GenericVar(_))
-            | (GenericVar(_), Mod, Int) => Ok(Int),
-            (_, Mod, _) => {
-                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
-            }
+            | (Int, Mod, GenericVar(..))
+            | (GenericVar(..), Mod, Int) => Ok(Int),
+            (t1, Mod, t2) => Err(ImproperType(t1, t2).into()),
 
-            (GenericVar(v1), Cons, GenericVar(_)) => Ok(List(Box::new(GenericVar(v1)))),
+            (GenericVar(var, s), Cons, GenericVar(..)) => Ok(List(Box::new(GenericVar(var, s)))),
             (t1, Cons, List(t2)) => {
                 if t1 == *t2 {
                     Ok(List(Box::new(t1)))
@@ -606,49 +617,56 @@ impl ProgramChecker {
                     Err(ImproperType(List(Box::new(t1)), List(t2)).into())
                 }
             }
-            (t, Cons, GenericVar(_)) => Ok(List(Box::new(t))),
+            (t, Cons, GenericVar(..)) => Ok(List(Box::new(t))),
             (t1, Cons, t2) => Err(ImproperType(List(Box::new(t1)), t2).into()),
 
-            (GenericVar(_), Eq, GenericVar(_))
-            | (_, Eq, GenericVar(_))
-            | (GenericVar(_), Eq, _) => Ok(Bool),
-            (_, Eq, _) => {
-                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
+            (t1, Eq, t2) => {
+                match t1 {
+                    Int | Float | Bool | String | GenericVar(..) => (),
+                    _ => return Err(ImproperType(GenericVar("α".to_string(), false), t2).into()),
+                }
+                match t2 {
+                    Int | Float | Bool | String | GenericVar(..) => (),
+                    _ => return Err(ImproperType(GenericVar("α".to_string(), false), t2).into()),
+                }
+
+                if t1 == t2 || matches!(t1, GenericVar(..)) || matches!(t2, GenericVar(..)) {
+                    Ok(Bool)
+                } else {
+                    Err(ImproperType(t1, t2).into())
+                }
             }
-            (GenericVar(_), Lt, GenericVar(_))
+
+            (GenericVar(..), Lt, GenericVar(..))
             | (Int, Lt, Int)
-            | (Int, Lt, GenericVar(_))
-            | (GenericVar(_), Lt, Int)
+            | (Int, Lt, GenericVar(..))
+            | (GenericVar(..), Lt, Int)
             | (Float, Lt, Float)
-            | (Float, Lt, GenericVar(_))
-            | (GenericVar(_), Lt, Float) => Ok(Bool),
-            (_, Lt, _) => {
-                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
-            }
+            | (Float, Lt, GenericVar(..))
+            | (GenericVar(..), Lt, Float) => Ok(Bool),
+            (t1, Lt, t2) => Err(ImproperType(t1, t2).into()),
 
-            (GenericVar(_), Gt, GenericVar(_))
+            (GenericVar(..), Gt, GenericVar(..))
             | (Int, Gt, Int)
-            | (Int, Gt, GenericVar(_))
-            | (GenericVar(_), Gt, Int)
+            | (Int, Gt, GenericVar(..))
+            | (GenericVar(..), Gt, Int)
             | (Float, Gt, Float)
-            | (Float, Gt, GenericVar(_))
-            | (GenericVar(_), Gt, Float) => Ok(Bool),
-            (_, Gt, _) => {
-                Err(ImproperType(GenericVar("α".to_string()), GenericVar("α".to_string())).into())
-            }
+            | (Float, Gt, GenericVar(..))
+            | (GenericVar(..), Gt, Float) => Ok(Bool),
+            (t1, Gt, t2) => Err(ImproperType(t1, t2).into()),
 
-            (GenericVar(_), And, GenericVar(_))
+            (GenericVar(..), And, GenericVar(..))
             | (Bool, And, Bool)
-            | (Bool, And, GenericVar(_))
-            | (GenericVar(_), And, Bool) => Ok(Bool),
+            | (Bool, And, GenericVar(..))
+            | (GenericVar(..), And, Bool) => Ok(Bool),
             (Bool, And, t2) => Err(ImproperType(Bool, t2).into()),
             (t1, And, Bool) => Err(ImproperType(Bool, t1).into()),
             (t1, And, _) => Err(ImproperType(Bool, t1).into()),
 
-            (GenericVar(_), Or, GenericVar(_))
+            (GenericVar(..), Or, GenericVar(..))
             | (Bool, Or, Bool)
-            | (Bool, Or, GenericVar(_))
-            | (GenericVar(_), Or, Bool) => Ok(Bool),
+            | (Bool, Or, GenericVar(..))
+            | (GenericVar(..), Or, Bool) => Ok(Bool),
             (Bool, Or, t2) => Err(ImproperType(Bool, t2).into()),
             (t1, Or, Bool) => Err(ImproperType(Bool, t1).into()),
             (t1, Or, _) => Err(ImproperType(Bool, t1).into()),
@@ -658,7 +676,10 @@ impl ProgramChecker {
     pub fn check_pattern(&mut self, p: Pattern) -> Result<(Type, HashMap<String, Type>)> {
         use Pattern::*;
         match p {
-            Underscore => Ok((Type::GenericVar(self.fresh_type_var()), HashMap::new())),
+            Underscore => Ok((
+                Type::GenericVar(self.fresh_type_var(), false),
+                HashMap::new(),
+            )),
             True => Ok((Type::Bool, HashMap::new())),
             False => Ok((Type::Bool, HashMap::new())),
             Int(_) => Ok((Type::Int, HashMap::new())),
@@ -721,7 +742,7 @@ impl ProgramChecker {
                 // If empty list then return generic list
                 match t_list {
                     None => Ok((
-                        Type::List(Box::new(Type::GenericVar(self.fresh_type_var()))),
+                        Type::List(Box::new(Type::GenericVar(self.fresh_type_var(), false))),
                         vars,
                     )),
                     Some(t) => Ok((Type::List(Box::new(t)), vars)),
@@ -741,7 +762,7 @@ impl ProgramChecker {
                         Type::Generic(scheme, t) => {
                             let mut t_ = *t.clone();
                             for arg in scheme {
-                                let fresh_t = Type::GenericVar(self.fresh_type_var());
+                                let fresh_t = Type::GenericVar(self.fresh_type_var(), false);
                                 t_ = t_.sub_generic(&arg, &fresh_t);
                             }
 
@@ -796,7 +817,7 @@ impl ProgramChecker {
                         Type::Generic(scheme, t) => {
                             let mut t_ = *t.clone();
                             for arg in scheme {
-                                let fresh_t = Type::GenericVar(self.fresh_type_var());
+                                let fresh_t = Type::GenericVar(self.fresh_type_var(), false);
                                 t_ = t_.sub_generic(&arg, &fresh_t);
                             }
 
@@ -849,8 +870,8 @@ impl ProgramChecker {
                 }
 
                 let t_ret = match (t1.clone(), t2.clone()) {
-                    (Type::GenericVar(v1), Type::GenericVar(_)) => {
-                        Type::List(Box::new(Type::GenericVar(v1)))
+                    (Type::GenericVar(var, stability), Type::GenericVar(..)) => {
+                        Type::List(Box::new(Type::GenericVar(var, stability)))
                     }
                     (t1, Type::List(t2)) => {
                         if t1 == *t2 {
@@ -863,7 +884,7 @@ impl ProgramChecker {
                             .into());
                         }
                     }
-                    (t, Type::GenericVar(_)) => Type::List(Box::new(t)),
+                    (t, Type::GenericVar(..)) => Type::List(Box::new(t)),
                     (t1, t2) => {
                         return Err(TypeError::ImproperType(Type::List(Box::new(t1)), t2).into())
                     }
@@ -934,7 +955,7 @@ impl ProgramChecker {
                 Ok((Type::Stable(Box::new(t)), vars))
             }
             Var(var) => {
-                let t = Type::GenericVar(self.fresh_type_var());
+                let t = Type::GenericVar(self.fresh_type_var(), false);
                 Ok((t.clone(), HashMap::from([(var, t)])))
             }
         }
@@ -987,15 +1008,54 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                 unify(constraints)
             } else {
                 match (t1, t2) {
-                    (GenericVar(alpha), t2) => {
-                        sub_constraints(&mut constraints, &GenericVar(alpha.clone()), &t2);
+                    (GenericVar(_, true), GenericVar(beta, false)) => {
+                        sub_constraints(&mut constraints, &t2, &t1);
+                        let mut subs = unify(constraints)?;
+
+                        subs.push((beta.clone(), t1.clone()));
+                        Ok(subs)
+                    }
+                    (GenericVar(alpha, false), GenericVar(_, true)) => {
+                        sub_constraints(&mut constraints, &t1, &t2);
                         let mut subs = unify(constraints)?;
 
                         subs.push((alpha.clone(), t2.clone()));
                         Ok(subs)
                     }
-                    (t1, GenericVar(alpha)) => {
-                        sub_constraints(&mut constraints, &GenericVar(alpha.clone()), &t1);
+
+                    (GenericVar(alpha, true), t2) => {
+                        if !t2.is_stable().unwrap() {
+                            return Err(TypeError::ExpectedStableType(t2.clone()).into());
+                        }
+
+                        sub_constraints(&mut constraints, &GenericVar(alpha.clone(), true), &t2);
+                        let mut subs = unify(constraints)?;
+
+                        subs.push((alpha.clone(), t2.clone()));
+                        Ok(subs)
+                    }
+
+                    (t1, GenericVar(alpha, true)) => {
+                        if !t1.is_stable().unwrap() {
+                            return Err(TypeError::ExpectedStableType(t1.clone()).into());
+                        }
+
+                        sub_constraints(&mut constraints, &t2, &t1);
+                        let mut subs = unify(constraints)?;
+
+                        subs.push((alpha.clone(), t1.clone()));
+                        Ok(subs)
+                    }
+
+                    (GenericVar(alpha, false), t2) => {
+                        sub_constraints(&mut constraints, &t1, &t2);
+                        let mut subs = unify(constraints)?;
+
+                        subs.push((alpha.clone(), t2.clone()));
+                        Ok(subs)
+                    }
+                    (t1, GenericVar(alpha, false)) => {
+                        sub_constraints(&mut constraints, &t2, &t1);
                         let mut subs = unify(constraints)?;
 
                         subs.push((alpha.clone(), t1.clone()));
@@ -1042,14 +1102,14 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                         let mut t1 = *t1.clone();
                         for arg in scheme1 {
                             // Probably wrong
-                            let fresh_t = Type::GenericVar(arg.to_string());
+                            let fresh_t = Type::GenericVar(arg.to_string(), false);
                             t1 = t1.sub_generic(&arg, &fresh_t);
                         }
 
                         let mut t2 = *t2.clone();
                         for arg in scheme2 {
                             // Probably wrong
-                            let fresh_t = Type::GenericVar(arg.to_string());
+                            let fresh_t = Type::GenericVar(arg.to_string(), false);
                             t2 = t2.sub_generic(&arg, &fresh_t);
                         }
 

@@ -26,7 +26,7 @@ pub enum Type {
     Fix(String, Box<Type>),
     FixVar(String),                  // These have their own types
     Generic(Vec<String>, Box<Type>), // A pair of generic parameters with the type definition
-    GenericVar(String),
+    GenericVar(String, bool),
     Struct(HashMap<String, Box<Type>>), // A map from the struct fields to their respective type
     Enum(HashMap<String, Option<Box<Type>>>), // A map from each variant constructor to an Option
 }
@@ -78,7 +78,7 @@ impl Type {
                 for s in &t_context.vars {
                     // Check if the ident is a Generic Argument
                     if id == s.clone() {
-                        return Ok(GenericVar(s.clone()));
+                        return Ok(GenericVar(s.clone(), false));
                     }
                 }
 
@@ -121,20 +121,25 @@ impl Type {
         t: TypeExpr,
         t_decs: &HashMap<String, Type>,
     ) -> Result<Type> {
+        // Add type being defined in the declarations for recursive types
         let mut t_decs = t_decs.clone();
-        t_decs.insert(id.clone(), Type::GenericVar(id.clone()));
+        t_decs.insert(id.clone(), Type::GenericVar(id.clone(), false));
 
+        // Add type parameters to the type context
         let t_context = TypeContext {
             vars: params.clone(),
         };
+        // Convert TExpr to Type
         let mut t = Type::from_texpr(t, t_context, &t_decs)?;
 
+        // If type is recursive turn it into a Fix type
         let fix_var = format!("rec_{}", id);
         let (b, t_) = t.sub_delay(&id, &fix_var);
         if b {
             t = Type::Fix(fix_var, Box::new(t_));
         }
 
+        // If generic then turn it into a Generic Type
         if params.len() > 0 {
             t = Type::Generic(params, Box::new(t))
         }
@@ -149,7 +154,7 @@ impl Type {
         t_decs: &HashMap<String, Type>,
     ) -> Result<Type> {
         let mut t_decs = t_decs.clone();
-        t_decs.insert(id.clone(), Type::GenericVar(id.clone()));
+        t_decs.insert(id.clone(), Type::GenericVar(id.clone(), false));
 
         let t_context = TypeContext {
             vars: params.clone(),
@@ -180,7 +185,7 @@ impl Type {
         t_decs: &HashMap<String, Type>,
     ) -> Result<Type> {
         let mut t_decs = t_decs.clone();
-        t_decs.insert(id.clone(), Type::GenericVar(id.clone()));
+        t_decs.insert(id.clone(), Type::GenericVar(id.clone(), false));
 
         let t_context = TypeContext {
             vars: params.clone(),
@@ -237,8 +242,8 @@ impl Type {
             }
 
             Delay(t) => match &**t {
-                GenericVar(id) => {
-                    if id == var {
+                GenericVar(id, stability) => {
+                    if id == var && !stability {
                         (true, FixVar(fix_var.clone()))
                     } else {
                         let (b, t_) = t.sub_delay(var, fix_var);
@@ -268,7 +273,7 @@ impl Type {
                     (b, Generic(args.clone(), Box::new(t_)))
                 }
             }
-            GenericVar(_) => (false, self.clone()),
+            GenericVar(..) => (false, self.clone()),
             Struct(map) => {
                 let mut fields = HashMap::new();
                 let mut b = false;
@@ -342,7 +347,7 @@ impl Type {
                     Generic(args.clone(), Box::new(t_.sub_delay_fix(fix_var)))
                 }
             }
-            GenericVar(_) => self.clone(),
+            GenericVar(..) => self.clone(),
             Struct(map) => Struct(
                 map.iter()
                     .map(|(id, t_)| (id.clone(), Box::new(t_.sub_delay_fix(fix_var))))
@@ -388,7 +393,11 @@ impl Type {
                     Generic(args.clone(), Box::new(t_.sub_generic(var, t)))
                 }
             }
-            GenericVar(id) => {
+            GenericVar(id, stability) => {
+                // Don't substitute unstable type for stable var
+                if *stability && !t.is_stable().unwrap() {
+                    return self.clone();
+                }
                 if id == var {
                     // Substitute if the GenericVar matches
                     t.clone()
@@ -469,11 +478,11 @@ impl Type {
                 t.well_formed(context)
             }
             // makes sure that the generic parameter has been declared
-            GenericVar(s) => {
-                if t_context.vars.contains(s) {
+            GenericVar(var, _) => {
+                if t_context.vars.contains(var) {
                     Ok(())
                 } else {
-                    Err(TypeError::GenericVariableNotFound(s.clone()).into())
+                    Err(TypeError::GenericVariableNotFound(var.clone()).into())
                 }
             }
         }
@@ -517,7 +526,7 @@ impl Type {
                 Ok(result)
             }
             Generic(..) => Ok(false),
-            GenericVar(_) => Ok(false),
+            GenericVar(_, stability) => Ok(*stability),
         }
     }
 
@@ -566,7 +575,7 @@ impl Type {
                 }
                 result
             }
-            GenericVar(var) => HashSet::from([var.clone()]),
+            GenericVar(var, _) => HashSet::from([var.clone()]),
         }
     }
 

@@ -333,8 +333,13 @@ IfExpr: Box<PExpr> = {
   "if" <e1: Expr> "then" <e2: Expr> "else" <e3: Expr> => Box::new(PExpr::If(e1, e2, e3))
 };
 
-FnArgList: Vec<String> = {
-  <v: LowerId+> => v,
+FnArg: (String, bool) = {
+    <LowerId> => (<>, false),
+    "#" <LowerId> => (<>, true)
+  }
+
+FnArgList: Vec<(String, bool)> = {
+  <v: FnArg+> => v,
   // Add pattern variants for Lists, Tuples, Streams
 };
 

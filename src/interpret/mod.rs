@@ -168,7 +168,7 @@ impl Interpreter {
             App(e1, e2) => {
                 let (_e1, _s) = self.eval(*e1.clone(), s)?;
                 match _e1 {
-                    Fn(var, expr) => {
+                    Fn((var, _), expr) => {
                         let (val, __s) = self.eval(*e2, _s)?;
                         self.eval(expr.substitute(&var, &val).1, __s)
                     }

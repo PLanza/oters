@@ -44,7 +44,7 @@ pub enum Expr {
     Tuple(Vec<Box<Expr>>),
     Struct(String, Vec<(String, Box<Expr>)>),
     Variant(String, Option<Box<Expr>>),
-    Fn(String, Box<Expr>),
+    Fn((String, bool), Box<Expr>),
     Fix(String, Box<Expr>), // From Patrick Bahr's Rattus
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Seq(Box<Expr>, Box<Expr>),
@@ -140,7 +140,7 @@ impl Expr {
                 }
 
                 if args.is_empty() {
-                    return Ok(Expr::Fn("_".to_string(), Box::new(e)));
+                    return Ok(Expr::Fn(("_".to_string(), true), Box::new(e)));
                 }
 
                 Ok(e)
@@ -288,7 +288,7 @@ impl Expr {
             }
             Fn(arg, e) => {
                 // Tighter binding variable
-                if arg == var.clone() {
+                if arg.0 == var.clone() {
                     return (false, Fn(arg, e.clone()));
                 }
                 let (b, e_) = e.substitute(var, term);
@@ -699,22 +699,22 @@ impl VarContext {
         self.terms.push(VarTerm::Tick);
     }
 
-    pub fn get_var(self, var: &String) -> Result<Type> {
+    // Returns type of var and if it's a legal access according to the typing rule
+    pub fn get_var(self, var: &String) -> Result<(Type, bool)> {
         for (i, term) in self.terms.iter().rev().enumerate() {
             match term {
                 VarTerm::Tick => (),
                 VarTerm::Var(cell) => {
-                    let term = cell.try_borrow()?.clone();
-                    let (x, t) = (term.0, term.1);
+                    let (x, t) = cell.try_borrow()?.clone();
 
                     if &x == var {
                         if t.is_stable()? {
-                            return Ok(t.clone());
+                            return Ok((t.clone(), true));
                         } else {
                             if self.ticks.len() < 1 || i > self.ticks[0] {
-                                return Ok(t.clone());
+                                return Ok((t.clone(), true));
                             } else {
-                                return Err(TypeError::InvalidVariableAccess(var.clone()).into());
+                                return Ok((t.clone(), false));
                             }
                         }
                     }

@@ -12,11 +12,11 @@ let map = fn f xs ->
     x << xs => !#f x << @(map f !@xs),
   }
 
-let scan = fn f acc as ->
+let scan = fn f #acc as ->
   match as with {
     a << as => {
-      let acc' = !#f !#acc a;
-      !#acc' << @(scan f !#acc' !@as)
+      let acc' = !#f acc a;
+      acc' << @(scan f acc' !@as)
     }
   }
 

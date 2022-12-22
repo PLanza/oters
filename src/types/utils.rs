@@ -43,7 +43,13 @@ impl Display for Type {
                 vars.push_str(&format!("{}", v[v.len() - 1]));
                 write!(f, "{}.{}", vars, t)
             }
-            GenericVar(v) => write!(f, "{}", v),
+            GenericVar(v, stab) => {
+                if *stab {
+                    write!(f, "Stable({})", v)
+                } else {
+                    write!(f, "{}", v)
+                }
+            }
             Struct(map) => {
                 let mut t_str = "struct {".to_string();
 

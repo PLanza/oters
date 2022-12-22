@@ -15,7 +15,7 @@ fn main() -> Result<()> {
 
     let exprs = checker.type_check_program(&program)?;
 
-    println!("{:?}", exprs);
+    /*
     let mut interpreter = Interpreter::new();
     let (v, (e, s)) = interpreter.step(exprs[0].clone(), Store::new())?;
     println!("{:?}", v);
@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     let (v, (e, s)) = interpreter.step(e, s)?;
     println!("{:?}", v);
     println!("{:?}", e);
-    println!("{:?}", s);
+    println!("{:?}", s);*/
 
     Ok(())
 }

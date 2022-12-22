@@ -31,4 +31,6 @@ pub enum TypeError {
     NotAnEnum(String),
     #[error("Enums do not match")]
     EnumsDoNotMatch,
+    #[error("Type {0} not stable")]
+    ExpectedStableType(Type),
 }

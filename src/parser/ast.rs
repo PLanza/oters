@@ -16,7 +16,7 @@ pub enum PExpr {
     List(Vec<Box<PExpr>>),
     StructExpr(String, Vec<(String, Box<PExpr>)>),
     Tuple(Vec<Box<PExpr>>),
-    Fn(Vec<String>, Box<PExpr>),
+    Fn(Vec<(String, bool)>, Box<PExpr>),
     If(Box<PExpr>, Box<PExpr>, Box<PExpr>),
     Block(Vec<Box<PExpr>>),
     App(Box<PExpr>, Box<PExpr>),

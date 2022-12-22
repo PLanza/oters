@@ -530,11 +530,14 @@ fn functions() -> Vec<(String, Box<super::ast::PExpr>)> {
     let mut fn_vecs = Vec::new();
 
     for e in exprs {
-        let code = format!("fn arg -> {}", e.0);
+        let code = format!("fn arg1 #arg2 -> {}", e.0);
 
         fn_vecs.push((
             code.to_string(),
-            Box::new(Fn(vec!["arg".to_string()], e.1.clone())),
+            Box::new(Fn(
+                vec![("arg1".to_string(), false), ("arg2".to_string(), true)],
+                e.1.clone(),
+            )),
         ));
     }
 
