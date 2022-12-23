@@ -177,32 +177,24 @@ impl Expr {
                 Ok(Expr::Match(Box::new(Expr::from_pexpr(*e)?), p_es))
             }
             PExpr::Var(s) => Ok(Expr::Var(s)),
-            // Recursive functions are translated to fix points to ensure guarded recursion
-            PExpr::Let(id, e) => match Expr::from_pexpr(*e.clone())? {
-                Expr::Fn(arg, fn_e) => {
-                    let fix_var = format!("rec_{}", id);
-                    let (is_rec, rec_e) = fn_e.clone().substitute(
-                        &id,
-                        &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))),
-                    );
-                    if is_rec {
-                        Ok(Expr::Let(
-                            id.clone(),
-                            Box::new(Expr::Fix(fix_var, Box::new(Expr::Fn(arg, Box::new(rec_e))))),
-                        ))
-                    } else {
-                        Ok(Expr::Let(id, Box::new(Expr::Fn(arg, fn_e))))
-                    }
+            // Recursive variables are translated to fix points to ensure guarded recursion
+            PExpr::Let(id, e) => {
+                let expr = Expr::from_pexpr(*e.clone())?;
+
+                let fix_var = format!("_rec{}", id);
+                let (is_rec, rec_e) = expr.clone().substitute(
+                    &id,
+                    &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))),
+                );
+                if is_rec {
+                    Ok(Expr::Let(
+                        id.clone(),
+                        Box::new(Expr::Fix(fix_var, Box::new(rec_e))),
+                    ))
+                } else {
+                    Ok(Expr::Let(id, Box::new(expr)))
                 }
-                // If e_ is recursive and not a function, then fail
-                e_ => {
-                    if e_.clone().substitute(&id, &Expr::Unit).0 {
-                        Err(InvalidExprError::IllegalRecursiveExpr(e.head_string()).into())
-                    } else {
-                        Ok(Expr::Let(id, Box::new(e_)))
-                    }
-                }
-            },
+            }
             _ => unreachable!(),
         }
     }

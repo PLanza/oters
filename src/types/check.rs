@@ -28,7 +28,7 @@ impl ProgramChecker {
         }
     }
 
-    pub fn type_check_program(&mut self, program: &Program) -> Result<Vec<Expr>> {
+    pub fn type_check_program(&mut self, program: &Program) -> Result<Vec<(String, Expr)>> {
         let mut checked_exprs = Vec::new();
 
         for expr in program {
@@ -83,34 +83,20 @@ impl ProgramChecker {
                     self.type_decs.insert(id.clone(), t);
                 }
                 PExpr::Let(id, expr) => {
-                    // If e is a recursive function then convert it into a fix expression
-                    let mut e = match Expr::from_pexpr(*expr.clone())? {
-                        Expr::Fn(arg, fn_e) => {
-                            let fix_var = format!("rec_{}", id);
-                            let (is_rec, rec_e) = fn_e.clone().substitute(
-                                &id,
-                                &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(
-                                    fix_var.clone(),
-                                ))))),
-                            );
-                            if is_rec {
-                                Expr::Fix(fix_var, Box::new(Expr::Fn(arg, Box::new(rec_e))))
-                            } else {
-                                Expr::Fn(arg, fn_e)
-                            }
-                        }
-                        // If e_ is recursive and not a function, then fail
-                        e_ => {
-                            if e_.clone().substitute(&id, &Expr::Unit).0 {
-                                return Err(InvalidExprError::IllegalRecursiveExpr(
-                                    expr.head_string(),
-                                )
-                                .into());
-                            } else {
-                                e_
-                            }
-                        }
+                    let mut e = Expr::from_pexpr(*expr.clone())?;
+
+                    // If e is a recursive variable then convert it into a fix expression
+                    let fix_var = format!("rec_{}", id);
+                    let (is_rec, rec_e) = e.clone().substitute(
+                        &id,
+                        &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))),
+                    );
+                    e = if is_rec {
+                        Expr::Fix(fix_var, Box::new(rec_e))
+                    } else {
+                        e
                     };
+
                     e = e.single_tick(0);
 
                     // Type check the expression
@@ -139,7 +125,7 @@ impl ProgramChecker {
                     self.value_decs.insert(id.clone(), t);
                     self.substitutions = Vec::new();
 
-                    checked_exprs.push(e);
+                    checked_exprs.push((id.clone(), e));
                 }
                 _ => return Err(InvalidExprError::InvalidTopLevelExpr(expr.head_string()).into()),
             }
