@@ -932,14 +932,6 @@ impl ProgramChecker {
 
                 Ok((t2, vars1))
             }
-            Delay(p_) => {
-                let (t, vars) = self.check_pattern(*p_)?;
-                Ok((Type::Delay(Box::new(t)), vars))
-            }
-            Stable(p_) => {
-                let (t, vars) = self.check_pattern(*p_)?;
-                Ok((Type::Stable(Box::new(t)), vars))
-            }
             Var(var) => {
                 let t = Type::GenericVar(self.fresh_type_var(), false);
                 Ok((t.clone(), HashMap::from([(var, t)])))

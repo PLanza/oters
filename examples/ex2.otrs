@@ -1,15 +1,15 @@
 let nats = {
-  let aux = fn n -> !#n << @(aux #(!#n + 1));
-  aux #0 
+  let aux = fn n -> n << @(aux (n + 1));
+  aux 0 
 }
 
-let scan = fn f #acc as ->
+let fold = fn f #acc as ->
   match as with {
     a << as => {
       let acc' = !#f acc a;
-      acc' << @(scan f acc' !@as)
+      acc' << @(fold f acc' !@as)
     }
   }
 
-let triangles = scan #(fn x y -> x + y) 0 nats
+let triangles = fold #(fn x y -> x + y) 0 nats
 

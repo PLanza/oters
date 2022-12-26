@@ -258,14 +258,8 @@ OrPattern: Box<Pattern> = {
 ConsPattern: Box<Pattern> = {
   <PatternTerm> "::" <ConsPattern> => Box::new(Pattern::Cons(<>)),
   <PatternTerm> "<<" <ConsPattern> => Box::new(Pattern::Stream(<>)),
-  PrefixPattern,
-};
-
-PrefixPattern: Box<Pattern> = {
-  "@" <PrefixPattern> => Box::new(Pattern::Delay(<>)),
-  "#" <PrefixPattern> => Box::new(Pattern::Stable(<>)),
   PatternTerm,
-}
+};
 
 ListPattern: Box<Pattern> = {
   "[]" => Box::new(Pattern::List(Vec::new())),

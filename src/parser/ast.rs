@@ -86,7 +86,5 @@ pub enum Pattern {
     Cons(Box<Pattern>, Box<Pattern>),
     Stream(Box<Pattern>, Box<Pattern>),
     Or(Box<Pattern>, Box<Pattern>),
-    Delay(Box<Pattern>),  // From Patrick Bahr's Rattus
-    Stable(Box<Pattern>), // From Patrick Bahr's Rattus
     Var(String),
 }

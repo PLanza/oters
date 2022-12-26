@@ -1,4 +1,5 @@
 mod errors;
+mod utils;
 
 use crate::parser::ast::{Opcode, PExpr, Pattern};
 use crate::types::{Type, TypeError};
@@ -10,6 +11,7 @@ use std::rc::Rc;
 use anyhow::{Ok, Result};
 
 pub use errors::*;
+pub use utils::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum VarTerm {
@@ -305,6 +307,14 @@ impl Expr {
                 )
             }
             Seq(e1, e2) => {
+                match *e1.clone() {
+                    Let(x, _) => {
+                        if x == var.clone() {
+                            return (false, Seq(e1, e2));
+                        }
+                    }
+                    _ => (),
+                }
                 let (b1, e1_) = e1.substitute(var, term);
                 let (b2, e2_) = e2.substitute(var, term);
 
@@ -333,7 +343,11 @@ impl Expr {
 
                 let mut patterns = Vec::new();
                 for (p, e_p) in v {
-                    //TODO: do not substitute if p binds var
+                    if p.contains(var) {
+                        patterns.push((p, e_p));
+                        continue;
+                    }
+
                     let (b_p, e_p_) = e_p.substitute(var, term);
                     b = b || b_p;
                     patterns.push((p, Box::new(e_p_)));
@@ -744,5 +758,48 @@ impl VarContext {
         }
 
         free_vars
+    }
+}
+
+impl Pattern {
+    fn contains(&self, var: &String) -> bool {
+        use Pattern::*;
+        match self {
+            Underscore | True | False | Int(_) | Float(_) | String(_) | Unit => false,
+            Tuple(ps) => {
+                let mut ret = false;
+                for p in ps {
+                    ret = ret || p.contains(var)
+                }
+                ret
+            }
+            List(ps) => {
+                let mut ret = false;
+                for p in ps {
+                    ret = ret || p.contains(var)
+                }
+                ret
+            }
+            Variant(_, o) => match o {
+                None => false,
+                Some(p) => p.contains(var),
+            },
+            Struct(_, fields) => {
+                let mut ret = false;
+                for (field, o) in fields {
+                    let b = match o {
+                        None => var == field,
+                        Some(p) => p.contains(var),
+                    };
+
+                    ret = ret || b;
+                }
+                ret
+            }
+            Cons(p1, p2) => p1.contains(var) || p2.contains(var),
+            Stream(p1, p2) => p1.contains(var) || p2.contains(var),
+            Or(p1, p2) => p1.contains(var) || p2.contains(var),
+            Var(x) => x == var,
+        }
     }
 }
