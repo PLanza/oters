@@ -76,7 +76,7 @@ impl Interpreter {
             return Ok(());
         }
 
-        // Warning: Breaks with cycles
+        // Warning: Breaks with cycles though these will fail in type checking
         // Topological sort makes sure dependencies are evaluated before dependents
         let streams = petgraph::algo::toposort(
             &self.flow_graph,
@@ -88,8 +88,10 @@ impl Interpreter {
             self.step()?;
             for index in &streams {
                 let stream = self.flow_graph[*index].clone();
-                let e = self.streams.get(&stream).unwrap().clone();
                 println!("{}: {}", stream, self.stream_outs.get(&stream).unwrap());
+                // println!("{}", self.streams.get(&stream).unwrap());
+                // println!("{:?}\n", self.store);
+                let e = self.streams.get(&stream).unwrap().clone();
 
                 let (e, s) = self.eval(e, self.store.clone())?;
                 self.store = s;
@@ -288,19 +290,23 @@ impl Interpreter {
                 Err(NoPatternMatchesError(format!("{:?}", e)).into())
             }
             Var(x) => {
-                let expr = self.globals.get(&x).map(|e| e.clone());
-                match expr {
-                    None => Err(UnboundVariableError(x).into()),
+                let opt = self.streams.get(&x).map(|e| e.clone());
+                match opt {
+                    None => match self.globals.get(&x) {
+                        None => Err(UnboundVariableError(x).into()),
+                        Some(v) => Ok((v.clone(), s)),
+                    },
                     Some(v) => {
-                        if !self.streams.contains_key(&x) {
-                            return Ok((v.clone(), s));
-                        }
-
                         // If variable is another stream add it to this stream's dependencies
+                        // MEMORY LEAK!!!
                         self.current_deps.push(x.clone());
 
                         // Allocate a location for the stream
-                        let loc = self.alloc();
+                        let loc = match s.streams.get(&x) {
+                            None => self.alloc(),
+                            Some(loc) => *loc,
+                        };
+
                         let mut s = s.clone();
                         let stream = v.replace_stream_loc(loc).unwrap();
                         s.extend(loc, stream.clone());
@@ -365,7 +371,9 @@ impl Interpreter {
                     // Take the current value and pass it to the outputs
                     self.stream_outs.insert(stream.clone(), e);
                     // Update the stream's term to the stream on the next time
-                    self.streams.insert(stream, Expr::Adv(Box::new(loc)));
+                    self.streams
+                        .insert(stream.clone(), Expr::Adv(Box::new(loc.clone())));
+                    self.globals.insert(stream, Expr::Adv(Box::new(loc)));
                 }
                 None => return Err(ExpressionDoesNotStepError(format!("{:?}", expr)).into()),
             }
@@ -494,11 +502,7 @@ impl Interpreter {
             Variant(c1, o1) => match val {
                 Expr::Variant(c2, o2) => {
                     if c1 != c2 {
-                        return Err(PatternMatchError(
-                            format!("{:?}", pattern),
-                            format!("{:?}", val),
-                        )
-                        .into());
+                        return Ok((false, Vec::with_capacity(0)));
                     }
                     if o1.is_none() && o2.is_none() {
                         return Ok((true, Vec::with_capacity(0)));
@@ -552,7 +556,7 @@ impl Interpreter {
                     }
                     Ok((matches, subs))
                 }
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(format!("{}", pattern), format!("{}", val)).into()),
             },
             Cons(p1, p2) => match val {
                 Expr::List(vals) => {

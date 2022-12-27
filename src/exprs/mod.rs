@@ -84,7 +84,7 @@ impl Expr {
     pub fn from_pexpr(pe: PExpr) -> Result<Expr> {
         match pe {
             PExpr::True => Ok(Expr::Bool(true)),
-            PExpr::False => Ok(Expr::Bool(true)),
+            PExpr::False => Ok(Expr::Bool(false)),
             PExpr::Int(i) => Ok(Expr::Int(i)),
             PExpr::Float(f) => Ok(Expr::Float(f)),
             PExpr::String(s) => Ok(Expr::String(s)),

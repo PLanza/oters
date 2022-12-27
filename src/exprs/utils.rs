@@ -85,7 +85,7 @@ impl Display for BOpcode {
             Div => write!(f, "/"),
             Mod => write!(f, "%"),
             Cons => write!(f, "::"),
-            Eq => write!(f, "+"),
+            Eq => write!(f, "=="),
             Lt => write!(f, "<"),
             Gt => write!(f, ">"),
             And => write!(f, "&&"),

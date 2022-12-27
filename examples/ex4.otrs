@@ -1,0 +1,39 @@
+enum Option<T> {
+    None,
+    Some T,
+}
+
+let from = fn x -> x << @(from (x+1))
+
+let nats = from 0
+
+let is_multiple_10 = 
+  match nats with {
+    x << xs => 
+      if x % 10 == 0 then 
+        true << @(is_multiple_10)
+      else
+        false << @(is_multiple_10)
+  }
+
+
+let when = fn pred xs ->
+  match xs with {
+    x << xs => 
+      if !#pred x then
+        Some(from 0) << @(when pred !@xs)
+      else 
+        (None) << @(when pred !@xs)
+  }
+
+let switch = fn xs es -> 
+  match (xs, es) with {
+    (x << xs, e << es) => match e with {
+      None => x << @(switch !@xs !@es),
+      Some (a << as) => a << @(switch !@as !@es)
+    }
+  }
+
+let events = when #(fn x -> x % 10 == 0) nats
+
+let loop_10 = switch nats events
