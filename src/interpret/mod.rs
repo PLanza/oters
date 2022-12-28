@@ -1,8 +1,10 @@
+mod allocator;
 mod errors;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::vec;
 
+use self::allocator::Allocator;
 use self::errors::InterpretError::*;
 use crate::exprs::{BOpcode, Expr, UOpcode};
 use crate::parser::ast::Pattern;
@@ -12,8 +14,7 @@ use anyhow::{Ok, Result};
 use petgraph::graph::DiGraph;
 
 pub struct Interpreter {
-    new_loc: u64,
-    current_deps: Vec<String>,
+    allocator: Allocator,
     flow_graph: DiGraph<String, ()>,
     globals: HashMap<String, Expr>,
     streams: HashMap<String, Expr>,
@@ -32,8 +33,7 @@ pub struct Store {
 impl Interpreter {
     pub fn new() -> Self {
         Interpreter {
-            new_loc: 0,
-            current_deps: Vec::new(),
+            allocator: Allocator::new(),
             flow_graph: DiGraph::new(),
             globals: HashMap::new(),
             streams: HashMap::new(),
@@ -44,7 +44,6 @@ impl Interpreter {
 
     pub fn init(&mut self, exprs: Vec<(String, Expr)>) -> Result<()> {
         for (id, expr) in exprs {
-            self.current_deps = Vec::new();
             // Reduce all the expressions
             let (e, s) = self.eval(expr, self.store.clone())?;
 
@@ -52,17 +51,21 @@ impl Interpreter {
             if !matches!(e.is_stream(), None) {
                 let current_index = self.flow_graph.add_node(id.clone());
                 // Any streams used in the expression are added to current_deps
-                for dep in &self.current_deps {
-                    let dep_index = self
-                        .flow_graph
-                        .node_indices()
-                        .find(|i| &self.flow_graph[*i] == dep)
-                        .unwrap();
-                    // Add an edges from the dependency to the current stream
-                    self.flow_graph.update_edge(dep_index, current_index, ());
+                for (stream, _) in &self.streams {
+                    // If the current expression depends on another stream
+                    if e.clone().substitute(stream, &Expr::Unit).0 {
+                        // Add a dependency
+                        let dep_index = self
+                            .flow_graph
+                            .node_indices()
+                            .find(|i| &self.flow_graph[*i] == stream)
+                            .unwrap();
+                        self.flow_graph.update_edge(dep_index, current_index, ());
+                    }
                 }
                 self.streams.insert(id.clone(), e.clone());
             }
+
             // Globals contain reduced expressions e.g. functions, values, streams, etc.
             self.globals.insert(id.clone(), e);
             self.store = s;
@@ -132,7 +135,7 @@ impl Interpreter {
                 }
             }
             Delay(e) => {
-                let loc = self.alloc();
+                let loc = self.allocator.alloc();
                 let mut s = s.clone();
                 s.extend(loc, *e);
                 Ok((Location(loc), s))
@@ -291,13 +294,9 @@ impl Interpreter {
                         Some(v) => Ok((v.clone(), s)),
                     },
                     Some(v) => {
-                        // If variable is another stream add it to this stream's dependencies
-                        // MEMORY LEAK!!!
-                        self.current_deps.push(x.clone());
-
                         // Allocate a location for the stream
                         let loc = match s.streams.get(&x) {
-                            None => self.alloc(),
+                            None => self.allocator.alloc(),
                             Some(loc) => *loc,
                         };
 
@@ -379,6 +378,7 @@ impl Interpreter {
     }
 
     pub fn update_store(&mut self) {
+        let mut to_dealloc: HashSet<u64> = self.store.now.keys().cloned().collect();
         self.store.now = self.store.later.clone();
         self.store.later = HashMap::new();
 
@@ -392,13 +392,9 @@ impl Interpreter {
                 ]))),
             );
             self.store.later.insert(*loc, Expr::Unit);
+            to_dealloc.remove(loc);
         }
-    }
-
-    fn alloc(&mut self) -> u64 {
-        let loc = self.new_loc;
-        self.new_loc += 1;
-        loc
+        self.allocator.dealloc_set(to_dealloc);
     }
 
     fn match_pattern(val: &Expr, pattern: &Pattern) -> Result<(bool, Vec<(String, Expr)>)> {
@@ -548,7 +544,7 @@ impl Interpreter {
             Cons(p1, p2) => match val {
                 Expr::List(vals) => {
                     let (b1, mut subs1) = Self::match_pattern(&vals[0], p1)?;
-                    let tail = vals.range(1..).map(|b| b.clone()).collect();
+                    let tail = vals.range(1..).cloned().collect();
                     let (b2, mut subs2) = Self::match_pattern(&Expr::List(tail), p2)?;
 
                     subs1.append(&mut subs2);
