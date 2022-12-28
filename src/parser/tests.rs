@@ -190,15 +190,17 @@ fn test_tuple() {
 
 #[cfg(test)]
 fn list() -> (String, Box<super::ast::PExpr>) {
+    use std::collections::VecDeque;
+
     use super::ast::PExpr::List;
 
     let mut code = "[".to_string();
-    let mut list_vec = Vec::new();
+    let mut list_vec = VecDeque::new();
 
     for expr in binops() {
         code.push_str(format!("{}, ", expr.0).as_str());
 
-        list_vec.push(expr.1.clone());
+        list_vec.push_back(expr.1.clone());
     }
 
     code.push_str("]");
