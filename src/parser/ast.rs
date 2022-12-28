@@ -2,18 +2,19 @@ pub type Program = Vec<Box<PExpr>>;
 
 type GenericParams = Vec<(bool, String)>; // Each parameter is a pair of the parameter name and a boolean marking whether the parameter is stable or not
 
+use std::collections::VecDeque;
+
 // The parsed expressions of the grammar, need to translated into syntax::Exprs
 #[derive(Debug, PartialEq, Clone)]
 pub enum PExpr {
-    True,
-    False,
+    Bool(bool),
     Int(i64),
     Float(f64),
     String(String),
     Unit,
     BinOp(Box<PExpr>, Opcode, Box<PExpr>),
     UnOp(Opcode, Box<PExpr>),
-    List(Vec<Box<PExpr>>),
+    List(VecDeque<Box<PExpr>>),
     StructExpr(String, Vec<(String, Box<PExpr>)>),
     Tuple(Vec<Box<PExpr>>),
     Fn(Vec<(String, bool)>, Box<PExpr>),
@@ -73,8 +74,7 @@ pub enum TypeExpr {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Pattern {
     Underscore,
-    True,
-    False,
+    Bool(bool),
     Int(i64),
     Float(f64),
     String(String),

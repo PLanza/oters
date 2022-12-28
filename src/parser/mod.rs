@@ -10,6 +10,8 @@ use std::fs::read_to_string;
 
 use anyhow::{anyhow, Result};
 
+// Constructs an error message given the source code and the location of the error
+// Location is given as start and end byte positions
 fn parsing_error_message(source: &String, location: (usize, usize)) -> Result<String> {
     let mut line_number = 1;
     let mut line_start = 0;
@@ -18,6 +20,7 @@ fn parsing_error_message(source: &String, location: (usize, usize)) -> Result<St
     // The token's position within its line by number of characters
     let mut token_pos = 0;
 
+    // Convert byte positions to line and character positions
     for (i, c) in source.char_indices() {
         if c == '\n' && i < location.0 {
             line_start = i + 1;
@@ -59,6 +62,7 @@ pub fn parse_file(path: String) -> Result<Program> {
 
     let parser = oters::ProgramParser::new();
 
+    // The parsed abstract syntax tree
     let result = parser.parse(&source);
 
     match result {

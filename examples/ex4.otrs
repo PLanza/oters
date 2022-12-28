@@ -7,16 +7,6 @@ let from = fn x -> x << @(from (x+1))
 
 let nats = from 0
 
-let is_multiple_10 = 
-  match nats with {
-    x << xs => 
-      if x % 10 == 0 then 
-        true << @(is_multiple_10)
-      else
-        false << @(is_multiple_10)
-  }
-
-
 let when = fn pred xs ->
   match xs with {
     x << xs => 
@@ -34,6 +24,4 @@ let switch = fn xs es ->
     }
   }
 
-let events = when #(fn x -> x % 10 == 0) nats
-
-let loop_10 = switch nats events
+let loop_10 = switch nats (when #(fn x -> x % 10 == 0) nats)

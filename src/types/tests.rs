@@ -57,5 +57,5 @@ fn test_stable_context() {
     assert_eq!(context.stable().unwrap(), stable);
 }
 
-// Test substitution
-// Test Well-formedness
+// TODO: Test substitution
+// TODO: Test Well-formedness

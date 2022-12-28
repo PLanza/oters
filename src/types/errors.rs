@@ -23,6 +23,8 @@ pub enum TypeError {
     NotAStruct(String),
     #[error("The struct {0} does not have a field {1}")]
     StructFieldDoesNotExist(String, String),
+    #[error("The fields for struct {0} do not match")]
+    StructFieldsDoNotMatch(String),
     #[error("The enum variant {0} has not been declared")]
     EnumVariantDoesNotExist(String),
     #[error("Improper fields are applied to the enum variant {0}")]

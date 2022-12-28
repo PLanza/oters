@@ -1,7 +1,6 @@
 use crate::parser::ast::{PExpr, Opcode, TypeExpr, Pattern};
-
 use std::str::FromStr;
-
+use std::collections::VecDeque;
 use lalrpop_util::ParseError;
 
 grammar;
@@ -38,11 +37,9 @@ UpperId: String = {
 
 // -------------------- Literals -------------------- 
 
-True: () = {
-  "true" => (),
-};
-False: () = {
-  "false" => (),
+Bool: bool = {
+  "true" => true,
+  "false" => false,
 };
 
 Int: i64 = {
@@ -95,6 +92,7 @@ TupleType: Box<TypeExpr> = {
   }
 };
 
+// e.g. IntEvent = Stream<Option<int>>
 GenericArgs: Vec<Box<TypeExpr>> = {
   "<" <Comma<Type>> ">"
 };
@@ -118,7 +116,6 @@ TypeTerm: Box<TypeExpr> = {
 
 pub Type: Box<TypeExpr> = FunctionType;
 
- 
 // -------------------- Operators --------------------
 // Grouped by Precedence
 
@@ -201,8 +198,8 @@ AppExpr: Box<PExpr> = {
 };
 
 VariantStructExpr: Box<PExpr> = {
-  <s: UpperId> <e: VariantStructExpr> => Box::new(PExpr::Variant(s, Some(e))),
-  <s: UpperId> <f: Fields<Expr>> => Box::new(PExpr::StructExpr(s, f)), 
+  <s: UpperId> <e: VariantStructExpr> => Box::new(PExpr::Variant(s, Some(e))), // Some (64)
+  <s: UpperId> <f: Fields<Expr>> => Box::new(PExpr::StructExpr(s, f)),         // Circle {pos: (0, 0), r: 10 }
   DotExpr
 }
 
@@ -221,8 +218,8 @@ Prefix: Box<PExpr> = {
 // The simplest expressions
 
 ListTerm: Box<PExpr> = {
-  "[]" => Box::new(PExpr::List(Vec::new())),
-  "[" <v: Comma<Expr>> "]" => Box::new(PExpr::List(v)),
+  "[]" => Box::new(PExpr::List(VecDeque::new())),
+  "[" <v: Comma<Expr>> "]" => Box::new(PExpr::List(VecDeque::from(v))),
 };
 
 TupleTerm: Box<PExpr> = {
@@ -233,8 +230,7 @@ TupleTerm: Box<PExpr> = {
 };
 
 Term: Box<PExpr> = { 
-  True => Box::new(PExpr::True),
-  False => Box::new(PExpr::False),
+  Bool => Box::new(PExpr::Bool(<>)),
   Int => Box::new(PExpr::Int(<>)),
   Float => Box::new(PExpr::Float(<>)),
   String => Box::new(PExpr::String(<>)),
@@ -275,8 +271,8 @@ TuplePattern: Box<Pattern> = {
 
 StructPatternItem: (String, Option<Box<Pattern>>) = {
   <i: LowerId> ":" <p: Pattern> => (i, Some(p)),
-  <i: LowerId> => (i, None),
-  ".." => ("..".to_string(), None)
+  <i: LowerId> => (i, None),       // Bind field value to field name
+  ".." => ("..".to_string(), None) // Ignore rest of the fields
 };
 
 StructPatternList: Vec<(String, Option<Box<Pattern>>)> = {
@@ -290,8 +286,7 @@ StructPattern: Box<Pattern> = {
 
 PatternTerm: Box<Pattern> = {
   "_" => Box::new(Pattern::Underscore),
-  True => Box::new(Pattern::True),
-  False => Box::new(Pattern::False),
+  Bool => Box::new(Pattern::Bool(<>)),
   Int => Box::new(Pattern::Int(<>)),
   Float => Box::new(Pattern::Float(<>)),
   String => Box::new(Pattern::String(<>)),
@@ -329,7 +324,7 @@ IfExpr: Box<PExpr> = {
 
 FnArg: (String, bool) = {
     <LowerId> => (<>, false),
-    "#" <LowerId> => (<>, true)
+    "#" <LowerId> => (<>, true), // Mark arguments that are stable
   }
 
 FnArgList: Vec<(String, bool)> = {

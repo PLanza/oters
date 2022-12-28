@@ -8,8 +8,8 @@ use std::boxed::Box;
 fn values() -> Vec<(String, Box<super::ast::PExpr>)> {
     use super::ast::PExpr::*;
     vec![
-        ("true".to_string(), Box::new(True)),
-        ("false".to_string(), Box::new(False)),
+        ("true".to_string(), Box::new(Bool(true))),
+        ("false".to_string(), Box::new(Bool(false))),
         ("1".to_string(), Box::new(Int(1))),
         ("-10".to_string(), Box::new(Int(-10))),
         ("1.0".to_string(), Box::new(Float(1.0))),

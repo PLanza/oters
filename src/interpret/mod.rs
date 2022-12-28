@@ -1,6 +1,6 @@
 mod errors;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::vec;
 
 use self::errors::InterpretError::*;
@@ -176,12 +176,12 @@ impl Interpreter {
                 Ok((Into(Box::new(value)), _s))
             }
             List(list) => {
-                let mut list_vec = Vec::new();
+                let mut list_vec = VecDeque::new();
                 let mut store = s.clone();
 
                 for e in list {
                     let (_e, _s) = self.eval(*e.clone(), store.clone())?;
-                    list_vec.push(Box::new(_e));
+                    list_vec.push_back(Box::new(_e));
                     store = _s;
                 }
 
@@ -236,19 +236,13 @@ impl Interpreter {
                     _ => Err(UncaughtTypeError(format!("{:?}", e1)).into()),
                 }
             }
-            Seq(e1, e2) => match *e1 {
-                Let(var, expr) => {
-                    let (val, _s) = self.eval(*expr, s)?;
-                    self.eval(e2.substitute(&var, &val).1, _s)
+            Seq(e1, e2) => {
+                let (_e1, _s) = self.eval(*e1.clone(), s)?;
+                match _e1 {
+                    Unit => self.eval(*e2, _s),
+                    _ => Err(UncaughtTypeError(format!("{:?}", e1)).into()),
                 }
-                e1 => {
-                    let (_e1, _s) = self.eval(e1.clone(), s)?;
-                    match _e1 {
-                        Unit => self.eval(*e2, _s),
-                        _ => Err(UncaughtTypeError(format!("{:?}", e1)).into()),
-                    }
-                }
-            },
+            }
             App(e1, e2) => {
                 let (_e1, _s) = self.eval(*e1.clone(), s)?;
                 match _e1 {
@@ -319,7 +313,10 @@ impl Interpreter {
                     }
                 }
             }
-            Let(..) => unreachable!("Let expression found outside block"),
+            LetIn(var, e1, e2) => {
+                let (val, _s) = self.eval(*e1, s)?;
+                self.eval(e2.substitute(&var, &val).1, _s)
+            }
         }
     }
 
@@ -340,10 +337,8 @@ impl Interpreter {
             (Float(v1), Sub, Float(v2)) => Ok((Float(v1 - v2), __s)),
             (Int(v1), Mod, Int(v2)) => Ok((Int(v1 % v2), __s)),
 
-            // O(n) but should be O(1)
-            (v, Cons, List(list)) => {
-                let mut list = list.clone();
-                list.insert(0, Box::new(v));
+            (v, Cons, List(mut list)) => {
+                list.push_front(Box::new(v));
                 Ok((List(list), __s))
             }
 
@@ -410,24 +405,16 @@ impl Interpreter {
         use Pattern::*;
         match pattern {
             Underscore => Ok((true, Vec::with_capacity(0))),
-            True => {
-                if matches!(val, Expr::Bool(true)) {
-                    Ok((true, Vec::with_capacity(0)))
-                } else if matches!(val, Expr::Bool(false)) {
-                    Ok((false, Vec::with_capacity(0)))
-                } else {
-                    Err(PatternMatchError(format!("{:?}", True), format!("{:?}", val)).into())
+            Bool(b1) => match val {
+                Expr::Bool(b2) => {
+                    if b1 == b2 {
+                        Ok((true, Vec::with_capacity(0)))
+                    } else {
+                        Ok((false, Vec::with_capacity(0)))
+                    }
                 }
-            }
-            False => {
-                if matches!(val, Expr::Bool(false)) {
-                    Ok((true, Vec::with_capacity(0)))
-                } else if matches!(val, Expr::Bool(true)) {
-                    Ok((false, Vec::with_capacity(0)))
-                } else {
-                    Err(PatternMatchError(format!("{:?}", True), format!("{:?}", val)).into())
-                }
-            }
+                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+            },
             Int(i1) => match val {
                 Expr::Int(i2) => {
                     if i1 == i2 {
@@ -561,7 +548,8 @@ impl Interpreter {
             Cons(p1, p2) => match val {
                 Expr::List(vals) => {
                     let (b1, mut subs1) = Self::match_pattern(&vals[0], p1)?;
-                    let (b2, mut subs2) = Self::match_pattern(&Expr::List(vals[1..].into()), p2)?;
+                    let tail = vals.range(1..).map(|b| b.clone()).collect();
+                    let (b2, mut subs2) = Self::match_pattern(&Expr::List(tail), p2)?;
 
                     subs1.append(&mut subs2);
                     Ok((b1 && b2, subs1))

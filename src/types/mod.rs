@@ -24,16 +24,16 @@ pub enum Type {
     Delay(Box<Type>),
     Stable(Box<Type>),
     Fix(String, Box<Type>),
-    FixVar(String),                  // These have their own types
+    FixVar(String),                           // These have their own types
     Generic(Vec<String>, Box<Type>), // A pair of generic parameters with the type definition
-    GenericVar(String, bool),
+    GenericVar(String, bool),        // bool indicates where the variable is stable or not
     Struct(HashMap<String, Box<Type>>), // A map from the struct fields to their respective type
     Enum(HashMap<String, Option<Box<Type>>>), // A map from each variant constructor to an Option
 }
 
 #[derive(Clone, Debug)]
 pub struct TypeContext {
-    // Θ type contexts that hold generic type variables from System F
+    // Θ type contexts that hold generic type variables as in System F
     vars: Vec<String>,
 }
 
@@ -48,10 +48,11 @@ impl TypeContext {
 }
 
 impl Type {
+    // Converts TExpr to Type
     pub fn from_texpr(
         t: TypeExpr,
-        t_context: TypeContext,
-        t_decs: &HashMap<String, Type>,
+        t_context: TypeContext,         // Holds generic type variables
+        t_decs: &HashMap<String, Type>, // Holds type declarations (e.g. Structs, Enums, Type)
     ) -> Result<Type> {
         use Type::*;
         use TypeExpr::*;
@@ -82,11 +83,13 @@ impl Type {
                     }
                 }
 
+                // If it's a delcared type copy its definition
                 let mut t = match t_decs.get(&id) {
                     Some(t) => t.clone(),
                     None => return Err(TypeError::UserTypeNotFound(id).into()),
                 };
 
+                // Add generic type parameters
                 if v.len() > 0 {
                     match t.clone() {
                         Generic(args, t_) => {
@@ -115,6 +118,7 @@ impl Type {
         }
     }
 
+    // Convert the type definitions from type expressions
     pub fn from_typedef(
         id: String,
         params: Vec<String>,
@@ -147,6 +151,7 @@ impl Type {
         Ok(t)
     }
 
+    // Convert the type definitions from struct expressions
     pub fn from_structdef(
         id: String,
         params: Vec<String>,
@@ -161,7 +166,6 @@ impl Type {
         };
 
         let mut field_map = HashMap::new();
-
         for (s, t) in fields {
             field_map.insert(
                 s,
@@ -170,7 +174,6 @@ impl Type {
         }
 
         let mut t = Type::Struct(field_map);
-
         if params.len() > 0 {
             t = Type::Generic(params, Box::new(t))
         }
@@ -178,6 +181,7 @@ impl Type {
         Ok(t)
     }
 
+    // Convert the type definitions from enum expressions
     pub fn from_enumdef(
         id: String,
         params: Vec<String>,
@@ -192,7 +196,6 @@ impl Type {
         };
 
         let mut var_map = HashMap::new();
-
         for (s, o) in variants {
             let t = match o {
                 None => None,
@@ -206,7 +209,6 @@ impl Type {
         }
 
         let mut t = Type::Enum(var_map);
-
         if params.len() > 0 {
             t = Type::Generic(params, Box::new(t))
         }
@@ -214,7 +216,7 @@ impl Type {
         Ok(t)
     }
 
-    // Substitutes a fix var for @(Var) and if the substitution took place
+    // Substitutes FixVar(fix_var) for Delay(var) and if the substitution took place
     fn sub_delay(&self, var: &String, fix_var: &String) -> (bool, Type) {
         use Type::*;
         match self {
@@ -306,7 +308,8 @@ impl Type {
         }
     }
 
-    pub fn sub_delay_fix(&self, fix_var: &String) -> Type {
+    // Substitutes Delay(Fix(fix_var)) for FixVar(fix_var)
+    pub(super) fn sub_delay_fix(&self, fix_var: &String) -> Type {
         use Type::*;
         match self {
             Unit | Int | Float | String | Bool => self.clone(),
@@ -366,6 +369,7 @@ impl Type {
         }
     }
 
+    // Substitutes GenericVar(Var) for t
     pub fn sub_generic(&self, var: &String, t: &Type) -> Type {
         use Type::*;
         match self {
@@ -423,6 +427,7 @@ impl Type {
         }
     }
 
+    // Is the type well formed, i.e. are all generic variables bound
     pub fn well_formed(&self, t_context: TypeContext) -> Result<()> {
         use Type::*;
         match self {
@@ -530,7 +535,8 @@ impl Type {
         }
     }
 
-    pub fn get_free_vars(&self) -> HashSet<String> {
+    // Returns a set of the free type variables in the type
+    pub(super) fn get_free_vars(&self) -> HashSet<String> {
         use Type::*;
         match self {
             Unit | Int | Float | String | Bool => HashSet::new(), // All primitive types are Stable
@@ -579,9 +585,12 @@ impl Type {
         }
     }
 
-    pub fn apply_subs(&self, subs: &Vec<(String, Type)>) -> Type {
+    // Given substiture GenericVars for Types according to subs
+    pub(super) fn apply_subs(&self, subs: &Vec<(String, Type)>) -> Type {
         let mut result = self.clone();
         let mut prev = Type::Int;
+        // A substitution may contain another substituition's variable
+        // So perform the substitutions until no changes are registered
         while &result != &prev {
             prev = result.clone();
             for (var, t) in subs {

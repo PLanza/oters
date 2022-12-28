@@ -69,7 +69,7 @@ impl Display for Expr {
                 write!(f, "{}", str)
             }
             Var(x) => write!(f, "{}", x),
-            Let(x, e) => write!(f, "let {} = {}", x, e),
+            LetIn(x, e1, e2) => write!(f, "let {} = {} in\n{}", x, e1, e2),
             Location(i) => write!(f, "loc {}", i),
         }
     }
@@ -109,8 +109,7 @@ impl Display for Pattern {
         use Pattern::*;
         match self {
             Underscore => write!(f, "_"),
-            True => write!(f, "true"),
-            False => write!(f, "false"),
+            Bool(b) => write!(f, "{}", b),
             Unit => write!(f, "()"),
             Int(i) => write!(f, "{}", i),
             Float(fl) => write!(f, "{}", fl),

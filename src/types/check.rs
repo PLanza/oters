@@ -31,6 +31,9 @@ impl ProgramChecker {
     pub fn type_check_program(&mut self, program: &Program) -> Result<Vec<(String, Expr)>> {
         let mut checked_exprs = Vec::new();
 
+        // Checks expressions in order of appearance
+        // Expression cannot reference value declared below it
+        //   => Cyclic declarations are disallowed
         for expr in program {
             match expr.as_ref() {
                 // Type Aliases
@@ -97,6 +100,7 @@ impl ProgramChecker {
                         e
                     };
 
+                    // Convert to Rattus λ✓
                     e = e.single_tick(0);
 
                     // Type check the expression
@@ -134,9 +138,9 @@ impl ProgramChecker {
         Ok(checked_exprs)
     }
 
+    // Type Inference for a let expression according to Rattus λ rules
     pub fn infer(&mut self, e: &Expr, mut ctx: VarContext) -> Result<Type> {
         use Expr::*;
-
         match e {
             Bool(_) => Ok(Type::Bool),
             Int(_) => Ok(Type::Int),
@@ -149,13 +153,16 @@ impl ProgramChecker {
                 let t3 = self.infer_binop(t1.clone(), op.clone(), t2.clone())?;
 
                 let mut subs = match op {
+                    // Unify head of list with list type
                     BOpcode::Cons => unify(VecDeque::from([
                         (t2.clone(), Type::List(Box::new(t1.clone()))),
                         (t2.clone(), t3.clone()),
                     ]))?,
+                    // For comparison operators the return type is always bool
                     BOpcode::Eq | BOpcode::Lt | BOpcode::Gt => {
                         unify(VecDeque::from([(t1.clone(), t2.clone())]))?
                     }
+                    // Unify operands and result types
                     _ => unify(VecDeque::from([
                         (t1.clone(), t3.clone()),
                         (t2.clone(), t3.clone()),
@@ -195,7 +202,6 @@ impl ProgramChecker {
             }
             Stable(e) => {
                 let ctx = ctx.stable()?;
-
                 let t = self.infer(e, ctx)?;
 
                 Ok(Type::Stable(Box::new(t)))
@@ -302,12 +308,15 @@ impl ProgramChecker {
                         }
                         t => t.clone(),
                     },
-
                     None => return Err(TypeError::UserTypeNotFound(id.clone()).into()),
                 };
 
                 match &t_struct {
                     Type::Struct(map) => {
+                        if map.len() != fields.len() {
+                            return Err(TypeError::StructFieldsDoNotMatch(id.clone()).into());
+                        }
+                        // Unify struct expression's fields with those of the declared struct
                         let mut constraints = VecDeque::new();
                         for (f, t) in fields {
                             let t_ = match map.get(f) {
@@ -353,6 +362,7 @@ impl ProgramChecker {
                     None => return Err(TypeError::EnumVariantDoesNotExist(id.clone()).into()),
                 };
 
+                // Unify variant type with the declared enum's type
                 match &t_enum {
                     Type::Enum(map) => match (t, map.get(id).unwrap()) {
                         (None, None) => Ok(t_enum),
@@ -381,6 +391,7 @@ impl ProgramChecker {
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
+                // After unification the variable's type may have changed in the context
                 Ok(Type::Function(Box::new(ctx.get_var(var)?.0), Box::new(t2)))
             }
             Fix(alpha, e) => {
@@ -412,37 +423,15 @@ impl ProgramChecker {
 
                 Ok(t3)
             }
-            Seq(e1, e2) => match *e1.clone() {
-                Let(id, e) => {
-                    let t_e = self.infer(&e, ctx.clone())?;
-                    let mut t_e_free_vars = t_e.get_free_vars();
-                    let ctx_free_vars = ctx.get_free_vars();
+            Seq(e1, e2) => {
+                let t = self.infer(&e1, ctx.clone())?;
 
-                    for var in ctx_free_vars {
-                        t_e_free_vars.remove(&var);
-                    }
+                let mut subs = unify(VecDeque::from([(t.clone(), Type::Unit)]))?;
+                self.substitutions.append(&mut subs);
+                ctx.apply_subs(&self.substitutions);
 
-                    let t_let = if t_e_free_vars.is_empty() {
-                        t_e.clone()
-                    } else {
-                        Type::Generic(t_e_free_vars.into_iter().collect(), Box::new(t_e.clone()))
-                    };
-
-                    let mut ctx = ctx.clone();
-                    ctx.push_var(id, t_let);
-
-                    Ok(self.infer(e2, ctx)?)
-                }
-                _ => {
-                    let t = self.infer(&e, ctx.clone())?;
-
-                    let mut subs = unify(VecDeque::from([(t.clone(), Type::Unit)]))?;
-                    self.substitutions.append(&mut subs);
-                    ctx.apply_subs(&self.substitutions);
-
-                    Ok(self.infer(e2, ctx)?)
-                }
-            },
+                Ok(self.infer(e2, ctx)?)
+            }
             App(e1, e2) => {
                 let t1 = self.infer(e1, ctx.clone())?;
                 let t2 = self.infer(e2, ctx.clone())?;
@@ -462,6 +451,7 @@ impl ProgramChecker {
                 let field_type = Type::GenericVar(self.fresh_type_var(), false);
                 let map = HashMap::from([(f.clone(), Box::new(field_type))]);
 
+                // Struct unification only requires a subset of fields to match
                 let mut subs = unify(VecDeque::from([(t.clone(), Type::Struct(map))]))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
@@ -474,10 +464,10 @@ impl ProgramChecker {
 
                 let mut constraints = VecDeque::new();
                 for (p, e_p) in v {
-                    // Add p's variables into the context
                     let (t_p, p_vars) = self.check_pattern(p.clone())?;
                     constraints.push_back((t_e.clone(), t_p.clone()));
 
+                    // Add p's variables into the context
                     let mut p_ctx = ctx.clone();
                     for (var, t_var) in p_vars {
                         p_ctx.push_var(var, t_var);
@@ -514,9 +504,10 @@ impl ProgramChecker {
                     }
                     t => Ok(t),
                 },
-                // Variable access is in wrong time but we can assume stable
+                // Variable access is in wrong time step but we can assume stable
                 Ok((t, false)) => match &t {
                     Type::GenericVar(_var, false) => {
+                        // Unify the variable with a new stable one
                         let t_ = Type::GenericVar(self.fresh_type_var(), true);
                         let mut subs = unify(VecDeque::from([(t.clone(), t_.clone())]))?;
                         self.substitutions.append(&mut subs);
@@ -551,7 +542,26 @@ impl ProgramChecker {
                     None => Err(e),
                 },
             },
-            Let(..) => Err(InvalidExprError::IllegalLetExpr.into()),
+            LetIn(var, e1, e2) => {
+                let t_e = self.infer(&e1, ctx.clone())?;
+                let mut t_e_free_vars = t_e.get_free_vars();
+                let ctx_free_vars = ctx.get_free_vars();
+
+                for var in ctx_free_vars {
+                    t_e_free_vars.remove(&var);
+                }
+
+                let t_let = if t_e_free_vars.is_empty() {
+                    t_e.clone()
+                } else {
+                    Type::Generic(t_e_free_vars.into_iter().collect(), Box::new(t_e.clone()))
+                };
+
+                let mut ctx = ctx.clone();
+                ctx.push_var(var.clone(), t_let);
+
+                Ok(self.infer(e2, ctx)?)
+            }
             Location(_) => Err(InvalidExprError::IllegalLocation.into()),
         }
     }
@@ -659,6 +669,7 @@ impl ProgramChecker {
         }
     }
 
+    // Returns the pattern's type and a mapping of variables declared in the pattern to their type
     pub fn check_pattern(&mut self, p: Pattern) -> Result<(Type, HashMap<String, Type>)> {
         use Pattern::*;
         match p {
@@ -666,8 +677,7 @@ impl ProgramChecker {
                 Type::GenericVar(self.fresh_type_var(), false),
                 HashMap::new(),
             )),
-            True => Ok((Type::Bool, HashMap::new())),
-            False => Ok((Type::Bool, HashMap::new())),
+            Bool(_) => Ok((Type::Bool, HashMap::new())),
             Int(_) => Ok((Type::Int, HashMap::new())),
             Float(_) => Ok((Type::Float, HashMap::new())),
             String(_) => Ok((Type::String, HashMap::new())),
@@ -675,16 +685,18 @@ impl ProgramChecker {
             Tuple(v) => {
                 let mut vars = HashMap::new();
                 let mut types = Vec::new();
+                // Check each sub_pattern
                 for p in v {
                     let (t, p_vars) = self.check_pattern(*p.clone())?;
                     types.push(Box::new(t));
                     for (var, t_var) in p_vars {
+                        // Check that the same variable name does not appear twice in the same pattern
                         match vars.insert(var.clone(), t_var) {
                             None => (),
                             Some(_) => {
                                 return Err(InvalidPatternError::SimultaneousPatternBinding(
                                     var.clone(),
-                                    format!("{:?}", p.clone()),
+                                    *p.clone(),
                                 )
                                 .into())
                             }
@@ -717,7 +729,7 @@ impl ProgramChecker {
                             Some(_) => {
                                 return Err(InvalidPatternError::SimultaneousPatternBinding(
                                     var.clone(),
-                                    format!("{:?}", p.clone()),
+                                    *p.clone(),
                                 )
                                 .into())
                             }
@@ -745,6 +757,7 @@ impl ProgramChecker {
 
                 let t_enum = match self.variant_map.get(&c) {
                     Some(enm) => match self.type_decs.clone().get(enm).unwrap() {
+                        // Instantiate generic variables
                         Type::Generic(scheme, t) => {
                             let mut t_ = *t.clone();
                             for arg in scheme {
@@ -760,6 +773,7 @@ impl ProgramChecker {
                 };
 
                 match &t_enum {
+                    // Unify enum variant type and pattern type
                     Type::Enum(map) => match (t, map.get(&c).unwrap()) {
                         (None, None) => Ok((t_enum, vars)),
                         (Some(t1), Some(t2)) => {
@@ -776,9 +790,13 @@ impl ProgramChecker {
             Struct(id, v) => {
                 let mut fields = Vec::new();
                 let mut vars = HashMap::new();
-                for (f, p) in v {
+                // Get each field's pattern's type and variable substitutions
+                for (f, p) in v.clone() {
                     let (t, p_vars) = match &p {
-                        None => break,
+                        None => {
+                            let t = Type::GenericVar(self.fresh_type_var(), false);
+                            (t.clone(), HashMap::from([(f.clone(), t)]))
+                        }
                         Some(p) => self.check_pattern(*p.clone())?,
                     };
 
@@ -789,7 +807,7 @@ impl ProgramChecker {
                             Some(_) => {
                                 return Err(InvalidPatternError::SimultaneousPatternBinding(
                                     var.clone(),
-                                    format!("{:?}", p.clone()),
+                                    Struct(id, v),
                                 )
                                 .into())
                             }
@@ -815,6 +833,7 @@ impl ProgramChecker {
                     None => return Err(TypeError::UserTypeNotFound(id.clone()).into()),
                 };
 
+                // Unify pattern types and struct's definition field types
                 match &t_struct {
                     Type::Struct(map) => {
                         let mut constraints = VecDeque::new();
@@ -848,7 +867,7 @@ impl ProgramChecker {
                         Some(_) => {
                             return Err(InvalidPatternError::SimultaneousPatternBinding(
                                 var.clone(),
-                                format!("{:?}", Cons(p1.clone(), p2.clone())),
+                                Cons(p1.clone(), p2.clone()),
                             )
                             .into())
                         }
@@ -884,9 +903,9 @@ impl ProgramChecker {
 
                 Ok((t_ret, vars1))
             }
-            Stream(x, xs) => {
+            Stream(x, xs_p) => {
                 let (t, mut vars) = self.check_pattern(*x.clone())?;
-                match *xs {
+                match &*xs_p {
                     Var(xs) => {
                         let fix_var = self.fresh_type_var();
                         let t_ret = Type::Fix(
@@ -901,7 +920,7 @@ impl ProgramChecker {
                             Some(_) => {
                                 return Err(InvalidPatternError::SimultaneousPatternBinding(
                                     xs.clone(),
-                                    format!("{:?} << {}", x.clone(), xs.clone()),
+                                    Stream(x, xs_p),
                                 )
                                 .into())
                             }
@@ -920,7 +939,7 @@ impl ProgramChecker {
                         Some(_) => {
                             return Err(InvalidPatternError::SimultaneousPatternBinding(
                                 var.clone(),
-                                format!("{:?}", Cons(p1.clone(), p2.clone())),
+                                Cons(p1.clone(), p2.clone()),
                             )
                             .into())
                         }
@@ -939,6 +958,7 @@ impl ProgramChecker {
         }
     }
 
+    // Returns a fresh type variable for generic variable names
     fn fresh_type_var(&mut self) -> String {
         let x = self.fresh_type_var;
         self.fresh_type_var += 1;
@@ -946,7 +966,9 @@ impl ProgramChecker {
         format!("__t{}", x)
     }
 
+    // Unify the substitutions
     fn unify_subs(&mut self) -> Result<()> {
+        // Map from generic type variable to indeces in the substitutions vec
         let mut sub_map = HashMap::new();
         let mut i = 0;
         while i < self.substitutions.len() {
@@ -957,7 +979,9 @@ impl ProgramChecker {
                     sub_map.insert(x1.clone(), vec![i]);
                 }
                 Some(indices) => {
+                    // Same variable binds to different types
                     let mut constraints = VecDeque::new();
+                    // Unify all the types bound the same variable
                     for index in indices.clone() {
                         constraints.push_back((t.clone(), self.substitutions[index].1.clone()));
                     }
@@ -977,6 +1001,7 @@ impl ProgramChecker {
     }
 }
 
+// Unification given a list of constraints
 fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>> {
     use Type::*;
     match &constraints.pop_front() {
@@ -986,6 +1011,7 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                 unify(constraints)
             } else {
                 match (t1, t2) {
+                    // Replace non-stable variable with the stable one
                     (GenericVar(_, true), GenericVar(beta, false)) => {
                         sub_constraints(&mut constraints, &t2, &t1);
                         let mut subs = unify(constraints)?;
@@ -993,6 +1019,7 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                         subs.push((beta.clone(), t1.clone()));
                         Ok(subs)
                     }
+                    // Replace non-stable variable with the stable one
                     (GenericVar(alpha, false), GenericVar(_, true)) => {
                         sub_constraints(&mut constraints, &t1, &t2);
                         let mut subs = unify(constraints)?;
@@ -1002,6 +1029,7 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                     }
 
                     (GenericVar(alpha, true), t2) => {
+                        // Only unify stable variables with stable types (unless above two cases)
                         if !t2.is_stable().unwrap() {
                             return Err(TypeError::ExpectedStableType(t2.clone()).into());
                         }
@@ -1077,6 +1105,7 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                     }
                     (FixVar(_alpha), FixVar(_beta)) => unify(constraints),
                     (Generic(scheme1, t1), Generic(scheme2, t2)) => {
+                        // Instantiate the bound variables and unify the resulting types
                         let mut t1 = *t1.clone();
                         for arg in scheme1 {
                             // Probably wrong
@@ -1096,6 +1125,7 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                         unify(constraints)
                     }
                     (Struct(map1), Struct(map2)) => {
+                        // A struct needs to unify with a subset of fields of the other one
                         let (smaller, bigger) = if map1.len() < map2.len() {
                             (map1, map2)
                         } else {
