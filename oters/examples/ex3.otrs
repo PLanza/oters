@@ -1,6 +1,0 @@
-let stall = fn box_str x -> x << @(!#box_str)
-
-let nats = {let aux = fn n -> n << @(aux (n + 1)); aux 0}
-
-let stalled_nats = stall #nats -1
-

@@ -1,3 +1,17 @@
-[workspace]
+[package]
+name = "oters"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
 
-members = ["oters", "oters-export"]
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lalrpop-util = { version = "^0.19", features = ["lexer"] }
+regex = "1"
+anyhow = "1.0.*"
+thiserror = "1.0"
+petgraph = "0.6.2"
+
+[build-dependencies]
+lalrpop = "^0.19"
