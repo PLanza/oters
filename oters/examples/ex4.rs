@@ -6,7 +6,7 @@ use oters::parser;
 use oters::types::check::ProgramChecker;
 
 fn main() -> Result<()> {
-    let program = parser::parse_file("oters/examples/ex4.otrs".to_string())?;
+    let program = parser::parse_file("examples/ex4.otrs".to_string())?;
     let mut checker = ProgramChecker::new();
 
     let exprs = checker.type_check_program(&program)?;
