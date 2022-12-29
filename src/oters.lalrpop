@@ -1,0 +1,397 @@
+use crate::parser::ast::{PExpr, Opcode, TypeExpr, Pattern};
+use std::str::FromStr;
+use std::collections::VecDeque;
+use lalrpop_util::ParseError;
+
+grammar;
+
+// -------------------- Utils -------------------- 
+
+// A comma separated list with minimum one element and optional trailing comma
+Comma<T>: Vec<T> = {
+    <t: T> <mut v: ("," <T>)*> ","? => { 
+      v.insert(0, t);
+      v
+    }
+}
+
+FieldItem<T>: (String, T) = {
+  <i: LowerId> ":" <e: T> => (i, e)
+};
+
+Fields<T>: Vec<(String, T)> = {
+  "{}" => Vec::new(),
+  "{" <Comma<FieldItem<T>>> "}"
+};
+
+// -------------------- Identifiers -------------------- 
+
+LowerId: String = {
+  <s: r"[a-z][A-Za-z0-9'_]*"> => s.to_string()
+}
+
+UpperId: String = {
+  <s: r"[A-Z][A-Za-z0-9'_]*"> => s.to_string()
+}
+
+
+// -------------------- Literals -------------------- 
+
+Bool: bool = {
+  "true" => true,
+  "false" => false,
+};
+
+Int: i64 = {
+  r"-?[0-9]+" =>? i64::from_str(<>)
+    .map_err(|_| ParseError::User {
+      error: "Integer overflow"
+    })
+};
+
+Float: f64 = {
+  r"-?[0-9]+\.[0-9]*" =>? f64::from_str(<>)
+    .map_err(|e| ParseError::User {
+      error: "Float overflow"
+    })
+};
+
+String: String = {
+  <s: r#""(\\"|[^"])*""#> => {
+    let mut chars = s.chars();
+    chars.next();
+    chars.next_back();
+    let s = chars.as_str();
+    s.replace(r#"\\\""#, r#"\""#)
+  }
+};
+
+Unit: () = {
+  r"\(\)" => (),
+};
+
+// -------------------- Types --------------------
+// Presented with lowest precedence at the top
+
+FunctionType: Box<TypeExpr> = {
+  <PrefixType> "->" <FunctionType> => Box::new(TypeExpr::TEFunction(<>)),
+  PrefixType,
+};
+
+PrefixType: Box<TypeExpr> = {
+  "@" <PrefixType> => Box::new(TypeExpr::TEDelay(<>)),
+  "#" <PrefixType> => Box::new(TypeExpr::TEStable(<>)),
+  TypeTerm,
+};
+
+// Minimum of 2 elements
+TupleType: Box<TypeExpr> = {
+  "(" <t: Type> "," <mut v: Comma<Type>> ")" => {
+    v.insert(0, t);
+    Box::new(TypeExpr::TETuple(v))
+  }
+};
+
+// e.g. IntEvent = Stream<Option<int>>
+GenericArgs: Vec<Box<TypeExpr>> = {
+  "<" <Comma<Type>> ">"
+};
+
+UserType: Box<TypeExpr> = {
+  UpperId => Box::new(TypeExpr::TEUser(<>,Vec::new())),
+  UpperId GenericArgs => Box::new(TypeExpr::TEUser(<>))
+};
+
+TypeTerm: Box<TypeExpr> = { 
+  "bool" => Box::new(TypeExpr::TEBool),
+  "int" => Box::new(TypeExpr::TEInt),
+  "float" => Box::new(TypeExpr::TEFloat),
+  "string" => Box::new(TypeExpr::TEString),
+  Unit => Box::new(TypeExpr::TEUnit),
+  TupleType,
+  "[" <Type> "]" => Box::new(TypeExpr::TEList(<>)),
+  UserType,
+  "(" <Type> ")",
+};
+
+pub Type: Box<TypeExpr> = FunctionType;
+
+// -------------------- Operators --------------------
+// Grouped by Precedence
+
+CompOp: Opcode = {
+  "==" => Opcode::Eq,
+  "<" => Opcode::Lt,
+  ">" => Opcode::Gt,
+};
+
+ConsStreamOp: Opcode = {
+  "::" => Opcode::Cons,
+  "<<" => Opcode::Stream,
+};
+
+AddSubOp: Opcode = {
+  "+" => Opcode::Add,
+  "-" => Opcode::Sub,
+};
+
+MulDivModOp: Opcode = {
+  "*" => Opcode::Mul,
+  "/" => Opcode::Div,
+  "%" => Opcode::Mod,
+};
+
+PrefixOp: Opcode = {
+  "~" => Opcode::Neg,
+  "!" => Opcode::Not,
+  "@" => Opcode::Delay,
+  "#" => Opcode::Stable,
+  "!@" => Opcode::Adv,
+  "!#" => Opcode::Unbox,
+  "out" => Opcode::Out,
+  "into" => Opcode::Into,
+};
+
+// -------------------- Operator Expressions --------------------  
+// Lowest precedence at the top
+
+// Right associative 
+OrExpr: Box<PExpr> = {
+  <e1: AndExpr> "||" <e2: OrExpr> => Box::new(PExpr::BinOp(e1, Opcode::Or, e2)),
+  AndExpr
+};
+
+// Right associative 
+AndExpr: Box<PExpr> = {
+  <e1: Comp> "&&" <e2: AndExpr> => Box::new(PExpr::BinOp(e1, Opcode::And, e2)),
+  Comp
+};
+
+// Left associative 
+Comp: Box<PExpr> = {
+  Comp CompOp ConsStream => Box::new(PExpr::BinOp(<>)),
+  ConsStream
+};
+
+// Right associative 
+ConsStream: Box<PExpr> = {
+  AddSub ConsStreamOp ConsStream => Box::new(PExpr::BinOp(<>)),
+  AddSub
+};
+
+// Left associative 
+AddSub: Box<PExpr> = {
+  AddSub AddSubOp MulDivMod => Box::new(PExpr::BinOp(<>)),
+  MulDivMod
+};
+
+// Left associative 
+MulDivMod: Box<PExpr> = {
+  MulDivMod MulDivModOp AppExpr => Box::new(PExpr::BinOp(<>)),
+  AppExpr
+};
+
+// Left associative 
+AppExpr: Box<PExpr> = {
+  <AppExpr> <VariantStructExpr> => Box::new(PExpr::App(<>)),
+  VariantStructExpr,
+};
+
+VariantStructExpr: Box<PExpr> = {
+  <s: UpperId> <e: VariantStructExpr> => Box::new(PExpr::Variant(s, Some(e))), // Some (64)
+  <s: UpperId> <f: Fields<Expr>> => Box::new(PExpr::StructExpr(s, f)),         // Circle {pos: (0, 0), r: 10 }
+  DotExpr
+}
+
+// Left associative 
+DotExpr: Box<PExpr> = {
+  <DotExpr> "." <LowerId> => Box::new(PExpr::ProjStruct(<>)),
+  Prefix
+};
+
+Prefix: Box<PExpr> = {
+  PrefixOp Prefix => Box::new(PExpr::UnOp(<>)),
+  Term,
+};
+
+// -------------------- Terms -------------------- 
+// The simplest expressions
+
+ListTerm: Box<PExpr> = {
+  "[]" => Box::new(PExpr::List(VecDeque::new())),
+  "[" <v: Comma<Expr>> "]" => Box::new(PExpr::List(VecDeque::from(v))),
+};
+
+TupleTerm: Box<PExpr> = {
+  "(" <e: Expr> "," <mut v: Comma<Expr>> ")" => {
+    v.insert(0, e);
+    Box::new(PExpr::Tuple(v))
+  }
+};
+
+Term: Box<PExpr> = { 
+  Bool => Box::new(PExpr::Bool(<>)),
+  Int => Box::new(PExpr::Int(<>)),
+  Float => Box::new(PExpr::Float(<>)),
+  String => Box::new(PExpr::String(<>)),
+  Unit => Box::new(PExpr::Unit),
+  ListTerm,
+  TupleTerm,
+  LowerId => Box::new(PExpr::Var(<>)),
+  "(" <Expr> ")",
+};
+
+// -------------------- Patterns -------------------- 
+// Lowest precedence at the top
+
+// Left associative
+OrPattern: Box<Pattern> = {
+  <OrPattern> "|" <ConsPattern> => Box::new(Pattern::Or(<>)),
+  ConsPattern,
+};
+
+// Right associative
+ConsPattern: Box<Pattern> = {
+  <PatternTerm> "::" <ConsPattern> => Box::new(Pattern::Cons(<>)),
+  <PatternTerm> "<<" <ConsPattern> => Box::new(Pattern::Stream(<>)),
+  PatternTerm,
+};
+
+ListPattern: Box<Pattern> = {
+  "[]" => Box::new(Pattern::List(Vec::new())),
+  "[" <v: Comma<Pattern>> "]" => Box::new(Pattern::List(v))
+}
+
+TuplePattern: Box<Pattern> = {
+  "(" <e: Pattern> "," <mut v: Comma<Pattern>> ")" => {
+    v.insert(0, e);
+    Box::new(Pattern::Tuple(v))
+  }
+};
+
+StructPatternItem: (String, Option<Box<Pattern>>) = {
+  <i: LowerId> ":" <p: Pattern> => (i, Some(p)),
+  <i: LowerId> => (i, None),       // Bind field value to field name
+  ".." => ("..".to_string(), None) // Ignore rest of the fields
+};
+
+StructPatternList: Vec<(String, Option<Box<Pattern>>)> = {
+  "{}" => Vec::new(),
+  "{" <Comma<StructPatternItem>> "}",
+};
+
+StructPattern: Box<Pattern> = {
+  <s: UpperId> <v: StructPatternList> => Box::new(Pattern::Struct(s, v))
+};
+
+PatternTerm: Box<Pattern> = {
+  "_" => Box::new(Pattern::Underscore),
+  Bool => Box::new(Pattern::Bool(<>)),
+  Int => Box::new(Pattern::Int(<>)),
+  Float => Box::new(Pattern::Float(<>)),
+  String => Box::new(Pattern::String(<>)),
+  Unit => Box::new(Pattern::Unit),
+  <s: UpperId> <p: PatternTerm> => Box::new(Pattern::Variant(s, Some(p))),
+  <UpperId> => Box::new(Pattern::Variant(<>, None)),
+  TuplePattern, 
+  ListPattern,
+  StructPattern,
+  <LowerId> => Box::new(Pattern::Var(<>)),
+  "(" <Pattern> ")",
+}
+
+Pattern: Box<Pattern> = OrPattern;
+
+// -------------------- Expressions -------------------- 
+
+OpExpr = OrExpr;
+
+BlockTerm: Box<PExpr> = {
+  "let" <i: LowerId> "=" <e: Expr> ";" => Box::new(PExpr::Let(i, e)),
+  <e: Expr> ";" => e
+};
+
+BlockExpr: Box<PExpr> =  {
+  "{" <mut v: BlockTerm*> <r: Expr> "}" => {
+    v.push(r);
+    Box::new(PExpr::Block(v))
+  }
+};
+
+IfExpr: Box<PExpr> = {
+  "if" <e1: Expr> "then" <e2: Expr> "else" <e3: Expr> => Box::new(PExpr::If(e1, e2, e3))
+};
+
+FnArg: (String, bool) = {
+    <LowerId> => (<>, false),
+    "#" <LowerId> => (<>, true), // Mark arguments that are stable
+  }
+
+FnArgList: Vec<(String, bool)> = {
+  <v: FnArg+> => v,
+  // Add pattern variants for Lists, Tuples, Streams
+};
+
+FnExpr: Box<PExpr> = {
+  "fn" "_" "->" <e: Expr> => Box::new(PExpr::Fn(Vec::new(), e)),
+  "fn" <a: FnArgList> "->" <e: Expr> => Box::new(PExpr::Fn(a, e)),
+};
+
+MatchItem: (Box<Pattern>, Box<PExpr>) = {
+  <Pattern> "=>" <Expr> => (<>),
+};
+
+MatchExpr: Box<PExpr> = {
+  "match" <e: Expr> "with" "{" <v: Comma<MatchItem>> "}" => Box::new(PExpr::Match(e, v))
+};
+
+pub Expr: Box<PExpr> = {
+  OpExpr,
+  BlockExpr,
+  IfExpr,
+  FnExpr,
+  MatchExpr,
+  <UpperId> => Box::new(PExpr::Variant(<>, None)), 
+};
+
+// -------------------- Top-Level Expressions -------------------- 
+
+LetExpr: Box<PExpr> = {
+  "let" <i: LowerId> "=" <e: Expr> => Box::new(PExpr::Let(i, e)),
+};
+
+GenericParams: Vec<String> = {
+  "<" <Comma<UpperId>> ">"
+};
+
+TypeExpr: Box<PExpr> = {
+  "type" <i: UpperId> "=" <t: Type> => Box::new(PExpr::TypeDef(i, Vec::new(), t)),
+  "type" <i: UpperId> <v: GenericParams> "=" <t: Type> => Box::new(PExpr::TypeDef(i, v, t)),
+};
+
+VariantItem: (String, Option<Box<TypeExpr>>) = {
+  <i: UpperId> <t: Type?> => (i, t),
+};
+
+StructExpr: Box<PExpr> = {
+  "struct" <i: UpperId> <f: Fields<Type>> => Box::new(PExpr::StructDef(i, Vec::new(), f)),
+  "struct" <i: UpperId> <p: GenericParams> <f: Fields<Type>> => 
+    Box::new(PExpr::StructDef(i, p, f)),
+};
+
+EnumExpr: Box<PExpr> = {
+  "enum" <i: UpperId> "{" <v: Comma<VariantItem>> "}" => Box::new(PExpr::EnumDef(i, Vec::new(), v)),
+  "enum" <i: UpperId> <p: GenericParams> "{" <v: Comma<VariantItem>> "}" => 
+    Box::new(PExpr::EnumDef(i, p, v)),
+}
+
+pub Item: Box<PExpr> = {
+  LetExpr,
+  TypeExpr,
+  EnumExpr,
+  StructExpr,
+}
+
+pub Program: Vec<Box<PExpr>> = {
+  <Item*>
+}
