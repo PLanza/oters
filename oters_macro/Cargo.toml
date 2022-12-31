@@ -11,3 +11,5 @@ proc-macro = true
 quote = "*"
 syn = { version = "*", features = ["extra-traits", "full"] }
 proc-macro2 = "*"
+
+lazy_static = "1.4.*"

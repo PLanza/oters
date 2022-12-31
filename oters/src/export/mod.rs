@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+#[derive(Debug, Clone)]
 pub enum Value {
     Bool(bool),
     Int(i64),
