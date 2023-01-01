@@ -1,16 +1,16 @@
 mod allocator;
 mod errors;
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::vec;
-
 use self::allocator::Allocator;
 use self::errors::InterpretError::*;
+use crate::export::{ExportFns, Value};
 use crate::exprs::{BOpcode, Expr, UOpcode};
 use crate::parser::ast::Pattern;
 
-use anyhow::{Ok, Result};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::vec;
 
+use anyhow::Result;
 use petgraph::graph::DiGraph;
 
 pub struct Interpreter {
@@ -18,6 +18,7 @@ pub struct Interpreter {
     flow_graph: DiGraph<String, ()>,
     globals: HashMap<String, Expr>,
     streams: HashMap<String, Expr>,
+    imports: ExportFns,
     store: Store,
     stream_outs: HashMap<String, Expr>,
 }
@@ -31,18 +32,22 @@ pub struct Store {
 }
 
 impl Interpreter {
-    pub fn new() -> Self {
-        Interpreter {
+    pub fn new(exprs: Vec<(String, Expr)>, imports: ExportFns) -> Result<Self> {
+        let mut interp = Interpreter {
             allocator: Allocator::new(),
             flow_graph: DiGraph::new(),
             globals: HashMap::new(),
             streams: HashMap::new(),
+            imports,
             store: Store::new(),
             stream_outs: HashMap::new(),
-        }
+        };
+        interp.init(exprs)?;
+
+        Ok(interp)
     }
 
-    pub fn init(&mut self, exprs: Vec<(String, Expr)>) -> Result<()> {
+    fn init(&mut self, exprs: Vec<(String, Expr)>) -> Result<()> {
         for (id, expr) in exprs {
             // Reduce all the expressions
             let (e, s) = self.eval(expr, self.store.clone())?;
@@ -91,7 +96,7 @@ impl Interpreter {
             self.step()?;
             for index in &streams {
                 let stream = self.flow_graph[*index].clone();
-                println!("{}: {}", stream, self.stream_outs.get(&stream).unwrap());
+                // println!("{}: {}", stream, self.stream_outs.get(&stream).unwrap());
                 // println!("{}", self.streams.get(&stream).unwrap());
                 // println!("{:?}\n", self.store);
                 let e = self.streams.get(&stream).unwrap().clone();
@@ -110,8 +115,6 @@ impl Interpreter {
                 self.streams.insert(stream, e);
             }
         }
-
-        Ok(())
     }
 
     pub fn eval(&mut self, e: Expr, s: Store) -> Result<(Expr, Store)> {
@@ -247,6 +250,19 @@ impl Interpreter {
                 }
             }
             App(e1, e2) => {
+                match &*e1 {
+                    Var(var) => {
+                        // If the function has been imported, call it with converted arguments
+                        if self.imports.contains_key(var) {
+                            let (func, arg_ts, _) = self.imports.get(var).unwrap().clone();
+                            let (val, _s) = self.eval(*e2, s)?;
+                            let ret_val = func(Value::expr_to_args(val, arg_ts.len())?);
+                            return Ok((ret_val.to_expr(), _s));
+                        }
+                    }
+                    _ => (),
+                }
+
                 let (_e1, _s) = self.eval(*e1.clone(), s)?;
                 match _e1 {
                     Fn((var, _), expr) => {

@@ -25,3 +25,10 @@ let switch = fn xs es ->
   }
 
 let loop_10 = switch nats (when #(fn x -> x % 10 == 0) nats)
+
+let print_int_str = fn xs -> 
+  match xs with {
+    x << xs => (print_int x) << @(print_int_str !@xs)
+  }
+
+let print_loop_10 = print_int_str loop_10

@@ -1,11 +1,8 @@
 extern crate oters;
-
-use std::collections::{HashMap, VecDeque};
+extern crate oters_macro;
 
 use oters::export::Value;
-use oters::{export_fn, export_list};
-
-use lazy_static::lazy_static;
+use oters::export::{export_fn, export_list};
 
 #[export_fn]
 fn print_int(i: i64) {
@@ -35,13 +32,12 @@ fn do_nothing(tup: (i64, f64, String)) -> (i64, f64, String) {
 export_list!();
 
 fn main() {
-    print_int(vec![int_sum(vec![Value::Int(32), Value::Int(-12)])]);
-    let deque = VecDeque::from(vec![
+    let list = vec![
         Box::new(Value::Int(1)),
         Box::new(Value::Int(2)),
         Box::new(Value::Int(3)),
-    ]);
-    let list = Value::List(deque);
+    ];
+    let list = Value::List(list);
 
     let tup = Value::Tuple(vec![
         Box::new(Value::Int(24)),
@@ -49,12 +45,15 @@ fn main() {
         Box::new(Value::String("Hello, world!".to_string())),
     ]);
 
+    println!("{:?}", *EXPORT_FNS);
+
     println!(
         "{:?}",
         EXPORT_FNS.get("list_sum").unwrap().0(vec![list.clone()])
     );
-    println!("{:?}", add_one(vec![list.clone()]));
-    println!("{:?}", do_nothing(vec![tup]));
-
-    println!("{:?}", *EXPORT_FNS);
+    println!(
+        "{:?}",
+        EXPORT_FNS.get("add_one").unwrap().0(vec![list.clone()])
+    );
+    println!("{:?}", EXPORT_FNS.get("do_nothing").unwrap().0(vec![tup]));
 }

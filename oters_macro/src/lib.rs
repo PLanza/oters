@@ -27,7 +27,6 @@ enum ValueType {
 #[proc_macro_attribute]
 pub fn export_fn(_args: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
-    println!("{:?}", input);
 
     let fn_name = input.sig.ident;
     let args: Vec<FnArg> = input.sig.inputs.iter().cloned().collect();
@@ -120,54 +119,57 @@ pub fn export_fn(_args: TokenStream, item: TokenStream) -> TokenStream {
 
     EXPORTS.lock().unwrap().insert(map_entry.0, map_entry.1);
 
-    println!("{}", exportable);
-
     TokenStream::from(exportable)
 }
 
 // Called after all #[export_fn]s and puts all the exported functions into a hashmap
 #[proc_macro]
 pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let mut fn_names = Vec::new();
-    let mut fn_pointers = Vec::new();
-    let mut fn_types = Vec::new();
     let path = quote!(oters::types::Type);
 
     let map = EXPORTS.lock().unwrap().clone();
 
-    for (name, (args, ret_val)) in map {
-        fn_names.push(name.to_string());
-        fn_pointers.push(Ident::new(&name, Span::call_site().into()));
+    // Using .map() instead of for loop because the for loop was buggy
+    let exports: Vec<(
+        String,
+        Ident,
+        proc_macro2::TokenStream,
+        proc_macro2::TokenStream,
+    )> = map
+        .into_iter()
+        .map(|(name, (args, ret_val))| {
+            let ptr = Ident::new(&name, Span::call_site().into());
 
-        let ret_type = ret_val.to_type();
-        if args.len() == 0 {
-            fn_types.push(quote!(
-            #path::Function(std::boxed::Box::new(#path::Unit), std::boxed::Box::new(#ret_type))
-            ));
-            break;
-        }
-        let mut iter = args.into_iter().rev();
-        let arg_type = iter.next().unwrap().to_type();
+            let ret_type = ret_val.to_type();
+            let arg_types = if args.len() == 0 {
+                quote!(vec![#path::Unit])
+            } else {
+                // Multiple arguments get converted to tuples to prevent partial application
+                let arg_tys = args.into_iter().map(|arg| arg.to_type());
+                quote!(vec![#(#arg_tys),*])
+            };
 
-        let mut fn_type = quote!(
-        #path::Function(std::boxed::Box::new(#arg_type), std::boxed::Box::new(#ret_type))
-        );
-        for arg in iter {
-            let arg_type = arg.to_type();
-            fn_type = quote!(
-            #path::Function(std::boxed::Box::new(#arg_type), std::boxed::Box::new(#fn_type))
-            );
-        }
-        fn_types.push(fn_type);
-    }
+            (name.to_string(), ptr, arg_types, ret_type)
+        })
+        .collect();
+
+    let fn_names: Vec<String> = exports.clone().into_iter().map(|tuple| tuple.0).collect();
+    let fn_pointers: Vec<Ident> = exports.clone().into_iter().map(|tuple| tuple.1).collect();
+    let arg_types: Vec<proc_macro2::TokenStream> =
+        exports.clone().into_iter().map(|tuple| tuple.2).collect();
+    let ret_types: Vec<proc_macro2::TokenStream> =
+        exports.into_iter().map(|tuple| tuple.3).collect();
 
     quote! {
+        use std::collections::HashMap;
+        use lazy_static::lazy_static;
         lazy_static! {
-            static ref EXPORT_FNS: HashMap<String, (fn(Vec<oters::export::Value>) -> oters::export::Value, #path)> =
+            static ref EXPORT_FNS: oters::export::ExportFns =
                 HashMap::from([#(
-                        (#fn_names.to_string(), 
-                         (#fn_pointers as fn(Vec<oters::export::Value>) -> oters::export::Value, 
-                          #fn_types)
+                        (#fn_names.to_string(),
+                         (#fn_pointers as fn(Vec<oters::export::Value>) -> oters::export::Value,
+                          #arg_types,
+                          #ret_types)
                          )
                         ),*]);
         }
@@ -223,7 +225,7 @@ fn to_ret_stmt(e: syn::Expr, return_val: ValueType) -> proc_macro2::TokenStream 
                 #e
                 .into_iter()
                 .map(|v| std::boxed::Box::new(oters::export::Value::#inner_ty(v)))
-                .collect::<std::collections::VecDeque<std::boxed::Box<oters::export::Value>>>()
+                .collect::<Vec<std::boxed::Box<oters::export::Value>>>()
             ))
         }
         ValueType::Tuple(inners) => {
