@@ -15,9 +15,9 @@ use petgraph::graph::DiGraph;
 
 pub struct Interpreter {
     allocator: Allocator,
-    flow_graph: DiGraph<String, ()>,
     globals: HashMap<String, Expr>,
     streams: HashMap<String, Expr>,
+    eval_order: Vec<String>,
     imports: ExportFns,
     store: Store,
     stream_outs: HashMap<String, Expr>,
@@ -35,9 +35,9 @@ impl Interpreter {
     pub fn new(exprs: Vec<(String, Expr)>, imports: ExportFns) -> Result<Self> {
         let mut interp = Interpreter {
             allocator: Allocator::new(),
-            flow_graph: DiGraph::new(),
             globals: HashMap::new(),
             streams: HashMap::new(),
+            eval_order: Vec::new(),
             imports,
             store: Store::new(),
             stream_outs: HashMap::new(),
@@ -48,24 +48,25 @@ impl Interpreter {
     }
 
     fn init(&mut self, exprs: Vec<(String, Expr)>) -> Result<()> {
+        let mut flow_graph = DiGraph::<String, ()>::new();
+
         for (id, expr) in exprs {
             // Reduce all the expressions
-            let (e, s) = self.eval(expr, self.store.clone())?;
+            let (e, s) = self.eval(expr.clone(), self.store.clone())?;
 
             // If the resulting value is a stream then add it to the stream flow graph
             if !matches!(e.is_stream(), None) {
-                let current_index = self.flow_graph.add_node(id.clone());
+                let current_index = flow_graph.add_node(id.clone());
                 // Any streams used in the expression are added to current_deps
                 for (stream, _) in &self.streams {
                     // If the current expression depends on another stream
-                    if e.clone().substitute(stream, &Expr::Unit).0 {
+                    if expr.clone().substitute(stream, &Expr::Unit).0 {
                         // Add a dependency
-                        let dep_index = self
-                            .flow_graph
+                        let dep_index = flow_graph
                             .node_indices()
-                            .find(|i| &self.flow_graph[*i] == stream)
+                            .find(|i| &flow_graph[*i] == stream)
                             .unwrap();
-                        self.flow_graph.update_edge(dep_index, current_index, ());
+                        flow_graph.update_edge(dep_index, current_index, ());
                     }
                 }
                 self.streams.insert(id.clone(), e.clone());
@@ -76,6 +77,45 @@ impl Interpreter {
             self.store = s;
         }
 
+        // Warning: Breaks with cycles though these will fail in type checking
+        // Topological sort makes sure dependencies are evaluated before dependents
+        self.eval_order = petgraph::algo::toposort(
+            &flow_graph,
+            Some(&mut petgraph::algo::DfsSpace::new(&flow_graph)),
+        )
+        .unwrap()
+        .into_iter()
+        .map(|i| flow_graph[i].clone())
+        .collect();
+
+        Ok(())
+    }
+
+    pub fn eval_step(&mut self) -> Result<()> {
+        if self.streams.len() == 0 {
+            return Ok(());
+        }
+
+        self.step()?;
+        for stream in self.eval_order.clone() {
+            // println!("{}: {}", stream, self.stream_outs.get(&stream).unwrap());
+            // println!("{}", self.streams.get(&stream).unwrap());
+            // println!("{:?}\n", self.store);
+            let e = self.streams.get(&stream).unwrap().clone();
+
+            let (e, s) = self.eval(e, self.store.clone())?;
+            self.store = s;
+
+            match self.store.streams.get(&stream) {
+                Some(loc) => {
+                    let replacement = e.replace_stream_loc(*loc).unwrap();
+                    self.store.now.insert(*loc, replacement);
+                }
+                None => (),
+            }
+
+            self.streams.insert(stream, e);
+        }
         Ok(())
     }
 
@@ -84,18 +124,9 @@ impl Interpreter {
             return Ok(());
         }
 
-        // Warning: Breaks with cycles though these will fail in type checking
-        // Topological sort makes sure dependencies are evaluated before dependents
-        let streams = petgraph::algo::toposort(
-            &self.flow_graph,
-            Some(&mut petgraph::algo::DfsSpace::new(&self.flow_graph)),
-        )
-        .unwrap();
-
         loop {
             self.step()?;
-            for index in &streams {
-                let stream = self.flow_graph[*index].clone();
+            for stream in self.eval_order.clone() {
                 // println!("{}: {}", stream, self.stream_outs.get(&stream).unwrap());
                 // println!("{}", self.streams.get(&stream).unwrap());
                 // println!("{:?}\n", self.store);

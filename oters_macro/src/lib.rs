@@ -116,7 +116,6 @@ pub fn export_fn(_args: TokenStream, item: TokenStream) -> TokenStream {
             #return_stmt
         }
     };
-
     EXPORTS.lock().unwrap().insert(map_entry.0, map_entry.1);
 
     TokenStream::from(exportable)
@@ -160,7 +159,7 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ret_types: Vec<proc_macro2::TokenStream> =
         exports.into_iter().map(|tuple| tuple.3).collect();
 
-    quote! {
+    let out = quote! {
         use std::collections::HashMap;
         use lazy_static::lazy_static;
         lazy_static! {
@@ -173,8 +172,9 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                          )
                         ),*]);
         }
-    }
-    .into()
+    };
+
+    out.into()
 }
 
 fn to_val_type(ty: syn::Type) -> Option<ValueType> {
@@ -236,6 +236,12 @@ fn to_ret_stmt(e: syn::Expr, return_val: ValueType) -> proc_macro2::TokenStream 
                         oters::export::Value::#inner_tys(#e.#indices)
                 )),*]
             ))
+        }
+        ValueType::Unit => {
+            quote! {
+                #e;
+                oters::export::Value::Unit
+            }
         }
         _ => quote!(oters::export::Value::#ret_ty(#e)),
     }

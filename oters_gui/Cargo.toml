@@ -1,0 +1,13 @@
+[package]
+name = "oters_gui"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+oters = { path = "../oters/"}
+anyhow = "1.0.*"
+lazy_static = "1.4.*"
+macroquad = "0.3.25"
+

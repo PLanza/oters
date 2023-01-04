@@ -1,0 +1,54 @@
+let head = fn stream ->
+  match stream with {
+      x<<xs => x
+  }
+
+let start_btn = (button ((288, 300), "START")) << @start_btn
+let reset_btn = (button ((447, 300), "RESET")) << @reset_btn
+
+enum State {
+  Reset,
+  Started,
+  Stopped
+}
+
+let state = {
+  let aux = fn curr -> 
+    if head start_btn then
+      match curr with {
+        Reset => curr << @(aux (Started)),
+        Started => curr << @(aux (Stopped)),
+        Stopped => curr << @(aux (Started)),
+      }
+    else 
+      if head reset_btn then 
+        curr << @(aux (Reset))
+      else 
+        curr << @(aux curr)
+  ;
+  aux (Reset)
+}
+
+let secs_since_start = fn _ -> floor (time_since_start ()) 
+
+let stopwatch = {
+  let aux = fn prev_state click_time base_time -> {
+    let curr_state = head state;    
+    match (prev_state, curr_state) with {
+      (Reset, Reset) => 0 << @(aux curr_state 0 0),
+      (Started, Reset) => (base_time + secs_since_start () - click_time) << @(aux curr_state 0 0),
+      (Stopped, Reset) => base_time << @(aux curr_state 0 0),
+      (Started, Started) => (base_time + secs_since_start () - click_time) << @(aux curr_state click_time base_time),
+      (_, Started) => base_time << @(aux curr_state (secs_since_start()) base_time),
+      (Started, Stopped) => (base_time + secs_since_start () - click_time) << @(aux curr_state click_time (base_time + secs_since_start() - click_time)),
+      (Stopped, Stopped) => base_time << @(aux curr_state click_time base_time),
+    }
+  };
+  aux (Reset) 0 0
+}
+
+let seconds = (head stopwatch % 60) << @seconds
+let minutes = (head seconds / 60 % 3600) << @minutes
+let hours = (head seconds / 3600) << @hours
+
+let time_label = text ((time_to_string ((head hours), (head minutes), (head seconds))), (200, 250), 72) << @time_label

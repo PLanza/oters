@@ -557,7 +557,11 @@ impl ProgramChecker {
                 },
             },
             LetIn(var, e1, e2) => {
-                let t_e = self.infer(&e1, ctx.clone())?;
+                // Similar to top level let
+                let mut t_e = self.infer(&e1, ctx.clone())?;
+                self.unify_subs()?;
+                t_e = t_e.apply_subs(&self.substitutions);
+
                 let mut t_e_free_vars = t_e.get_free_vars();
                 let ctx_free_vars = ctx.get_free_vars();
 

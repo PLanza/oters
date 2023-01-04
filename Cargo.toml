@@ -1,5 +1,6 @@
 [workspace]
 members = [
   "oters",
-  "oters_macro"
+  "oters_macro",
+  "oters_gui"
 ]
