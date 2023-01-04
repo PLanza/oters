@@ -3,8 +3,18 @@ let head = fn stream ->
       x<<xs => x
   }
 
-let start_btn = (button ((288, 300), "START")) << @start_btn
 let reset_btn = (button ((447, 300), "RESET")) << @reset_btn
+let start_btn = {
+  let aux = fn toggle -> {
+    let label = if toggle then "STOP" else "START";
+    let is_pressed = (button ((288, 300), label));
+    if head reset_btn then
+      is_pressed << @(aux false)
+    else 
+      is_pressed << @(aux (is_pressed && !toggle || !is_pressed && toggle))
+  };
+  aux false
+}
 
 enum State {
   Reset,

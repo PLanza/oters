@@ -102,7 +102,7 @@ impl Expr {
                 Ok(Expr::UnOp(UOpcode::Neg, Box::new(Expr::from_pexpr(*e)?)))
             }
             PExpr::UnOp(Opcode::Not, e) => {
-                Ok(Expr::UnOp(UOpcode::Neg, Box::new(Expr::from_pexpr(*e)?)))
+                Ok(Expr::UnOp(UOpcode::Not, Box::new(Expr::from_pexpr(*e)?)))
             }
             PExpr::UnOp(Opcode::Delay, e) => Ok(Expr::Delay(Box::new(Expr::from_pexpr(*e)?))),
             PExpr::UnOp(Opcode::Stable, e) => Ok(Expr::Stable(Box::new(Expr::from_pexpr(*e)?))),
