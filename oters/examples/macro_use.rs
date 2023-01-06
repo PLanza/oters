@@ -1,4 +1,5 @@
 extern crate oters;
+extern crate oters_macro;
 
 use oters::export::Value;
 use oters::export::{export_list, export_oters};

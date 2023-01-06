@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use super::{Type, TypeContext, TypeError};
-use crate::export::ExportFns;
+use crate::export::{ExportFns, ExportStructs};
 use crate::exprs::{BOpcode, Expr, InvalidExprError, InvalidPatternError, UOpcode, VarContext};
 use crate::parser::ast::{PExpr, Pattern, Program};
 
@@ -19,9 +19,9 @@ pub struct ProgramChecker {
 }
 
 impl ProgramChecker {
-    pub fn new(exports: ExportFns) -> Self {
+    pub fn new(exports: (ExportFns, ExportStructs)) -> Self {
         let mut value_decs = HashMap::new();
-        for (s, (_, args, ret)) in exports {
+        for (s, (_, args, ret)) in exports.0 {
             let t = if args.len() == 1 {
                 Type::Function(Box::new(args[0].clone()), Box::new(ret))
             } else {
@@ -33,9 +33,14 @@ impl ProgramChecker {
             value_decs.insert(s, t);
         }
 
+        let mut type_decs = HashMap::new();
+        for (s, map) in exports.1 {
+            type_decs.insert(s, Type::Struct(map));
+        }
+
         ProgramChecker {
             value_decs,
-            type_decs: HashMap::new(),
+            type_decs,
             variant_map: HashMap::new(),
             fresh_type_var: 0,
             substitutions: Vec::new(),

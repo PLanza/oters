@@ -114,7 +114,7 @@ fn export_fn(item: syn::ItemFn) -> TokenStream {
 
     // Form the exportable function
     let exportable = quote! {
-        fn #fn_name(args: Vec<oters::export::Value>) -> oters::export::Value {
+        pub fn #fn_name(args: Vec<oters::export::Value>) -> oters::export::Value {
             #(let #arg_names = match args[#indices].clone() {
                 #match_arms,
                 _ => unreachable!()
@@ -240,8 +240,6 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 vec![#((#struct_names.to_string(), #struct_maps)),*];
         }
     };
-
-    println!("{}", out);
 
     out.into()
 }

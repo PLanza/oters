@@ -9,7 +9,7 @@ use oters::types::check::ProgramChecker;
 
 fn main() -> Result<()> {
     let program = parser::parse_file("oters/examples/ex2.otrs".to_string())?;
-    let mut checker = ProgramChecker::new(HashMap::new());
+    let mut checker = ProgramChecker::new((HashMap::new(), Vec::new()));
 
     let exprs = checker.type_check_program(&program)?;
 

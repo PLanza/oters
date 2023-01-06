@@ -24,6 +24,7 @@ pub enum Value {
 }
 
 pub type ExportFns = HashMap<String, (fn(Vec<Value>) -> Value, Vec<Type>, Type)>;
+pub type ExportStructs = Vec<(String, HashMap<String, Box<Type>>)>;
 
 impl Value {
     pub fn expr_to_args(e: Expr, args_len: usize) -> Result<Vec<Value>> {

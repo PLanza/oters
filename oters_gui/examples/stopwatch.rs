@@ -43,7 +43,7 @@ export_list!();
 #[macroquad::main("Stopwatch")]
 async fn main() -> Result<()> {
     let program = parser::parse_file("oters_gui/examples/stopwatch.otrs".to_string())?;
-    let mut checker = ProgramChecker::new(EXPORT_FNS.clone());
+    let mut checker = ProgramChecker::new((EXPORT_FNS.clone(), EXPORT_STRUCTS.clone()));
 
     let exprs = checker.type_check_program(&program)?;
 
