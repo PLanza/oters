@@ -1,5 +1,5 @@
 use anyhow::Result;
-use oters::export::{export_fn, export_list};
+use oters::export::{export_list, export_oters};
 use oters::interpret::Interpreter;
 use oters::parser;
 use oters::types::check::ProgramChecker;
@@ -7,12 +7,12 @@ use oters::types::check::ProgramChecker;
 use macroquad::prelude::*;
 use macroquad::ui::root_ui;
 
-#[export_fn]
+#[export_oters]
 fn text(text: String, pos: (i64, i64), font_size: i64) {
     draw_text(&text, pos.0 as f32, pos.1 as f32, font_size as f32, BLACK)
 }
 
-#[export_fn]
+#[export_oters]
 fn button(pos: (i64, i64), label: String) -> bool {
     root_ui().button(
         Some(Vec2 {
@@ -23,17 +23,17 @@ fn button(pos: (i64, i64), label: String) -> bool {
     )
 }
 
-#[export_fn]
+#[export_oters]
 fn time_since_start() -> f64 {
     get_time()
 }
 
-#[export_fn]
+#[export_oters]
 fn floor(f: f64) -> i64 {
     f as i64
 }
 
-#[export_fn]
+#[export_oters]
 fn time_to_string(hours: i64, mins: i64, secs: i64) -> String {
     format!("{:02} : {:02} : {:02}", hours, mins, secs)
 }

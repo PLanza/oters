@@ -5,7 +5,7 @@ use std::collections::HashMap;
 pub use self::errors::*;
 use crate::exprs::Expr;
 use crate::types::Type;
-pub use oters_macro::{export_fn, export_list};
+pub use oters_macro::{export_list, export_oters};
 
 use anyhow::Result;
 
@@ -19,7 +19,7 @@ pub enum Value {
     List(Vec<Box<Value>>),
     Tuple(Vec<Box<Value>>),
     // Fn
-    // Struct
+    Struct(String, HashMap<String, Box<Value>>),
     // Enum
 }
 
@@ -65,6 +65,13 @@ impl Value {
                 }
                 Ok(Value::Tuple(tuple))
             }
+            Struct(name, fields) => {
+                let mut strct = HashMap::new();
+                for (field, val) in fields {
+                    strct.insert(field, Box::new(Value::from_expr(*val)?));
+                }
+                Ok(Value::Struct(name, strct))
+            }
             _ => Err(ValueError::InvalidConversion(e).into()),
         }
     }
@@ -79,6 +86,13 @@ impl Value {
             String(s) => Expr::String(s),
             List(vals) => Expr::List(vals.into_iter().map(|v| Box::new(v.to_expr())).collect()),
             Tuple(vals) => Expr::Tuple(vals.into_iter().map(|v| Box::new(v.to_expr())).collect()),
+            Struct(name, fields) => Expr::Struct(
+                name,
+                fields
+                    .into_iter()
+                    .map(|(f, v)| (f, Box::new(v.to_expr())))
+                    .collect(),
+            ),
         }
     }
 }

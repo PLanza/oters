@@ -1,37 +1,44 @@
+mod types;
+
 use std::{collections::HashMap, sync::Mutex};
+
+use crate::types::ValueType;
 
 use lazy_static::lazy_static;
 use proc_macro::{Span, TokenStream};
 use quote::{quote, spanned::Spanned};
-use syn::{parse_macro_input, FnArg, Ident, ItemFn, ReturnType};
+use syn::{FnArg, Ident, ReturnType};
 
 lazy_static! {
-    static ref EXPORTS: Mutex<HashMap<String, (Vec<ValueType>, ValueType)>> =
+    static ref EXPORT_FNS: Mutex<HashMap<String, (Vec<ValueType>, ValueType)>> =
+        Mutex::new(HashMap::new());
+    static ref EXPORT_STRUCTS: Mutex<HashMap<String, HashMap<String, ValueType>>> =
         Mutex::new(HashMap::new());
 }
 
-#[derive(Debug, Clone)]
-enum ValueType {
-    Bool,
-    Int,
-    Float,
-    String,
-    Unit,
-    List(Box<ValueType>),
-    Tuple(Vec<Box<ValueType>>),
-    // Fn
-    // Struct
-    // Enum
+#[proc_macro_attribute]
+pub fn export_oters(_args: TokenStream, item: TokenStream) -> TokenStream {
+    match syn::parse::<syn::ItemFn>(item.clone()) {
+        Ok(item) => export_fn(item),
+        Err(_) => match syn::parse::<syn::ItemStruct>(item.clone()) {
+            Ok(item) => export_struct(item),
+            Err(_) => {
+                return syn::Error::new(
+                    proc_macro2::TokenStream::from(item).__span(),
+                    "Can only export function and struct declarations",
+                )
+                .to_compile_error()
+                .into()
+            }
+        },
+    }
 }
 
-#[proc_macro_attribute]
-pub fn export_fn(_args: TokenStream, item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as ItemFn);
-
-    let fn_name = input.sig.ident;
-    let args: Vec<FnArg> = input.sig.inputs.iter().cloned().collect();
-    let return_type = input.sig.output;
-    let fn_body = *input.block;
+fn export_fn(item: syn::ItemFn) -> TokenStream {
+    let fn_name = item.sig.ident;
+    let args: Vec<FnArg> = item.sig.inputs.iter().cloned().collect();
+    let return_type = item.sig.output;
+    let fn_body = *item.block;
 
     let mut arg_names = Vec::new();
     let mut val_types = Vec::new();
@@ -52,7 +59,7 @@ pub fn export_fn(_args: TokenStream, item: TokenStream) -> TokenStream {
                 arg_names.push(arg_name);
 
                 // Get the type as a ValueType
-                let val_ty = match to_val_type(*ty.clone()) {
+                let val_ty = match ValueType::from_syn_type(*ty.clone()) {
                     Some(ty) => ty,
                     None => {
                         return syn::Error::new(ty.__span(), "Incompatible type")
@@ -74,7 +81,7 @@ pub fn export_fn(_args: TokenStream, item: TokenStream) -> TokenStream {
     // Get the return type as a ValueType
     let return_val = match return_type {
         ReturnType::Default => ValueType::Unit,
-        ReturnType::Type(_, ty) => match to_val_type(*ty.clone()) {
+        ReturnType::Type(_, ty) => match ValueType::from_syn_type(*ty.clone()) {
             Some(ty) => ty,
             None => {
                 return syn::Error::new(ty.__span(), "Incompatible type")
@@ -116,25 +123,61 @@ pub fn export_fn(_args: TokenStream, item: TokenStream) -> TokenStream {
             #return_stmt
         }
     };
-    EXPORTS.lock().unwrap().insert(map_entry.0, map_entry.1);
+    EXPORT_FNS.lock().unwrap().insert(map_entry.0, map_entry.1);
 
     TokenStream::from(exportable)
 }
 
-// Called after all #[export_fn]s and puts all the exported functions into a hashmap
+fn export_struct(item: syn::ItemStruct) -> TokenStream {
+    let clone = item.clone();
+    let struct_name = item.ident;
+    if item.generics.params.len() != 0 {
+        return syn::Error::new(
+            item.generics.params.__span(),
+            "Cannot export generic struct",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let fields = match item.fields {
+        syn::Fields::Named(syn::FieldsNamed { named, .. }) => named,
+        _ => {
+            return syn::Error::new(item.fields.__span(), "struct fields must be named")
+                .to_compile_error()
+                .into()
+        }
+    };
+
+    let mut to_export = HashMap::new();
+    for syn::Field { ident, ty, .. } in fields {
+        to_export.insert(
+            ident.unwrap().to_string(),
+            ValueType::from_syn_type(ty).unwrap(),
+        );
+    }
+
+    EXPORT_STRUCTS
+        .lock()
+        .unwrap()
+        .insert(struct_name.to_string(), to_export);
+
+    quote!(#clone).into()
+}
+// Called after all #[export_oters]s and puts all the exported items into hashmaps
 #[proc_macro]
 pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let path = quote!(oters::types::Type);
 
-    let map = EXPORTS.lock().unwrap().clone();
+    let fns_map = EXPORT_FNS.lock().unwrap().clone();
 
     // Using .map() instead of for loop because the for loop was buggy
-    let exports: Vec<(
+    let functions: Vec<(
         String,
         Ident,
         proc_macro2::TokenStream,
         proc_macro2::TokenStream,
-    )> = map
+    )> = fns_map
         .into_iter()
         .map(|(name, (args, ret_val))| {
             let ptr = Ident::new(&name, Span::call_site().into());
@@ -152,12 +195,34 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         })
         .collect();
 
-    let fn_names: Vec<String> = exports.clone().into_iter().map(|tuple| tuple.0).collect();
-    let fn_pointers: Vec<Ident> = exports.clone().into_iter().map(|tuple| tuple.1).collect();
+    let fn_names: Vec<String> = functions.clone().into_iter().map(|tuple| tuple.0).collect();
+    let fn_pointers: Vec<Ident> = functions.clone().into_iter().map(|tuple| tuple.1).collect();
     let arg_types: Vec<proc_macro2::TokenStream> =
-        exports.clone().into_iter().map(|tuple| tuple.2).collect();
+        functions.clone().into_iter().map(|tuple| tuple.2).collect();
     let ret_types: Vec<proc_macro2::TokenStream> =
-        exports.into_iter().map(|tuple| tuple.3).collect();
+        functions.into_iter().map(|tuple| tuple.3).collect();
+
+    let structs_map = EXPORT_STRUCTS.lock().unwrap().clone();
+    let structs: Vec<(String, proc_macro2::TokenStream)> = structs_map
+        .into_iter()
+        .map(|(name, fields)| {
+            let fields: Vec<(String, proc_macro2::TokenStream)> = fields
+                .into_iter()
+                .map(|(field, ty)| (field, ty.to_type()))
+                .collect();
+            let field_names: Vec<String> = fields.clone().into_iter().map(|pair| pair.0).collect();
+            let field_tys: Vec<proc_macro2::TokenStream> =
+                fields.into_iter().map(|pair| pair.1).collect();
+
+            (
+                name,
+                quote!(HashMap::from([#((#field_names.to_string(), std::boxed::Box::new(#field_tys))),*])),
+            )
+        })
+        .collect();
+    let struct_names: Vec<String> = structs.clone().into_iter().map(|pair| pair.0).collect();
+    let struct_maps: Vec<proc_macro2::TokenStream> =
+        structs.into_iter().map(|pair| pair.1).collect();
 
     let out = quote! {
         use std::collections::HashMap;
@@ -171,49 +236,14 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                           #ret_types)
                          )
                         ),*]);
+            static ref EXPORT_STRUCTS: Vec<(String, HashMap<String, Box<oters::types::Type>>)> =
+                vec![#((#struct_names.to_string(), #struct_maps)),*];
         }
     };
 
-    out.into()
-}
+    println!("{}", out);
 
-fn to_val_type(ty: syn::Type) -> Option<ValueType> {
-    Some(match ty {
-        syn::Type::Path(ty) => {
-            if ty.path.get_ident().is_none() {
-                let ty = ty.path.segments.last().unwrap();
-                if ty.ident != "Vec" {
-                    return None;
-                }
-                let inner_ty = match &ty.arguments {
-                    syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
-                        args,
-                        ..
-                    }) => match &args[0] {
-                        syn::GenericArgument::Type(inner) => to_val_type(inner.clone())?,
-                        _ => return None,
-                    },
-                    _ => return None,
-                };
-                return Some(ValueType::List(Box::new(inner_ty)));
-            }
-            match ty.path.get_ident().unwrap().to_string().as_str() {
-                "bool" => ValueType::Bool,
-                "i64" => ValueType::Int,
-                "f64" => ValueType::Float,
-                "String" => ValueType::String,
-                _ => return None,
-            }
-        }
-        syn::Type::Tuple(syn::TypeTuple { elems, .. }) => {
-            let mut types = Vec::new();
-            for ty in elems {
-                types.push(Box::new(to_val_type(ty)?));
-            }
-            ValueType::Tuple(types)
-        }
-        _ => todo!(),
-    })
+    out.into()
 }
 
 fn to_ret_stmt(e: syn::Expr, return_val: ValueType) -> proc_macro2::TokenStream {
@@ -244,100 +274,5 @@ fn to_ret_stmt(e: syn::Expr, return_val: ValueType) -> proc_macro2::TokenStream 
             }
         }
         _ => quote!(oters::export::Value::#ret_ty(#e)),
-    }
-}
-
-impl ValueType {
-    fn to_ident(&self) -> Ident {
-        use ValueType::*;
-        match self {
-            Unit => Ident::new("Unit", Span::call_site().into()),
-            Bool => Ident::new("Bool", Span::call_site().into()),
-            Int => Ident::new("Int", Span::call_site().into()),
-            Float => Ident::new("Float", Span::call_site().into()),
-            String => Ident::new("String", Span::call_site().into()),
-            List(_) => Ident::new("List", Span::call_site().into()),
-            Tuple(_) => Ident::new("Tuple", Span::call_site().into()),
-        }
-    }
-
-    fn to_tokens(&self) -> proc_macro2::TokenStream {
-        use ValueType::*;
-        match self {
-            Unit => quote!(()),
-            Bool => quote!(bool),
-            Int => quote!(i64),
-            Float => quote!(f64),
-            String => quote!(String),
-            List(inner) => {
-                let inner_ty = inner.to_tokens();
-                quote!(Vec<#inner_ty>)
-            }
-            Tuple(inners) => {
-                let inner_tys = inners.into_iter().map(|v| v.to_tokens());
-                quote!((#(#inner_tys),*))
-            }
-        }
-    }
-
-    fn to_match_arm(&self) -> proc_macro2::TokenStream {
-        let head = self.to_ident();
-
-        use ValueType::*;
-        match self {
-            Unit | Bool | Int | Float | String => quote!(oters::export::Value::#head(v) => v),
-            List(ty) => {
-                let inner_ty = ty.to_tokens();
-                let inner_arm = ty.to_match_arm();
-                quote! {
-                    oters::export::Value::#head(vs) => {
-                        let vec: Vec<#inner_ty> = vs
-                            .into_iter()
-                            .map(|v| match *v {
-                                #inner_arm,
-                                _ => unreachable!(),
-                            }).collect();
-                        vec
-                    }
-                }
-            }
-            Tuple(tys) => {
-                let indices = 0..tys.len();
-                let tys_arms = tys.into_iter().map(|t| t.to_match_arm());
-                quote! {
-                    oters::export::Value::#head(vs) => (#(match *vs[#indices].clone() {
-                        #tys_arms,
-                        _ => unreachable!()
-                    }),*)
-                }
-            }
-        }
-    }
-
-    fn to_type(&self) -> proc_macro2::TokenStream {
-        let path = quote!(oters::types::Type);
-        use ValueType::*;
-        match self {
-            Unit => quote!(#path::Unit),
-            Int => quote!(#path::Int),
-            Float => quote!(#path::Float),
-            Bool => quote!(#path::Bool),
-            String => quote!(#path::String),
-            List(t) => {
-                let t = t.to_type();
-                quote!(#path::List(std::boxed::Box::new(#t)))
-            }
-            Tuple(ts) => {
-                let ts: Vec<proc_macro2::TokenStream> = ts
-                    .into_iter()
-                    .map(|t| {
-                        let t = t.to_type();
-                        quote!(std::boxed::Box::new(#t))
-                    })
-                    .collect();
-
-                quote!(#path::Tuple(vec![#(#ts),*]))
-            }
-        }
     }
 }
