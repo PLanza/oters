@@ -14,6 +14,8 @@ lazy_static! {
         Mutex::new(HashMap::new());
     static ref EXPORT_STRUCTS: Mutex<HashMap<String, HashMap<String, ValueType>>> =
         Mutex::new(HashMap::new());
+    static ref EXPORT_ENUMS: Mutex<HashMap<String, HashMap<String, Option<ValueType>>>> =
+        Mutex::new(HashMap::new());
 }
 
 #[proc_macro_attribute]
@@ -22,14 +24,15 @@ pub fn export_oters(_args: TokenStream, item: TokenStream) -> TokenStream {
         Ok(item) => export_fn(item),
         Err(_) => match syn::parse::<syn::ItemStruct>(item.clone()) {
             Ok(item) => export_struct(item),
-            Err(_) => {
-                return syn::Error::new(
+            Err(_) => match syn::parse::<syn::ItemEnum>(item.clone()) {
+                Ok(item) => export_enum(item),
+                Err(_) => syn::Error::new(
                     proc_macro2::TokenStream::from(item).__span(),
                     "Can only export function and struct declarations",
                 )
                 .to_compile_error()
-                .into()
-            }
+                .into(),
+            },
         },
     }
 }
@@ -104,7 +107,7 @@ fn export_fn(item: syn::ItemFn) -> TokenStream {
         match stmts[stmts.len() - 1].clone() {
             syn::Stmt::Expr(e) => {
                 stmts.pop();
-                to_ret_stmt(e, return_val)
+                to_val(quote!(#e), return_val)
             }
             _ => quote!(oters::export::Value::Unit),
         }
@@ -113,7 +116,7 @@ fn export_fn(item: syn::ItemFn) -> TokenStream {
     let match_arms = val_types.into_iter().map(|v| v.to_match_arm());
 
     // Form the exportable function
-    let exportable = quote! {
+    let exportable = quote! (
         pub fn #fn_name(args: Vec<oters::export::Value>) -> oters::export::Value {
             #(let #arg_names = match args[#indices].clone() {
                 #match_arms,
@@ -122,7 +125,7 @@ fn export_fn(item: syn::ItemFn) -> TokenStream {
             #(#stmts)*
             #return_stmt
         }
-    };
+    );
     EXPORT_FNS.lock().unwrap().insert(map_entry.0, map_entry.1);
 
     TokenStream::from(exportable)
@@ -161,6 +164,64 @@ fn export_struct(item: syn::ItemStruct) -> TokenStream {
         .lock()
         .unwrap()
         .insert(struct_name.to_string(), to_export);
+
+    quote!(#clone).into()
+}
+
+fn export_enum(item: syn::ItemEnum) -> TokenStream {
+    let clone = item.clone();
+    let enum_name = item.ident;
+    if item.generics.params.len() != 0 {
+        return syn::Error::new(
+            item.generics.params.__span(),
+            "Cannot export generic struct",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let mut to_export = HashMap::new();
+    for syn::Variant { ident, fields, .. } in item.variants {
+        match fields {
+            syn::Fields::Named(_) => {
+                return syn::Error::new(fields.__span(), "Enum variants must not be named")
+                    .to_compile_error()
+                    .into()
+            }
+            syn::Fields::Unit => {
+                to_export.insert(ident.to_string(), None);
+            }
+            syn::Fields::Unnamed(fields) => {
+                if fields.unnamed.len() == 1 {
+                    if matches!(fields.unnamed[0].ty.clone(), syn::Type::Tuple(_)) {
+                        return syn::Error::new(fields.__span(), "Untuplify variant fields")
+                            .to_compile_error()
+                            .into();
+                    }
+                    to_export.insert(
+                        ident.to_string(),
+                        Some(ValueType::from_syn_type(fields.unnamed[0].ty.clone()).unwrap()),
+                    );
+                } else {
+                    to_export.insert(
+                        ident.to_string(),
+                        Some(ValueType::Tuple(
+                            fields
+                                .unnamed
+                                .iter()
+                                .map(|f| Box::new(ValueType::from_syn_type(f.ty.clone()).unwrap()))
+                                .collect(),
+                        )),
+                    );
+                }
+            }
+        }
+    }
+
+    EXPORT_ENUMS
+        .lock()
+        .unwrap()
+        .insert(enum_name.to_string(), to_export);
 
     quote!(#clone).into()
 }
@@ -224,11 +285,47 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let struct_maps: Vec<proc_macro2::TokenStream> =
         structs.into_iter().map(|pair| pair.1).collect();
 
+    let enums_map: HashMap<String, HashMap<String, Option<ValueType>>> =
+        EXPORT_ENUMS.lock().unwrap().clone();
+    let enums: Vec<(String, proc_macro2::TokenStream)> = enums_map
+        .into_iter()
+        .map(|(name, variants)| {
+            let variants: Vec<(String, proc_macro2::TokenStream)> = variants
+                .into_iter()
+                .map(|(variant, opt)| {
+                    (
+                        variant,
+                        match opt {
+                            None => quote!(None),
+                            Some(t) => {
+                                let t = t.to_type();
+                                quote!(Some(std::boxed::Box::new(#t)))
+                            }
+                        },
+                    )
+                })
+                .collect();
+
+            let variant_names: Vec<String> =
+                variants.clone().into_iter().map(|pair| pair.0).collect();
+            let variant_tys: Vec<proc_macro2::TokenStream> =
+                variants.into_iter().map(|pair| pair.1).collect();
+
+            (
+                name,
+                quote!(HashMap::from([#((#variant_names.to_string(), #variant_tys)),*])),
+            )
+        })
+        .collect();
+
+    let enum_names: Vec<String> = enums.clone().into_iter().map(|pair| pair.0).collect();
+    let enum_maps: Vec<proc_macro2::TokenStream> = enums.into_iter().map(|pair| pair.1).collect();
+
     let out = quote! {
         use std::collections::HashMap;
         use lazy_static::lazy_static;
         lazy_static! {
-            static ref EXPORT_FNS: oters::export::ExportFns =
+            pub static ref EXPORT_FNS: oters::export::ExportFns =
                 HashMap::from([#(
                         (#fn_names.to_string(),
                          (#fn_pointers as fn(Vec<oters::export::Value>) -> oters::export::Value,
@@ -236,40 +333,81 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                           #ret_types)
                          )
                         ),*]);
-            static ref EXPORT_STRUCTS: Vec<(String, HashMap<String, Box<oters::types::Type>>)> =
+            pub static ref EXPORT_STRUCTS: Vec<(String, HashMap<String, Box<oters::types::Type>>)> =
                 vec![#((#struct_names.to_string(), #struct_maps)),*];
+            pub static ref EXPORT_ENUMS: Vec<(String, HashMap<String, Option<Box<oters::types::Type>>>)> =
+                vec![#((#enum_names.to_string(), #enum_maps)),*];
         }
     };
 
     out.into()
 }
 
-fn to_ret_stmt(e: syn::Expr, return_val: ValueType) -> proc_macro2::TokenStream {
+fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::TokenStream {
     let ret_ty = return_val.to_ident();
     match &return_val {
         ValueType::List(inner) => {
-            let inner_ty = inner.to_ident();
+            let inner_val = to_val(quote!(v), *inner.clone());
             quote!(oters::export::Value::#ret_ty(
                 #e
                 .into_iter()
-                .map(|v| std::boxed::Box::new(oters::export::Value::#inner_ty(v)))
+                .map(|v| std::boxed::Box::new(#inner_val))
                 .collect::<Vec<std::boxed::Box<oters::export::Value>>>()
             ))
         }
         ValueType::Tuple(inners) => {
-            let inner_tys: Vec<Ident> = inners.into_iter().map(|t| t.to_ident()).collect();
             let indices: Vec<syn::Index> = (0..inners.len()).map(|i| syn::Index::from(i)).collect();
+            let mut inner_vals: Vec<proc_macro2::TokenStream> = Vec::new();
+            for (index, inner_ty) in indices.into_iter().zip(inners) {
+                inner_vals.push(to_val(quote!(#e.#index), *inner_ty.clone()))
+            }
             quote!(oters::export::Value::#ret_ty(
-                vec![#(std::boxed::Box::new(
-                        oters::export::Value::#inner_tys(#e.#indices)
-                )),*]
+                vec![#(std::boxed::Box::new(#inner_vals)),*]
             ))
         }
         ValueType::Unit => {
-            quote! {
+            quote! {{
                 #e;
                 oters::export::Value::Unit
+            }}
+        }
+        ValueType::Struct(name) => {
+            let map = EXPORT_STRUCTS.lock().unwrap().get(name).unwrap().clone();
+            let mut fields = Vec::new();
+            let mut field_vals: Vec<proc_macro2::TokenStream> = Vec::new();
+            for (field, field_ty) in map {
+                let field_ident = Ident::new(&field, Span::call_site().into());
+                fields.push(field);
+                field_vals.push(to_val(quote!(__struct.#field_ident), field_ty))
             }
+
+            quote! {{
+                let __struct = #e;
+                oters::export::Value::#ret_ty(
+                    #name.to_string(),
+                    std::collections::HashMap::from([#((#fields.to_string(), std::boxed::Box::new(#field_vals))),*])
+                )
+            }}
+        }
+        ValueType::Enum(name) => {
+            let map = EXPORT_ENUMS.lock().unwrap().get(name).unwrap().clone();
+            let mut variant_arms = Vec::new();
+            for (variant, opt) in map {
+                let variant_ident = Ident::new(&variant, Span::call_site().into());
+                variant_arms.push(match opt {
+                    None => quote!(#variant_ident => oters::export::Value::#ret_ty(#variant, None)),
+                    Some(val_ty) => {
+                        let val = to_val(quote!(__val), val_ty);
+                        quote!(#variant_ident(__val) => oters::export::Value::#ret_ty(#variant, Some(std::boxed::Box::new(#val))))
+                    }
+                });
+            }
+
+            quote! {{
+                match #e {
+                    #(#variant_arms),*
+                }
+            }}
         }
         _ => quote!(oters::export::Value::#ret_ty(#e)),
     }

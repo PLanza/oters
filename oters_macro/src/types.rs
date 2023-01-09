@@ -13,7 +13,7 @@ pub(crate) enum ValueType {
     Tuple(Vec<Box<ValueType>>),
     // Fn
     Struct(String),
-    // Enum
+    Enum(String),
 }
 
 impl ValueType {
@@ -29,6 +29,13 @@ impl ValueType {
                             .contains_key(&ty.ident.to_string())
                         {
                             return Some(ValueType::Struct(ty.ident.to_string()));
+                        }
+                        if crate::EXPORT_ENUMS
+                            .lock()
+                            .unwrap()
+                            .contains_key(&ty.ident.to_string())
+                        {
+                            return Some(ValueType::Enum(ty.ident.to_string()));
                         }
                         return None;
                     }
@@ -57,6 +64,12 @@ impl ValueType {
                             .contains_key(&ident.to_string())
                         {
                             ValueType::Struct(ident.to_string())
+                        } else if crate::EXPORT_ENUMS
+                            .lock()
+                            .unwrap()
+                            .contains_key(&ident.to_string())
+                        {
+                            ValueType::Enum(ident.to_string())
                         } else {
                             return None;
                         }
@@ -85,6 +98,7 @@ impl ValueType {
             List(_) => Ident::new("List", Span::call_site().into()),
             Tuple(_) => Ident::new("Tuple", Span::call_site().into()),
             Struct(_) => Ident::new("Struct", Span::call_site().into()),
+            Enum(_) => Ident::new("Variant", Span::call_site().into()),
         }
     }
 
@@ -107,6 +121,10 @@ impl ValueType {
             Struct(s) => {
                 let strct = Ident::new(&s, Span::call_site().into());
                 quote!(#strct)
+            }
+            Enum(s) => {
+                let enm = Ident::new(&s, Span::call_site().into());
+                quote!(#enm)
             }
         }
     }
@@ -133,7 +151,9 @@ impl ValueType {
                 }
             }
             Tuple(tys) => {
-                let indices = 0..tys.len();
+                let indices: Vec<syn::Index> =
+                    (0..tys.len()).map(|i| syn::Index::from(i)).collect();
+
                 let tys_arms = tys.into_iter().map(|t| t.to_match_arm());
                 quote! {
                     oters::export::Value::#head(vs) => (#(match *vs[#indices].clone() {
@@ -142,32 +162,91 @@ impl ValueType {
                     }),*)
                 }
             }
-            Struct(name) => match crate::EXPORT_STRUCTS.lock().unwrap().get(name) {
-                Some(fields) => {
-                    let name = Ident::new(name, Span::call_site().into());
-                    let mut field_idents = Vec::new();
-                    let mut field_strs = Vec::new();
-                    let mut field_arms = Vec::new();
-                    for (field, val) in fields {
-                        field_idents.push(Ident::new(field, Span::call_site().into()));
-                        field_strs.push(field);
-                        field_arms.push(val.to_match_arm());
+            Struct(name) => {
+                let map = crate::EXPORT_STRUCTS.lock().unwrap().clone();
+                let strct = map.get(name).clone();
+                match strct {
+                    Some(fields) => {
+                        let name = Ident::new(name, Span::call_site().into());
+                        let mut field_idents = Vec::new();
+                        let mut field_strs = Vec::new();
+                        let mut field_arms = Vec::new();
+                        for (field, val) in fields {
+                            field_idents.push(Ident::new(field, Span::call_site().into()));
+                            field_strs.push(field);
+                            field_arms.push(val.to_match_arm());
+                        }
+                        quote! {
+                            oters::export::Value::Struct(_, map) => #name {
+                                #(#field_idents: match *map.get(#field_strs).unwrap().clone() {
+                                    #field_arms,
+                                    _ => unreachable!()
+                                }),* }
+                        }
                     }
-                    quote! {
-                        oters::export::Value::Struct(_, map) => #name {
-                            #(#field_idents: match *map.get(#field_strs).unwrap().clone() {
-                                #field_arms,
-                                _ => unreachable!()
-                            }),* }
-                    }
+                    None => syn::Error::new(
+                        proc_macro::Span::call_site().into(),
+                        format!("Struct {} has not been exported", name),
+                    )
+                    .to_compile_error()
+                    .into(),
                 }
-                None => syn::Error::new(
-                    proc_macro::Span::call_site().into(),
-                    format!("Struct {} has not been exported", name),
-                )
-                .to_compile_error()
-                .into(),
-            },
+            }
+            Enum(name) => {
+                let map = crate::EXPORT_ENUMS.lock().unwrap().clone();
+                let map = map.get(name).clone();
+                match map {
+                    Some(variants) => {
+                        let name = Ident::new(name, Span::call_site().into());
+                        let mut variant_arms = Vec::new();
+                        for (variant, opt) in variants {
+                            let variant_ident = Ident::new(variant, Span::call_site().into());
+                            variant_arms.push(match opt {
+                                None => quote!(#variant => #name::#variant_ident),
+                                Some(val_ty) => match val_ty {
+                                    ValueType::Tuple(vals) => {
+                                        let indices: Vec<syn::Index> =
+                                            (0..vals.len()).map(|i| syn::Index::from(i)).collect();
+                                        let val_arms = vals.into_iter().map(|v_t| v_t.to_match_arm());
+                                        quote! {
+                                            #variant => match *val.unwrap() {
+                                                oters::export::Value::Tuple(vals) => #name::#variant_ident(#(
+                                                        match *vals[#indices].clone() {
+                                                            #val_arms,
+                                                            _ => unreachable!(),
+                                                        }
+                                                ),*),
+                                                _ => unreachable!(),
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        let val_arm = val_ty.to_match_arm();
+                                        quote! {
+                                            #variant => #name::#variant_ident(match *val.unwrap() {
+                                                #val_arm,
+                                                _ => unreachable!(),
+                                            })
+                                        }
+                                    }
+                                },
+                            });
+                        }
+                        quote! {
+                            oters::export::Value::Variant(name, val) => match name.as_str() {
+                                #(#variant_arms),*
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                    None => syn::Error::new(
+                        proc_macro::Span::call_site().into(),
+                        format!("Enum {} has not been exported", name),
+                    )
+                    .to_compile_error()
+                    .into(),
+                }
+            }
         }
     }
 
@@ -212,6 +291,30 @@ impl ValueType {
                     .collect();
 
                 quote!(#path::Struct(std::collections::HashMap::from([#(#map_tokens),*])))
+            }
+            Enum(name) => {
+                let map = crate::EXPORT_ENUMS
+                    .lock()
+                    .unwrap()
+                    .get(name)
+                    .unwrap()
+                    .clone();
+
+                let map_tokens: Vec<proc_macro2::TokenStream> = map
+                    .into_iter()
+                    .map(|(v, o)| {
+                        let t = match o {
+                            None => quote!(None),
+                            Some(t) => {
+                                let t = t.to_type();
+                                quote!(Some(std::boxed::Box::new(#t)))
+                            }
+                        };
+                        quote!((#v.to_string(), #t))
+                    })
+                    .collect();
+
+                quote!(#path::Enum(std::collections::HashMap::from([#(#map_tokens),*])))
             }
         }
     }

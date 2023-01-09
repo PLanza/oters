@@ -1,0 +1,7 @@
+let loop_fps = draw_fps () << @loop_fps
+
+let c = (circle Circle {
+    pos: (100,100), 
+    r: 20, 
+    color: Color {r: 255, g: 0, b: 0, a: 255}
+  }) << @c

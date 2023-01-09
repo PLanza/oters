@@ -10,4 +10,5 @@ oters = { path = "../oters/"}
 anyhow = "1.0.*"
 lazy_static = "1.4.*"
 macroquad = "0.3.25"
+chrono = "0.4.*"
 

@@ -20,7 +20,7 @@ pub enum Value {
     Tuple(Vec<Box<Value>>),
     // Fn
     Struct(String, HashMap<String, Box<Value>>),
-    // Enum
+    Variant(String, Option<Box<Value>>),
 }
 
 pub type ExportFns = HashMap<String, (fn(Vec<Value>) -> Value, Vec<Type>, Type)>;
@@ -73,6 +73,13 @@ impl Value {
                 }
                 Ok(Value::Struct(name, strct))
             }
+            Variant(name, opt) => Ok(Value::Variant(
+                name,
+                match opt {
+                    None => None,
+                    Some(val) => Some(Box::new(Value::from_expr(*val)?)),
+                },
+            )),
             _ => Err(ValueError::InvalidConversion(e).into()),
         }
     }
@@ -94,6 +101,7 @@ impl Value {
                     .map(|(f, v)| (f, Box::new(v.to_expr())))
                     .collect(),
             ),
+            Variant(name, opt) => Expr::Variant(name, opt.map(|val| Box::new(val.to_expr()))),
         }
     }
 }

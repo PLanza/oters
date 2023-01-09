@@ -11,8 +11,38 @@ struct Circle {
 }
 
 #[export_oters]
+struct Color {
+    r: i64,
+    g: i64,
+    b: i64,
+    a: i64,
+}
+
+#[export_oters]
+enum IntOption {
+    None,
+    Some(i64),
+}
+
+#[export_oters]
+enum Shape {
+    Circle((i64, i64), i64, Color),
+    Rect((i64, i64), (i64, i64)),
+    Line((i64, i64), (i64, i64)),
+}
+
+#[export_oters]
 fn circ_area(c: Circle) -> f64 {
     c.r * c.r * 3.14159265358979
+}
+
+#[export_oters]
+fn shape_area(s: Shape) -> f64 {
+    match s {
+        Shape::Circle(_, r, _) => r as f64 * r as f64 * 3.14159265358979,
+        Shape::Rect(_, dims) => (dims.0 * dims.1) as f64,
+        Shape::Line(_, _) => 0.0,
+    }
 }
 
 #[export_oters]
@@ -81,6 +111,22 @@ fn main() {
                 ),
                 ("r".to_string(), Box::new(Value::Float(2.0)))
             ])
+        )])
+    );
+    println!(
+        "{:?}",
+        EXPORT_FNS.get("shape_area").unwrap().0(vec![Value::Variant(
+            "Rect".to_string(),
+            Some(Box::new(Value::Tuple(vec![
+                Box::new(Value::Tuple(vec![
+                    Box::new(Value::Int(100)),
+                    Box::new(Value::Int(100))
+                ])),
+                Box::new(Value::Tuple(vec![
+                    Box::new(Value::Int(24)),
+                    Box::new(Value::Int(24))
+                ]))
+            ])))
         )])
     )
 }
