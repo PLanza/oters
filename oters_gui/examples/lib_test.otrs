@@ -1,7 +1,6 @@
 let loop_fps = draw_fps () << @loop_fps
 
-let c = (circle Circle {
-    pos: (100,100), 
-    r: 20, 
-    color: Color {r: 255, g: 0, b: 0, a: 255}
-  }) << @c
+let line = (draw_shape Line((80,80), (140, 140), 4, Color {r: 255, g: 255, b: 0, a: 255})) << @line
+let circle = (draw_shape Circle((100,100), 20, Color {r: 0, g: 255, b: 0, a: 255})) << @circle
+let triangle = (draw_shape Triangle((140,140), (100, 140), (120, 120), Color {r: 0, g: 0, b: 255, a: 255})) << @triangle
+let rect = (draw_shape Rect((100,100), (40, 40), Color {r: 255, g: 0, b: 0, a: 255})) << @rect

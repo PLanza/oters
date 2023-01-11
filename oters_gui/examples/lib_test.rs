@@ -29,9 +29,15 @@ async fn main() -> Result<()> {
     export_fns.extend(oters_gui::EXPORT_FNS.clone().into_iter());
     let mut export_structs = EXPORT_STRUCTS.clone();
     export_structs.extend(oters_gui::EXPORT_STRUCTS.clone().into_iter());
+    let mut export_enums = EXPORT_ENUMS.clone();
+    export_enums.extend(oters_gui::EXPORT_ENUMS.clone().into_iter());
 
     let program = parser::parse_file("oters_gui/examples/lib_test.otrs".to_string())?;
-    let mut checker = ProgramChecker::new((export_fns.clone(), export_structs.clone()));
+    let mut checker = ProgramChecker::new((
+        export_fns.clone(),
+        export_structs.clone(),
+        export_enums.clone(),
+    ));
 
     let exprs = checker.type_check_program(&program)?;
 

@@ -15,7 +15,11 @@ export_list!();
 
 fn main() -> Result<()> {
     let program = parser::parse_file("oters/examples/ex4.otrs".to_string())?;
-    let mut checker = ProgramChecker::new((EXPORT_FNS.clone(), EXPORT_STRUCTS.clone()));
+    let mut checker = ProgramChecker::new((
+        EXPORT_FNS.clone(),
+        EXPORT_STRUCTS.clone(),
+        EXPORT_ENUMS.clone(),
+    ));
 
     let exprs = checker.type_check_program(&program)?;
 

@@ -18,13 +18,13 @@ pub enum Value {
     Unit,
     List(Vec<Box<Value>>),
     Tuple(Vec<Box<Value>>),
-    // Fn
     Struct(String, HashMap<String, Box<Value>>),
     Variant(String, Option<Box<Value>>),
 }
 
 pub type ExportFns = HashMap<String, (fn(Vec<Value>) -> Value, Vec<Type>, Type)>;
 pub type ExportStructs = Vec<(String, HashMap<String, Box<Type>>)>;
+pub type ExportEnums = Vec<(String, HashMap<String, Option<Box<Type>>>)>;
 
 impl Value {
     pub fn expr_to_args(e: Expr, args_len: usize) -> Result<Vec<Value>> {
