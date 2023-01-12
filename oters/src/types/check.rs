@@ -151,7 +151,7 @@ impl ProgramChecker {
 
                     // Make sure the resulting type is well formed
                     t.well_formed(TypeContext::new())?;
-                    println!("{}\n", t);
+                    println!("{}", t);
 
                     // Add it to the map of value declarations
                     self.value_decs.insert(id.clone(), t);
@@ -169,7 +169,7 @@ impl ProgramChecker {
     // Type Inference for a let expression according to Rattus λ rules
     pub fn infer(&mut self, e: &Expr, mut ctx: VarContext) -> Result<Type> {
         use Expr::*;
-        match e {
+        let __t = match e {
             Bool(_) => Ok(Type::Bool),
             Int(_) => Ok(Type::Int),
             Float(_) => Ok(Type::Float),
@@ -477,14 +477,14 @@ impl ProgramChecker {
             ProjStruct(e, f) => {
                 let t = self.infer(e, ctx.clone())?;
                 let field_type = Type::GenericVar(self.fresh_type_var(), false);
-                let map = HashMap::from([(f.clone(), Box::new(field_type))]);
+                let map = HashMap::from([(f.clone(), Box::new(field_type.clone()))]);
 
                 // Struct unification only requires a subset of fields to match
                 let mut subs = unify(VecDeque::from([(t.clone(), Type::Struct(map))]))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
-                Ok(t)
+                Ok(field_type)
             }
             Match(e, v) => {
                 let t_e = self.infer(e, ctx.clone())?;
@@ -552,16 +552,10 @@ impl ProgramChecker {
                         Type::Generic(scheme, t) => {
                             let mut t_ = *t.clone();
 
-                            let mut constraints = VecDeque::new();
                             for arg in scheme {
                                 let fresh_t = Type::GenericVar(self.fresh_type_var(), false);
                                 t_ = t_.sub_generic(arg, &fresh_t);
-                                constraints
-                                    .push_back((Type::GenericVar(arg.clone(), false), fresh_t));
                             }
-                            let mut subs = unify(constraints)?;
-                            self.substitutions.append(&mut subs);
-                            ctx.apply_subs(&subs);
 
                             Ok(t_)
                         }
@@ -595,7 +589,9 @@ impl ProgramChecker {
                 Ok(self.infer(e2, ctx)?)
             }
             Location(_) => Err(InvalidExprError::IllegalLocation.into()),
-        }
+        };
+        let ret = __t.unwrap();
+        Ok(ret)
     }
 
     fn infer_binop(&mut self, t1: Type, op: BOpcode, t2: Type) -> Result<Type> {

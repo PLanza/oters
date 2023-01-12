@@ -12,6 +12,8 @@ use std::vec;
 
 use anyhow::Result;
 use petgraph::graph::DiGraph;
+use petgraph::visit::EdgeRef;
+use petgraph::Direction;
 
 pub struct Interpreter {
     allocator: Allocator,
@@ -54,27 +56,56 @@ impl Interpreter {
             // Reduce all the expressions
             let (e, s) = self.eval(expr.clone(), self.store.clone())?;
 
-            // If the resulting value is a stream then add it to the stream flow graph
-            if !matches!(e.is_stream(), None) {
-                let current_index = flow_graph.add_node(id.clone());
-                // Any streams used in the expression are added to current_deps
-                for (stream, _) in &self.streams {
-                    // If the current expression depends on another stream
-                    if expr.clone().substitute(stream, &Expr::Unit).0 {
-                        // Add a dependency
-                        let dep_index = flow_graph
-                            .node_indices()
-                            .find(|i| &flow_graph[*i] == stream)
-                            .unwrap();
-                        flow_graph.update_edge(dep_index, current_index, ());
-                    }
+            let current_index = flow_graph.add_node(id.clone());
+            // Any values used in the expression are added to current_deps
+            for dep in flow_graph.node_indices() {
+                let dep_name = flow_graph[dep].clone();
+                // If the current expression depends on another expression
+                if expr.clone().substitute(&dep_name, &Expr::Unit).0 {
+                    // Add a dependency
+                    flow_graph.update_edge(dep, current_index, ());
                 }
+            }
+            if !matches!(e.is_stream(), None) {
                 self.streams.insert(id.clone(), e.clone());
             }
 
             // Globals contain reduced expressions e.g. functions, values, streams, etc.
             self.globals.insert(id.clone(), e);
             self.store = s;
+        }
+
+        // Find non-stream nodes to remove but update edges appropriately
+        let clone = flow_graph.clone();
+        let mut to_remove = Vec::new();
+        for node in clone.node_indices() {
+            if self.streams.contains_key(&flow_graph[node]) {
+                continue;
+            }
+            // Connect all incoming edges with all outgoing edges
+            let incoming = clone.edges_directed(node, Direction::Incoming);
+            let outgoing = clone.edges_directed(node, Direction::Outgoing);
+            for e_in in incoming {
+                for e_out in outgoing.clone() {
+                    flow_graph.add_edge(e_in.source(), e_out.target(), ());
+                }
+            }
+            to_remove.push(node);
+        }
+
+        // Remove all non-stream nodes
+        for i in 0..to_remove.len() {
+            let (mut max, mut max_i) = (0, 0);
+            // When node is removed, last node takes its place, so we update the list
+            for (i, node) in to_remove.iter().enumerate() {
+                if node.index() > max {
+                    (max, max_i) = (node.index(), i);
+                }
+            }
+            if max == flow_graph.node_count() - 1 {
+                to_remove[max_i] = to_remove[i];
+            }
+            flow_graph.remove_node(to_remove[i]);
         }
 
         // Warning: Breaks with cycles though these will fail in type checking
