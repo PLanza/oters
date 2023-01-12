@@ -1,6 +1,31 @@
+let head = fn stream ->
+  match stream with {
+      x<<xs => x
+  }
+
 let loop_fps = draw_fps () << @loop_fps
 
 let line = (draw_shape Line((80,80), (140, 140), 4, Color {r: 255, g: 255, b: 0, a: 255})) << @line
 let circle = (draw_shape Circle((100,100), 20, Color {r: 0, g: 255, b: 0, a: 255})) << @circle
 let triangle = (draw_shape Triangle((140,140), (100, 140), (120, 120), Color {r: 0, g: 0, b: 255, a: 255})) << @triangle
 let rect = (draw_shape Rect((100,100), (40, 40), Color {r: 255, g: 0, b: 0, a: 255})) << @rect
+
+let angles = {
+  let aux = fn n -> n << @(aux (n+0.05));
+  aux 0.0
+}
+
+let nats = {
+  let aux = fn n -> n << @(aux (n+1));
+  aux 0
+}
+
+let otter_img = img_from_file "assets/otter.png"
+let rot_img = fn img -> {
+  let r = rotate_img (!#img, (head angles));
+  set_pixel (r, ((head nats) % r.width, 100), Color {r: 255, g: 0, b: 0, a: 255});
+  (draw_img (r, (0, 0), (r.width, r.height), (0, 0, r.width, r.height))) << @(rot_img #r)
+}
+
+let x = rot_img #otter_img
+
