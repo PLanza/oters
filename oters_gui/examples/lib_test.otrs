@@ -29,3 +29,11 @@ let rot_img = fn img -> {
 
 let x = rot_img #otter_img
 
+let on_x = 
+  if is_key_down "X" then
+    (draw_shape Circle((500,500), 20, Color {r: 0, g: 0, b: 255, a: 255})) << @on_x
+  else
+    () << @on_x
+  
+let cursor = (draw_shape Circle(mouse_pos (), 5, Color {r: 0, g: 255, b: 0, a: 255})) << @cursor
+

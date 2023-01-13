@@ -202,7 +202,7 @@ impl ValueType {
                         for (variant, opt) in variants {
                             let variant_ident = Ident::new(variant, Span::call_site().into());
                             variant_arms.push(match opt {
-                                None => quote!(#variant => #name::#variant_ident),
+                                None => quote!(#variant => #name::#variant_ident,),
                                 Some(val_ty) => match val_ty {
                                     ValueType::Tuple(vals) => {
                                         let indices: Vec<syn::Index> =
@@ -217,7 +217,7 @@ impl ValueType {
                                                         }
                                                 ),*),
                                                 _ => unreachable!(),
-                                            }
+                                            },
                                         }
                                     }
                                     _ => {
@@ -226,7 +226,7 @@ impl ValueType {
                                             #variant => #name::#variant_ident(match *val.unwrap() {
                                                 #val_arm,
                                                 _ => unreachable!(),
-                                            })
+                                            }),
                                         }
                                     }
                                 },
@@ -234,8 +234,8 @@ impl ValueType {
                         }
                         quote! {
                             oters::export::Value::Variant(name, val) => match name.as_str() {
-                                #(#variant_arms),*
-                                _ => unreachable!(),
+                                #(#variant_arms)*
+                                _ => unreachable!()
                             }
                         }
                     }

@@ -120,7 +120,7 @@ fn export_fn(item: syn::ItemFn) -> TokenStream {
         pub fn #fn_name(args: Vec<oters::export::Value>) -> oters::export::Value {
             #(let #arg_names = match args[#indices].clone() {
                 #match_arms,
-                _ => unreachable!()
+                _ => unreachable!(),
             };)*
             #(#stmts)*
             #return_stmt
@@ -395,10 +395,10 @@ fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::To
             for (variant, opt) in map {
                 let variant_ident = Ident::new(&variant, Span::call_site().into());
                 variant_arms.push(match opt {
-                    None => quote!(#variant_ident => oters::export::Value::#ret_ty(#variant, None)),
+                    None => quote!(#variant_ident => oters::export::Value::#ret_ty(#variant.to_string(), None)),
                     Some(val_ty) => {
                         let val = to_val(quote!(__val), val_ty);
-                        quote!(#variant_ident(__val) => oters::export::Value::#ret_ty(#variant, Some(std::boxed::Box::new(#val))))
+                        quote!(#variant_ident(__val) => oters::export::Value::#ret_ty(#variant.to_string(), Some(std::boxed::Box::new(#val))))
                     }
                 });
             }
