@@ -115,6 +115,10 @@ impl Display for Pattern {
             Float(fl) => write!(f, "{}", fl),
             String(s) => write!(f, "{}", s),
             List(v) => {
+                if v.len() == 0 {
+                    return write!(f, "[]");
+                }
+
                 let mut str = "[".to_string();
                 for i in 0..v.len() - 1 {
                     str.push_str(&format!("{}, ", v[i]));

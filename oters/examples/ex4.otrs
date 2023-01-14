@@ -32,3 +32,22 @@ let print_int_str = fn xs ->
   }
 
 let print_loop_10 = print_int_str loop_10
+
+let head = fn stream -> 
+  match stream with {
+    x << xs => x
+  }
+
+let print_contains = {
+  let contains = fn xs v -> 
+    match xs with {
+      [] => false,
+      x::xs => 
+        if v == x then
+          true
+        else 
+          contains xs v
+    };
+  (if contains [0,1,2,3,4] (head loop_10) then print_int (head loop_10) else ()) << @print_contains
+}
+  

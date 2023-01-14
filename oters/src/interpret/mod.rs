@@ -181,9 +181,12 @@ impl Interpreter {
 
     pub fn eval(&mut self, e: Expr, s: Store) -> Result<(Expr, Store)> {
         use Expr::*;
-        match e {
+        match e.clone() {
             Unit | Int(_) | Float(_) | Bool(_) | String(_) | Location(_) => Ok((e, s)),
-            BinOp(e1, op, e2) => self.eval_bop(*e1, op, *e2, s),
+            BinOp(e1, op, e2) => {
+                let (e_, s) = self.eval_bop(*e1, op, *e2, s)?;
+                Ok((e_, s))
+            }
             UnOp(UOpcode::Neg, e) => {
                 let (_e, _s) = self.eval(*e.clone(), s)?;
                 match _e {
@@ -391,8 +394,32 @@ impl Interpreter {
                 }
             }
             LetIn(var, e1, e2) => {
-                let (val, _s) = self.eval(*e1, s)?;
-                self.eval(e2.substitute(&var, &val).1, _s)
+                let (val, _s) = self.eval(*e1.clone(), s)?;
+                match &val {
+                    Fn(arg, body) => {
+                        // Substitution for recursive function according to Part 1B Semantics
+                        if val.is_static_recursive(&var) {
+                            self.eval(
+                                e2.substitute(
+                                    &var,
+                                    &Fn(
+                                        arg.clone(),
+                                        Box::new(LetIn(
+                                            var.clone(),
+                                            Box::new(val.clone()),
+                                            body.clone(),
+                                        )),
+                                    ),
+                                )
+                                .1,
+                                _s,
+                            )
+                        } else {
+                            self.eval(e2.substitute(&var, &val).1, _s)
+                        }
+                    }
+                    _ => self.eval(e2.substitute(&var, &val).1, _s),
+                }
             }
         }
     }

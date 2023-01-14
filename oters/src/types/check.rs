@@ -116,23 +116,45 @@ impl ProgramChecker {
                 PExpr::Let(id, expr) => {
                     let mut e = Expr::from_pexpr(*expr.clone())?;
 
-                    // If e is a recursive variable then convert it into a fix expression
-                    let fix_var = format!("rec_{}", id);
-                    let (is_rec, rec_e) = e.clone().substitute(
-                        &id,
-                        &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))),
-                    );
-                    e = if is_rec {
-                        Expr::Fix(fix_var, Box::new(rec_e))
+                    let mut ctx = VarContext::new();
+
+                    // If e is recursive within one time step
+                    let ret_type = if matches!(e, Expr::Fn(..)) && e.is_static_recursive(&id) {
+                        // Add a recursive variable into the context
+                        let t = Type::Function(
+                            Box::new(Type::GenericVar(self.fresh_type_var(), false)),
+                            Box::new(Type::GenericVar(self.fresh_type_var(), false)),
+                        );
+                        ctx.push_var(id.clone(), t.clone());
+                        Some(t)
                     } else {
-                        e
+                        None
                     };
+
+                    if matches!(ret_type, None) {
+                        // If e is a recursive variable then convert it into a fix expression
+                        let fix_var = format!("rec_{}", id);
+                        let (is_rec, rec_e) = e.clone().substitute(
+                            &id,
+                            &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))),
+                        );
+                        e = if is_rec {
+                            Expr::Fix(fix_var, Box::new(rec_e))
+                        } else {
+                            e
+                        };
+                    }
 
                     // Convert to Rattus λ✓
                     e = e.single_tick(0);
 
                     // Type check the expression
-                    let mut t = self.infer(&e, VarContext::new())?;
+                    let mut t = self.infer(&e, ctx)?;
+
+                    if let Some(rec_t) = ret_type {
+                        let mut subs = unify(VecDeque::from([(t.clone(), rec_t)]))?;
+                        self.substitutions.append(&mut subs);
+                    }
 
                     // Unify the substitutions
                     self.unify_subs()?;
@@ -235,6 +257,7 @@ impl ProgramChecker {
                 Ok(Type::Stable(Box::new(t)))
             }
             Adv(e) => {
+                println!("{}", e);
                 let mut ctx = ctx.pre_tick()?;
 
                 let t = self.infer(e, ctx.clone())?;
@@ -565,13 +588,32 @@ impl ProgramChecker {
                 },
             },
             LetIn(var, e1, e2) => {
+                let mut ctx1 = ctx.clone();
+                // If e is recursive within one time step
+                let t_e_ = if matches!(*e1.clone(), Expr::Fn(..)) && e1.is_static_recursive(&var) {
+                    // Add a recursive variable into the context
+                    let t = Type::Function(
+                        Box::new(Type::GenericVar(self.fresh_type_var(), false)),
+                        Box::new(Type::GenericVar(self.fresh_type_var(), false)),
+                    );
+                    ctx1.push_var(var.clone(), t.clone());
+                    Some(t)
+                } else {
+                    None
+                };
+
                 // Similar to top level let
-                let mut t_e = self.infer(&e1, ctx.clone())?;
+                let mut t_e = self.infer(&e1, ctx1.clone())?;
+
+                if let Some(rec_t) = t_e_ {
+                    let mut subs = unify(VecDeque::from([(t_e.clone(), rec_t)]))?;
+                    self.substitutions.append(&mut subs);
+                }
                 self.unify_subs()?;
                 t_e = t_e.apply_subs(&self.substitutions);
 
                 let mut t_e_free_vars = t_e.get_free_vars();
-                let ctx_free_vars = ctx.get_free_vars();
+                let ctx_free_vars = ctx1.get_free_vars();
 
                 for var in ctx_free_vars {
                     t_e_free_vars.remove(&var);
@@ -585,7 +627,6 @@ impl ProgramChecker {
 
                 let mut ctx = ctx.clone();
                 ctx.push_var(var.clone(), t_let);
-
                 Ok(self.infer(e2, ctx)?)
             }
             Location(_) => Err(InvalidExprError::IllegalLocation.into()),

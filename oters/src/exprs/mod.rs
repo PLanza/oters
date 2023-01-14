@@ -6,6 +6,7 @@ use crate::types::{Type, TypeError};
 
 use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
+use std::ops::RangeBounds;
 use std::rc::Rc;
 
 use anyhow::{Ok, Result};
@@ -163,6 +164,7 @@ impl Expr {
                     // Convert {let x = e1; e2} to let x = e1 in e2
                     PExpr::Let(var, e) => {
                         let expr = Expr::from_pexpr(*e.clone())?;
+                        // If e is recursive within one time step
 
                         // Recursive variables are translated to fix points to ensure guarded recursion
                         let fix_var = format!("_rec{}", var);
@@ -170,7 +172,10 @@ impl Expr {
                             &var,
                             &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))),
                         );
-                        if is_rec {
+                        // But only if they're guarded recursive expressions
+                        if !(matches!(expr, Expr::Fn(..)) && expr.is_static_recursive(&var))
+                            && is_rec
+                        {
                             Ok(Expr::LetIn(
                                 var.clone(),
                                 Box::new(Expr::Fix(fix_var, Box::new(rec_e))),
@@ -634,6 +639,54 @@ impl Expr {
                 }
             }
             Location(_) => unreachable!("Locations should only appear during interpretation"),
+        }
+    }
+
+    // If a function is recursive in one timestep
+    pub fn is_static_recursive(&self, name: &String) -> bool {
+        use Expr::*;
+        match self {
+            Bool(_) | Int(_) | Float(_) | String(_) | Unit | Location(_) => false,
+            Delay(_) | Stable(_) | Adv(_) | Out(_) | Into(_) | Fix(..) => false,
+            BinOp(e1, _, e2) => e1.is_static_recursive(name) || e2.is_static_recursive(name),
+            UnOp(_, e) => e.is_static_recursive(name),
+            Unbox(e) => e.is_static_recursive(name),
+            List(es) => es.iter().fold(false, |mut acc, e| {
+                acc = acc || e.is_static_recursive(name);
+                acc
+            }),
+            Tuple(es) => es.iter().fold(false, |mut acc, e| {
+                acc = acc || e.is_static_recursive(name);
+                acc
+            }),
+            Struct(_, fs) => fs.iter().fold(false, |mut acc, f| {
+                acc = acc || f.1.is_static_recursive(name);
+                acc
+            }),
+            Variant(_, o) => match o {
+                None => false,
+                Some(e) => e.is_static_recursive(name),
+            },
+            Fn(var, e) => !(&var.0 == name) && e.is_static_recursive(name),
+            If(e1, e2, e3) => {
+                e1.is_static_recursive(name)
+                    || e2.is_static_recursive(name)
+                    || e3.is_static_recursive(name)
+            }
+            Seq(e1, e2) => e1.is_static_recursive(name) || e2.is_static_recursive(name),
+            App(e1, e2) => e1.is_static_recursive(name) || e2.is_static_recursive(name),
+            ProjStruct(e, _) => e.is_static_recursive(name),
+            Match(e, ps) => {
+                e.is_static_recursive(name)
+                    || ps.iter().fold(false, |mut acc, p| {
+                        acc = acc || (!p.0.contains(name) && p.1.is_static_recursive(name));
+                        acc
+                    })
+            }
+            Var(var) => var == name,
+            LetIn(var, e1, e2) => {
+                !(var == name) && (e1.is_static_recursive(name) || e2.is_static_recursive(name))
+            }
         }
     }
 }
