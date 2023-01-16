@@ -385,11 +385,17 @@ EnumExpr: Box<PExpr> = {
     Box::new(PExpr::EnumDef(i, p, v)),
 }
 
+LetWithAnd: Box<PExpr> = {
+    "let" <i1: LowerId> "=" <e1:Expr> "and" <i2:LowerId> "=" <e2: Expr> "with" <e3:Expr> =>
+        Box::new(PExpr::LetAndWith(i1, e1, i2, e2, e3)),
+};
+
 pub Item: Box<PExpr> = {
   LetExpr,
   TypeExpr,
   EnumExpr,
   StructExpr,
+  LetWithAnd,
 }
 
 pub Program: Vec<Box<PExpr>> = {

@@ -28,7 +28,8 @@ pub enum PExpr {
     TypeDef(String, Vec<String>, Box<TypeExpr>), // Type Alias with Generic Parameters and defined type
     StructDef(String, Vec<String>, Vec<(String, Box<TypeExpr>)>), // Struct with generic parameters
     EnumDef(String, Vec<String>, Vec<(String, Option<Box<TypeExpr>>)>), // Enum with generic parameters
-    Let(String, Box<PExpr>), // Let generic parameters for binding with functions
+    Let(String, Box<PExpr>),
+    LetAndWith(String, Box<PExpr>, String, Box<PExpr>, Box<PExpr>),
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

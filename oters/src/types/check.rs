@@ -2,7 +2,9 @@ use std::collections::{HashMap, VecDeque};
 
 use super::{Type, TypeContext, TypeError};
 use crate::export::{ExportEnums, ExportFns, ExportStructs};
-use crate::exprs::{BOpcode, Expr, InvalidExprError, InvalidPatternError, UOpcode, VarContext};
+use crate::exprs::{
+    BOpcode, Expr, InvalidExprError, InvalidPatternError, LetBinding, UOpcode, VarContext,
+};
 use crate::parser::ast::{PExpr, Pattern, Program};
 
 use anyhow::Result;
@@ -56,7 +58,7 @@ impl ProgramChecker {
         }
     }
 
-    pub fn type_check_program(&mut self, program: &Program) -> Result<Vec<(String, Expr)>> {
+    pub fn type_check_program(&mut self, program: &Program) -> Result<Vec<LetBinding>> {
         let mut checked_exprs = Vec::new();
 
         // Checks expressions in order of appearance
@@ -179,7 +181,101 @@ impl ProgramChecker {
                     self.value_decs.insert(id.clone(), t);
                     self.substitutions = Vec::new();
 
-                    checked_exprs.push((id.clone(), e));
+                    checked_exprs.push(LetBinding::Let(id.clone(), e));
+                }
+                PExpr::LetAndWith(x, e1, y, e2, e3) => {
+                    // Γ ⊢ 𝑒₃ ∶ 𝑡₂
+                    let mut e3 = Expr::from_pexpr(*e3.clone())?;
+                    e3 = e3.single_tick(0);
+
+                    let mut t2 = self.infer(&e3, VarContext::new())?;
+                    self.unify_subs()?;
+                    t2 = t2.apply_subs(&self.substitutions);
+
+                    // Γ, y∶ Str<𝑡₂> ⊢ 𝑒₁ ∶ Str<𝑡₁>
+                    let mut e1 = Expr::from_pexpr(*e1.clone())?;
+
+                    let fix_var = format!("rec_{}", x);
+                    let (is_rec, rec_e) = e1.clone().substitute(
+                        &x,
+                        &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))),
+                    );
+                    e1 = if is_rec {
+                        Expr::Fix(fix_var, Box::new(rec_e))
+                    } else {
+                        return Err(TypeError::InvalidMutuallyRecursiveDefinition(e1).into());
+                    };
+                    e1 = e1.single_tick(0);
+                    self.value_decs.insert(
+                        y.clone(),
+                        Type::Fix(
+                            format!("_f{}", y),
+                            Box::new(Type::Tuple(vec![
+                                Box::new(t2.clone()),
+                                Box::new(Type::FixVar(format!("_f{}", y))),
+                            ])),
+                        ),
+                    );
+
+                    let mut t1 = self.infer(&e1, VarContext::new())?;
+                    self.unify_subs()?;
+                    t1 = t1.apply_subs(&self.substitutions);
+                    t1.well_formed(TypeContext::new())?;
+                    match t1.clone() {
+                        Type::Fix(_, tup) => match *tup {
+                            Type::Tuple(ts) => {
+                                if !matches!(*ts[1], Type::FixVar(_)) {
+                                    return Err(
+                                        TypeError::InvalidMutuallyRecursiveDefinition(e1).into()
+                                    );
+                                }
+                            }
+                            _ => {
+                                return Err(TypeError::InvalidMutuallyRecursiveDefinition(e1).into())
+                            }
+                        },
+                        _ => return Err(TypeError::InvalidMutuallyRecursiveDefinition(e1).into()),
+                    }
+                    println!("{}", t1);
+                    self.value_decs.insert(x.clone(), t1);
+
+                    // Γ, x∶ Str<𝑡₁> ⊢ 𝑒₂ ∶ Str<𝑡₂>
+                    let mut e2 = Expr::from_pexpr(*e2.clone())?;
+                    let fix_var = format!("rec_{}", y);
+                    let (is_rec, rec_e) = e2.clone().substitute(
+                        &y,
+                        &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))),
+                    );
+                    e2 = if is_rec {
+                        Expr::Fix(fix_var, Box::new(rec_e))
+                    } else {
+                        return Err(TypeError::InvalidMutuallyRecursiveDefinition(e2).into());
+                    };
+
+                    e2 = e2.single_tick(0);
+                    let mut s_t2 = self.infer(&e2, VarContext::new())?;
+                    self.unify_subs()?;
+                    s_t2 = s_t2.apply_subs(&self.substitutions);
+
+                    let mut subs = unify(VecDeque::from([(
+                        s_t2.clone(),
+                        Type::Fix(
+                            format!("_f{}", y),
+                            Box::new(Type::Tuple(vec![
+                                Box::new(t2.clone()),
+                                Box::new(Type::FixVar(format!("_f{}", y))),
+                            ])),
+                        ),
+                    )]))?;
+                    self.substitutions.append(&mut subs);
+                    s_t2.well_formed(TypeContext::new())?;
+
+                    println!("{}", s_t2);
+                    self.value_decs.insert(y.clone(), s_t2);
+
+                    self.substitutions = Vec::new();
+
+                    checked_exprs.push(LetBinding::LetAndWith(x.clone(), e1, y.clone(), e2, e3));
                 }
                 _ => return Err(InvalidExprError::InvalidTopLevelExpr(expr.head_string()).into()),
             }
@@ -257,7 +353,6 @@ impl ProgramChecker {
                 Ok(Type::Stable(Box::new(t)))
             }
             Adv(e) => {
-                println!("{}", e);
                 let mut ctx = ctx.pre_tick()?;
 
                 let t = self.infer(e, ctx.clone())?;

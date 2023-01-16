@@ -4,16 +4,13 @@ mod errors;
 use self::allocator::Allocator;
 use self::errors::InterpretError::*;
 use crate::export::{ExportFns, Value};
-use crate::exprs::{BOpcode, Expr, UOpcode};
+use crate::exprs::{BOpcode, Expr, LetBinding, UOpcode};
 use crate::parser::ast::Pattern;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::vec;
 
 use anyhow::Result;
-use petgraph::graph::DiGraph;
-use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 
 pub struct Interpreter {
     allocator: Allocator,
@@ -34,7 +31,7 @@ pub struct Store {
 }
 
 impl Interpreter {
-    pub fn new(exprs: Vec<(String, Expr)>, imports: ExportFns) -> Result<Self> {
+    pub fn new(bindings: Vec<LetBinding>, imports: ExportFns) -> Result<Self> {
         let mut interp = Interpreter {
             allocator: Allocator::new(),
             globals: HashMap::new(),
@@ -44,81 +41,53 @@ impl Interpreter {
             store: Store::new(),
             stream_outs: HashMap::new(),
         };
-        interp.init(exprs)?;
+        interp.init(bindings)?;
 
         Ok(interp)
     }
 
-    fn init(&mut self, exprs: Vec<(String, Expr)>) -> Result<()> {
-        let mut flow_graph = DiGraph::<String, ()>::new();
+    fn init(&mut self, bindings: Vec<LetBinding>) -> Result<()> {
+        for binding in bindings {
+            match binding {
+                LetBinding::Let(id, expr) => {
+                    // Reduce all the expressions
+                    let (e, s) = self.eval(expr.clone(), self.store.clone())?;
 
-        for (id, expr) in exprs {
-            // Reduce all the expressions
-            let (e, s) = self.eval(expr.clone(), self.store.clone())?;
+                    if !matches!(e.is_stream(), None) {
+                        self.streams.insert(id.clone(), e.clone());
+                        self.eval_order.push(id.clone());
+                    }
 
-            let current_index = flow_graph.add_node(id.clone());
-            // Any values used in the expression are added to current_deps
-            for dep in flow_graph.node_indices() {
-                let dep_name = flow_graph[dep].clone();
-                // If the current expression depends on another expression
-                if expr.clone().substitute(&dep_name, &Expr::Unit).0 {
-                    // Add a dependency
-                    flow_graph.update_edge(dep, current_index, ());
+                    // Globals contain reduced expressions e.g. functions, values, streams, etc.
+                    self.globals.insert(id.clone(), e);
+                    self.store = s;
+                }
+
+                LetBinding::LetAndWith(x, e1, y, e2, e3) => {
+                    let (v, mut s) = self.eval(e3.clone(), self.store.clone())?;
+
+                    let loc_2 = self.allocator.alloc();
+                    let y_str = Expr::Into(Box::new(Expr::Tuple(vec![
+                        Box::new(v),
+                        Box::new(Expr::Location(loc_2)),
+                    ])));
+                    s.extend(loc_2, y_str.clone());
+                    self.globals.insert(y.clone(), y_str.clone());
+
+                    let (v1, s) = self.eval(e1.clone(), s)?;
+                    self.streams.insert(x.clone(), v1.clone());
+                    self.eval_order.push(x.clone());
+                    self.globals.insert(x.clone(), v1);
+
+                    let (v2, s) = self.eval(e2.clone(), s)?;
+                    self.streams.insert(y.clone(), v2.clone());
+                    self.eval_order.push(y.clone());
+                    self.globals.insert(y.clone(), v2);
+
+                    self.store = s;
                 }
             }
-            if !matches!(e.is_stream(), None) {
-                self.streams.insert(id.clone(), e.clone());
-            }
-
-            // Globals contain reduced expressions e.g. functions, values, streams, etc.
-            self.globals.insert(id.clone(), e);
-            self.store = s;
         }
-
-        // Find non-stream nodes to remove but update edges appropriately
-        let clone = flow_graph.clone();
-        let mut to_remove = Vec::new();
-        for node in clone.node_indices() {
-            if self.streams.contains_key(&flow_graph[node]) {
-                continue;
-            }
-            // Connect all incoming edges with all outgoing edges
-            let incoming = clone.edges_directed(node, Direction::Incoming);
-            let outgoing = clone.edges_directed(node, Direction::Outgoing);
-            for e_in in incoming {
-                for e_out in outgoing.clone() {
-                    flow_graph.add_edge(e_in.source(), e_out.target(), ());
-                }
-            }
-            to_remove.push(node);
-        }
-
-        // Remove all non-stream nodes
-        for i in 0..to_remove.len() {
-            let (mut max, mut max_i) = (0, 0);
-            // When node is removed, last node takes its place, so we update the list
-            for (i, node) in to_remove.iter().enumerate() {
-                if node.index() > max {
-                    (max, max_i) = (node.index(), i);
-                }
-            }
-            if max == flow_graph.node_count() - 1 {
-                to_remove[max_i] = to_remove[i];
-            }
-            flow_graph.remove_node(to_remove[i]);
-        }
-
-        // Warning: Breaks with cycles though these will fail in type checking
-        // Topological sort makes sure dependencies are evaluated before dependents
-        self.eval_order = petgraph::algo::toposort(
-            &flow_graph,
-            Some(&mut petgraph::algo::DfsSpace::new(&flow_graph)),
-        )
-        .unwrap()
-        .into_iter()
-        .map(|i| flow_graph[i].clone())
-        .collect();
-
         Ok(())
     }
 
@@ -145,7 +114,8 @@ impl Interpreter {
                 None => (),
             }
 
-            self.streams.insert(stream, e);
+            self.streams.insert(stream.clone(), e.clone());
+            self.globals.insert(stream, e);
         }
         Ok(())
     }
@@ -368,13 +338,14 @@ impl Interpreter {
                 Err(NoPatternMatchesError(format!("{:?}", e)).into())
             }
             Var(x) => {
-                let opt = self.streams.get(&x).map(|e| e.clone());
+                let opt = self.globals.get(&x).map(|e| e.clone());
                 match opt {
-                    None => match self.globals.get(&x) {
-                        None => Err(UnboundVariableError(x).into()),
-                        Some(v) => Ok((v.clone(), s)),
-                    },
+                    None => Err(UnboundVariableError(x).into()),
                     Some(v) => {
+                        if matches!(self.streams.get(&x), None) {
+                            return Ok((v, s));
+                        }
+
                         // Allocate a location for the stream
                         let loc = match s.streams.get(&x) {
                             None => self.allocator.alloc(),
@@ -465,6 +436,7 @@ impl Interpreter {
     pub fn step(&mut self) -> Result<()> {
         let streams = self.streams.clone();
         for (stream, expr) in streams {
+            self.globals.insert(stream.clone(), expr.clone());
             match expr.is_stream() {
                 Some((e, loc)) => {
                     // Take the current value and pass it to the outputs
@@ -472,7 +444,6 @@ impl Interpreter {
                     // Update the stream's term to the stream on the next time
                     self.streams
                         .insert(stream.clone(), Expr::Adv(Box::new(loc.clone())));
-                    self.globals.insert(stream, Expr::Adv(Box::new(loc)));
                 }
                 None => return Err(ExpressionDoesNotStepError(format!("{:?}", expr)).into()),
             }

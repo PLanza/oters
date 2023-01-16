@@ -7,8 +7,8 @@ use oters::parser;
 use oters::types::check::ProgramChecker;
 
 #[export_oters]
-fn print_int(i: i64) {
-    println!("{}", i);
+fn print_int(i: i64, s: String) {
+    println!("{}: {}", s, i);
 }
 
 export_list!();
@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     let exprs = checker.type_check_program(&program)?;
 
     let mut interpreter = Interpreter::new(exprs, EXPORT_FNS.clone())?;
-    interpreter.eval_loop()?;
-
-    Ok(())
+    loop {
+        interpreter.eval_step()?;
+    }
 }

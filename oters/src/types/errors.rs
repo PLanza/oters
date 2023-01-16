@@ -1,4 +1,5 @@
 use super::Type;
+use crate::exprs::Expr;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -35,4 +36,6 @@ pub enum TypeError {
     EnumsDoNotMatch,
     #[error("Type {0} not stable")]
     ExpectedStableType(Type),
+    #[error("Mutually recursive definition {0} must produce a Stream")]
+    InvalidMutuallyRecursiveDefinition(Expr),
 }

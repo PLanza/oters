@@ -6,7 +6,6 @@ use crate::types::{Type, TypeError};
 
 use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
-use std::ops::RangeBounds;
 use std::rc::Rc;
 
 use anyhow::{Ok, Result};
@@ -24,6 +23,12 @@ pub enum VarTerm {
 pub struct VarContext {
     pub(crate) terms: Vec<VarTerm>,
     pub(crate) ticks: Vec<usize>, // Locations of ticks within the context
+}
+
+#[derive(Clone, Debug)]
+pub enum LetBinding {
+    Let(String, Expr),
+    LetAndWith(String, Expr, String, Expr, Expr),
 }
 
 // The actual expressions of the language.
