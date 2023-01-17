@@ -1,6 +1,37 @@
-let btn = 
-  draw_ui (Button(
-    "Click Me!", 
-    (200, 100), 
-    Color{r: 15, g: 167, b: 208, a: 255}
-  ), (0,0)) << @btn
+let button = fn f_id size content -> {
+  let btn_id = create_button (f_id, size);
+  let aux = fn content -> 
+    match content with {
+      label << content => draw_button (f_id, btn_id, label) << @(aux !@content),
+    };
+  (btn_id, aux content)
+}
+
+let vgroup = fn f_id size elems -> {
+  let grp_id = create_vgroup (f_id,size);
+  let aux = fn elems -> match elems with {
+    elems_now << elems_later => draw_vgroup (f_id, grp_id, elems_now) << @(aux !@elems_later)
+  };
+  (grp_id, aux elems)
+}
+
+let const = fn #val -> val << @(const val)
+
+let menu = frame ((0,0), (200, 500))
+
+let my_btn = button menu (100, 50) (const "Click me!") 
+
+let grp_elems = match my_btn with {
+  (btn_id, _) => [btn_id] << @(grp_elems),
+}
+
+let group = match vgroup menu (200, 500) grp_elems with {
+  (grp_id, stream) => {
+    attach_root (menu, grp_id);
+    stream
+  }
+}
+
+let my_btn_in = match my_btn with {
+  (_, stream) => stream
+}

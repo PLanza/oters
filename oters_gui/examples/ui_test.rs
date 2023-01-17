@@ -2,11 +2,10 @@ extern crate oters_gui;
 
 use anyhow::Result;
 
-use oters::export::{export_list, export_oters};
+use oters::export::export_list;
 use oters::interpret::Interpreter;
 use oters::parser;
 use oters::types::check::ProgramChecker;
-use oters_gui::*;
 
 use macroquad::prelude::*;
 
