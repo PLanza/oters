@@ -14,7 +14,9 @@ fn main() -> Result<()> {
     let exprs = checker.type_check_program(&program)?;
 
     let mut interpreter = Interpreter::new(exprs, HashMap::new())?;
-    interpreter.eval_loop()?;
+    loop {
+        interpreter.eval_step()?;
+    }
 
     Ok(())
 }

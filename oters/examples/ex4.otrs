@@ -31,19 +31,20 @@ let head = fn stream ->
     x << xs => x
   }
 
-let print_loop_10 = print_int ((head loop_10), "loop_10") << @print_loop_10
+let print_loop_10 = print_int (head loop_10) << @print_loop_10
+
+let contains = fn xs v -> 
+  match xs with {
+    [] => false,
+    x::xs => 
+      if v == x then
+        true
+      else 
+        contains xs v
+  }
 
 let print_contains = {
-  let contains = fn xs v -> 
-    match xs with {
-      [] => false,
-      x::xs => 
-        if v == x then
-          true
-        else 
-          contains xs v
-    };
-  (if contains [0,1,2,3,4] (head loop_10) then print_int ((head loop_10), "contains") else ()) << @print_contains
+    (if contains [0,1,2,3,4] (head loop_10) then print_int (head loop_10) else ()) << @print_contains
 }
 
 let chicken = 
@@ -56,4 +57,4 @@ and egg =
     }) << @egg
 with 0
 
-let print_egg = (print_int ((head egg), "egg")) << @print_egg
+let print_egg = print_int (head egg) << @print_egg

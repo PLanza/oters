@@ -15,11 +15,10 @@ use anyhow::Result;
 pub struct Interpreter {
     allocator: Allocator,
     globals: HashMap<String, Expr>,
-    streams: HashMap<String, Expr>,
     eval_order: Vec<String>,
     imports: ExportFns,
     store: Store,
-    stream_outs: HashMap<String, Expr>,
+    mut_rec_streams: HashMap<String, Expr>,
 }
 
 // Potentially change locations to be shared references
@@ -27,7 +26,6 @@ pub struct Interpreter {
 pub struct Store {
     pub(super) now: HashMap<u64, Expr>,
     pub(super) later: HashMap<u64, Expr>,
-    pub(super) streams: HashMap<String, u64>,
 }
 
 impl Interpreter {
@@ -35,11 +33,10 @@ impl Interpreter {
         let mut interp = Interpreter {
             allocator: Allocator::new(),
             globals: HashMap::new(),
-            streams: HashMap::new(),
             eval_order: Vec::new(),
             imports,
             store: Store::new(),
-            stream_outs: HashMap::new(),
+            mut_rec_streams: HashMap::new(),
         };
         interp.init(bindings)?;
 
@@ -53,13 +50,9 @@ impl Interpreter {
                     // Reduce all the expressions
                     let (e, s) = self.eval(expr.clone(), self.store.clone())?;
 
-                    if !matches!(e.is_stream(), None) {
-                        self.streams.insert(id.clone(), e.clone());
-                        self.eval_order.push(id.clone());
-                    }
-
                     // Globals contain reduced expressions e.g. functions, values, streams, etc.
                     self.globals.insert(id.clone(), e);
+                    self.eval_order.push(id);
                     self.store = s;
                 }
 
@@ -75,14 +68,13 @@ impl Interpreter {
                     self.globals.insert(y.clone(), y_str.clone());
 
                     let (v1, s) = self.eval(e1.clone(), s)?;
-                    self.streams.insert(x.clone(), v1.clone());
                     self.eval_order.push(x.clone());
                     self.globals.insert(x.clone(), v1);
 
                     let (v2, s) = self.eval(e2.clone(), s)?;
-                    self.streams.insert(y.clone(), v2.clone());
                     self.eval_order.push(y.clone());
-                    self.globals.insert(y.clone(), v2);
+                    self.globals.insert(y.clone(), v2.clone());
+                    self.mut_rec_streams.insert(y, v2);
 
                     self.store = s;
                 }
@@ -92,61 +84,20 @@ impl Interpreter {
     }
 
     pub fn eval_step(&mut self) -> Result<()> {
-        if self.streams.len() == 0 {
-            return Ok(());
-        }
+        self.step();
 
-        self.step()?;
-        for stream in self.eval_order.clone() {
+        for var in self.eval_order.clone() {
             // println!("{}: {}", stream, self.stream_outs.get(&stream).unwrap());
-            // println!("{}", self.streams.get(&stream).unwrap());
-            // println!("{:?}\n", self.store);
-            let e = self.streams.get(&stream).unwrap().clone();
+            // println!("{}: {}", var, self.globals.get(&var).unwrap());
+            // println!("{:?}\n", self.store.now.keys());
+            let e = self.globals.get(&var).unwrap().clone();
 
             let (e, s) = self.eval(e, self.store.clone())?;
             self.store = s;
 
-            match self.store.streams.get(&stream) {
-                Some(loc) => {
-                    let replacement = e.replace_stream_loc(*loc).unwrap();
-                    self.store.now.insert(*loc, replacement);
-                }
-                None => (),
-            }
-
-            self.streams.insert(stream.clone(), e.clone());
-            self.globals.insert(stream, e);
+            self.globals.insert(var.clone(), e);
         }
         Ok(())
-    }
-
-    pub fn eval_loop(&mut self) -> Result<()> {
-        if self.streams.len() == 0 {
-            return Ok(());
-        }
-
-        loop {
-            self.step()?;
-            for stream in self.eval_order.clone() {
-                // println!("{}: {}", stream, self.stream_outs.get(&stream).unwrap());
-                // println!("{}", self.streams.get(&stream).unwrap());
-                // println!("{:?}\n", self.store);
-                let e = self.streams.get(&stream).unwrap().clone();
-
-                let (e, s) = self.eval(e, self.store.clone())?;
-                self.store = s;
-
-                match self.store.streams.get(&stream) {
-                    Some(loc) => {
-                        let replacement = e.replace_stream_loc(*loc).unwrap();
-                        self.store.now.insert(*loc, replacement);
-                    }
-                    None => (),
-                }
-
-                self.streams.insert(stream, e);
-            }
-        }
     }
 
     pub fn eval(&mut self, e: Expr, s: Store) -> Result<(Expr, Store)> {
@@ -191,7 +142,6 @@ impl Interpreter {
                             Store {
                                 now: _s_n.now,
                                 later: s.later,
-                                streams: _s_n.streams,
                             },
                         ),
                     },
@@ -337,33 +287,16 @@ impl Interpreter {
                 }
                 Err(NoPatternMatchesError(format!("{:?}", e)).into())
             }
-            Var(x) => {
-                let opt = self.globals.get(&x).map(|e| e.clone());
-                match opt {
-                    None => Err(UnboundVariableError(x).into()),
-                    Some(v) => {
-                        if matches!(self.streams.get(&x), None) {
-                            return Ok((v, s));
-                        }
-
-                        // Allocate a location for the stream
-                        let loc = match s.streams.get(&x) {
-                            None => self.allocator.alloc(),
-                            Some(loc) => *loc,
-                        };
-
-                        let mut s = s.clone();
-                        let stream = v.replace_stream_loc(loc).unwrap();
-                        s.extend(loc, stream.clone());
-
-                        // Map the stream to the location
-                        s.streams.insert(x.clone(), loc);
-                        s.now.insert(loc, stream.clone());
-
-                        Ok((stream, s))
+            Var(x) => match self.globals.get(&x) {
+                None => Err(UnboundVariableError(x).into()),
+                Some(v) => {
+                    if let Some(stream) = self.mut_rec_streams.get(&x) {
+                        Ok((stream.clone(), s))
+                    } else {
+                        Ok((v.clone(), s))
                     }
                 }
-            }
+            },
             LetIn(var, e1, e2) => {
                 let (val, _s) = self.eval(*e1.clone(), s)?;
                 match &val {
@@ -433,43 +366,23 @@ impl Interpreter {
     }
 
     // Step an expression e, forward
-    pub fn step(&mut self) -> Result<()> {
-        let streams = self.streams.clone();
-        for (stream, expr) in streams {
-            self.globals.insert(stream.clone(), expr.clone());
-            match expr.is_stream() {
-                Some((e, loc)) => {
-                    // Take the current value and pass it to the outputs
-                    self.stream_outs.insert(stream.clone(), e);
-                    // Update the stream's term to the stream on the next time
-                    self.streams
-                        .insert(stream.clone(), Expr::Adv(Box::new(loc.clone())));
-                }
-                None => return Err(ExpressionDoesNotStepError(format!("{:?}", expr)).into()),
-            }
+    pub fn step(&mut self) {
+        for (var, stream) in self.mut_rec_streams.iter_mut() {
+            *stream = self.globals.get(var).unwrap().clone();
+        }
+
+        let globals = self.globals.clone();
+        for (var, expr) in globals {
+            self.globals.insert(var, expr.step_value());
         }
         self.update_store();
-
-        Ok(())
     }
 
     pub fn update_store(&mut self) {
-        let mut to_dealloc: HashSet<u64> = self.store.now.keys().cloned().collect();
+        let to_dealloc: HashSet<u64> = self.store.now.keys().cloned().collect();
         self.store.now = self.store.later.clone();
         self.store.later = HashMap::new();
 
-        use Expr::{Into, Location, Tuple};
-        for (stream, loc) in &self.store.streams {
-            self.store.now.insert(
-                *loc,
-                Into(Box::new(Tuple(vec![
-                    Box::new(self.stream_outs.get(stream).unwrap().clone()),
-                    Box::new(Location(*loc)),
-                ]))),
-            );
-            self.store.later.insert(*loc, Expr::Unit);
-            to_dealloc.remove(loc);
-        }
         self.allocator.dealloc_set(to_dealloc);
     }
 
@@ -676,7 +589,6 @@ impl Store {
         Store {
             now: HashMap::new(),
             later: HashMap::new(),
-            streams: HashMap::new(),
         }
     }
 
@@ -688,7 +600,6 @@ impl Store {
         Self {
             now: self.now.clone(),
             later: HashMap::new(),
-            streams: self.streams.clone(),
         }
     }
 }
@@ -732,6 +643,40 @@ impl Expr {
                 _ => None,
             },
             _ => None,
+        }
+    }
+
+    fn step_value(&self) -> Expr {
+        use Expr::*;
+        match self {
+            Bool(_) | Int(_) | Float(_) | String(_) | Unit | Var(_) | Location(_) | Fn(..)
+            | Fix(..) => self.clone(),
+            Stable(v) => Stable(Box::new(v.step_value())),
+            Into(v) => match *v.clone() {
+                Tuple(pair) => {
+                    if pair.len() == 2 {
+                        if let Location(loc) = *pair[1] {
+                            Adv(Box::new(Location(loc)))
+                        } else {
+                            Into(Box::new(v.step_value()))
+                        }
+                    } else {
+                        Into(Box::new(v.step_value()))
+                    }
+                }
+                _ => Into(Box::new(v.step_value())),
+            },
+            List(list) => List(list.iter().map(|v| Box::new(v.step_value())).collect()),
+            Tuple(tuple) => Tuple(tuple.iter().map(|v| Box::new(v.step_value())).collect()),
+            Struct(name, fields) => Struct(
+                name.clone(),
+                fields
+                    .iter()
+                    .map(|(f, v)| (f.clone(), Box::new(v.step_value())))
+                    .collect(),
+            ),
+            Variant(name, v) => Variant(name.clone(), v.clone().map(|v| Box::new(v.step_value()))),
+            _ => unreachable!("Not a value"),
         }
     }
 }

@@ -7,8 +7,8 @@ use oters::parser;
 use oters::types::check::ProgramChecker;
 
 #[export_oters]
-fn print_int(i: i64, s: String) {
-    println!("{}: {}", s, i);
+fn print_int(i: i64) {
+    println!("{}", i);
 }
 
 export_list!();

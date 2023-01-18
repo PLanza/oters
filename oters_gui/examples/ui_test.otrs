@@ -51,16 +51,3 @@ let group = match vgroup menu (200, 500) grp_elems with {
   }
 }
 
-let my_btn_in = match my_btn with {
-  (_, stream) => stream
-}
-
-let my_checkbox_in = match my_cbx with {
-  (_, stream) => stream
-}
-
-let my_label = match my_lab with {
-  (_, stream) => stream
-}
-
-
