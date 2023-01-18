@@ -1,6 +1,10 @@
 pub mod button;
+pub mod checkbox;
+pub mod label;
 pub mod vgroup;
 pub use button::*;
+pub use checkbox::*;
+pub use label::*;
 pub use vgroup::*;
 
 use std::sync::Mutex;
@@ -25,6 +29,8 @@ pub struct Frame {
 enum UIType {
     Button,
     VGroup,
+    Checkbox(bool),
+    Label,
 }
 
 #[derive(Debug, Clone, Copy)]

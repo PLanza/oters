@@ -419,7 +419,7 @@ impl Expr {
             List(v) => {
                 let mut list = VecDeque::new();
                 for e in v {
-                    list.push_front(Box::new(e.single_tick(new_vs)));
+                    list.push_back(Box::new(e.single_tick(new_vs)));
                 }
 
                 List(list)
