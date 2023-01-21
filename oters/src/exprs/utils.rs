@@ -69,7 +69,7 @@ impl Display for Expr {
                 write!(f, "{}", str)
             }
             Var(x) => write!(f, "{}", x),
-            LetIn(x, e1, e2) => write!(f, "let {} = {} in\n{}", x, e1, e2),
+            LetIn(pat, e1, e2) => write!(f, "let {} = {} in\n{}", pat, e1, e2),
             Location(i) => write!(f, "loc {}", i),
         }
     }

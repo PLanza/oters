@@ -27,7 +27,7 @@ pub struct VarContext {
 
 #[derive(Clone, Debug)]
 pub enum LetBinding {
-    Let(String, Expr),
+    Let(Pattern, Expr),
     LetAndWith(String, Expr, String, Expr, Expr),
 }
 
@@ -42,13 +42,13 @@ pub enum Expr {
     Unit,
     BinOp(Box<Expr>, BOpcode, Box<Expr>),
     UnOp(UOpcode, Box<Expr>),
-    Delay(Box<Expr>),          // From Patrick Bahr's Rattus
-    Stable(Box<Expr>),         // From Patrick Bahr's Rattus
-    Adv(Box<Expr>),            // From Patrick Bahr's Rattus
-    Unbox(Box<Expr>),          // From Patrick Bahr's Rattus
-    Out(Box<Expr>),            // From Patrick Bahr's Rattus
-    Into(Box<Expr>),           // From Patrick Bahr's Rattus
-    List(VecDeque<Box<Expr>>), // Should change to other data structure
+    Delay(Box<Expr>),  // From Patrick Bahr's Rattus
+    Stable(Box<Expr>), // From Patrick Bahr's Rattus
+    Adv(Box<Expr>),    // From Patrick Bahr's Rattus
+    Unbox(Box<Expr>),  // From Patrick Bahr's Rattus
+    Out(Box<Expr>),    // From Patrick Bahr's Rattus
+    Into(Box<Expr>),   // From Patrick Bahr's Rattus
+    List(VecDeque<Box<Expr>>),
     Tuple(Vec<Box<Expr>>),
     Struct(String, Vec<(String, Box<Expr>)>),
     Variant(String, Option<Box<Expr>>),
@@ -60,8 +60,8 @@ pub enum Expr {
     ProjStruct(Box<Expr>, String),
     Match(Box<Expr>, Vec<(Pattern, Box<Expr>)>),
     Var(String),
-    LetIn(String, Box<Expr>, Box<Expr>), // Should change to let x = t in e
-    Location(u64),                       // Only created by the interpreter
+    LetIn(Pattern, Box<Expr>, Box<Expr>),
+    Location(u64), // Only created by the interpreter
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -167,28 +167,51 @@ impl Expr {
 
                 match *head {
                     // Convert {let x = e1; e2} to let x = e1 in e2
-                    PExpr::Let(var, e) => {
+                    PExpr::Let(pat, e) => {
                         let expr = Expr::from_pexpr(*e.clone())?;
-                        // If e is recursive within one time step
 
-                        // Recursive variables are translated to fix points to ensure guarded recursion
-                        let fix_var = format!("_rec{}", var);
-                        let (is_rec, rec_e) = expr.clone().substitute(
-                            &var,
-                            &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))),
-                        );
-                        // But only if they're guarded recursive expressions
-                        if !(matches!(expr, Expr::Fn(..)) && expr.is_static_recursive(&var))
-                            && is_rec
-                        {
+                        // Recursive variables are translated to fix points to ensure guarded recursion...
+                        let (mut rec_e, mut is_rec) = (expr.clone(), false);
+                        for var in pat.vars() {
+                            let fix_var = format!("_rec{}", var);
+                            let temp = rec_e.clone().substitute(
+                                &var,
+                                &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(
+                                    fix_var.clone(),
+                                ))))),
+                            );
+                            is_rec |= temp.0;
+                            rec_e = if temp.0 {
+                                Expr::Fix(fix_var, Box::new(temp.1))
+                            } else {
+                                rec_e
+                            };
+                        }
+
+                        match pat.clone() {
+                            Pattern::Var(var) => {
+                                // If e is "traditionally" recursive in the same time step
+                                if matches!(expr, Expr::Fn(..)) && expr.is_static_recursive(&var) {
+                                    return Ok(Expr::LetIn(
+                                        pat,
+                                        Box::new(expr),
+                                        Box::new(Expr::from_pexpr(PExpr::Block(tail))?),
+                                    ));
+                                }
+                            }
+                            _ => (),
+                        };
+
+                        if is_rec {
+                            // ...but only if they're guarded recursive expressions
                             Ok(Expr::LetIn(
-                                var.clone(),
-                                Box::new(Expr::Fix(fix_var, Box::new(rec_e))),
+                                pat,
+                                Box::new(rec_e),
                                 Box::new(Expr::from_pexpr(PExpr::Block(tail))?),
                             ))
                         } else {
                             Ok(Expr::LetIn(
-                                var,
+                                pat,
                                 Box::new(expr),
                                 Box::new(Expr::from_pexpr(PExpr::Block(tail))?),
                             ))
@@ -375,14 +398,14 @@ impl Expr {
                     (false, Var(s))
                 }
             }
-            LetIn(x, e1, e2) => {
+            LetIn(pat, e1, e2) => {
                 // Tighter binding variable
-                if x == var.clone() {
-                    (false, LetIn(x, e1, e2))
+                if pat.contains(var) {
+                    (false, LetIn(pat, e1, e2))
                 } else {
                     let (b1, e1_) = e1.substitute(var, term);
                     let (b2, e2_) = e2.substitute(var, term);
-                    (b1 || b2, LetIn(x, Box::new(e1_), Box::new(e2_)))
+                    (b1 || b2, LetIn(pat, Box::new(e1_), Box::new(e2_)))
                 }
             }
         }
@@ -405,7 +428,7 @@ impl Expr {
                 match r {
                     None => Delay(Box::new(e.single_tick(new_vs))),
                     Some(r_e) => LetIn(
-                        format!("_d{}", new_vs),
+                        Pattern::Var(format!("_d{}", new_vs)),
                         Box::new(r_e),
                         Box::new(Delay(Box::new(sub_e)).single_tick(new_vs + 1)),
                     ),
@@ -450,7 +473,7 @@ impl Expr {
                 match r {
                     None => Fn(var.clone(), Box::new(e.single_tick(new_vs))),
                     Some(r_e) => LetIn(
-                        format!("_d{}", new_vs),
+                        Pattern::Var(format!("_d{}", new_vs)),
                         Box::new(Adv(Box::new(r_e))),
                         Box::new(Fn(var.clone(), Box::new(sub_e)).single_tick(new_vs + 1)),
                     ),
@@ -634,13 +657,13 @@ impl Expr {
                 }
                 (r_ret, Match(Box::new(e), ret_es))
             }
-            LetIn(var, e1, e2) => {
+            LetIn(pat, e1, e2) => {
                 let (r1, e1) = e1.sub_single_tick(sub_var, for_fn);
                 if !matches!(r1, None) {
-                    (r1, LetIn(var.clone(), Box::new(e1), e2.clone()))
+                    (r1, LetIn(pat.clone(), Box::new(e1), e2.clone()))
                 } else {
                     let (r2, e2) = e2.sub_single_tick(sub_var, for_fn);
-                    (r2, LetIn(var.clone(), Box::new(e1), Box::new(e2)))
+                    (r2, LetIn(pat.clone(), Box::new(e1), Box::new(e2)))
                 }
             }
             Location(_) => unreachable!("Locations should only appear during interpretation"),
@@ -689,8 +712,9 @@ impl Expr {
                     })
             }
             Var(var) => var == name,
-            LetIn(var, e1, e2) => {
-                !(var == name) && (e1.is_static_recursive(name) || e2.is_static_recursive(name))
+            LetIn(pat, e1, e2) => {
+                !(pat.contains(name))
+                    && (e1.is_static_recursive(name) || e2.is_static_recursive(name))
             }
         }
     }
@@ -888,6 +912,58 @@ impl Pattern {
             Stream(p1, p2) => p1.contains(var) || p2.contains(var),
             Or(p1, p2) => p1.contains(var) || p2.contains(var),
             Var(x) => x == var,
+        }
+    }
+
+    // Returns all the variables in the pattern
+    pub fn vars(&self) -> Vec<String> {
+        use Pattern::*;
+        match self {
+            Underscore | Bool(_) | Int(_) | Float(_) | String(_) | Unit => Vec::new(),
+            Tuple(ps) => {
+                let mut ret = Vec::new();
+                for p in ps {
+                    ret.append(&mut p.vars());
+                }
+                ret
+            }
+            List(ps) => {
+                let mut ret = Vec::new();
+                for p in ps {
+                    ret.append(&mut p.vars())
+                }
+                ret
+            }
+            Variant(_, o) => match o {
+                None => Vec::new(),
+                Some(p) => p.vars(),
+            },
+            Struct(_, fields) => {
+                let mut ret = Vec::new();
+                for (field, o) in fields {
+                    match o {
+                        None => ret.push(field.clone()),
+                        Some(p) => ret.append(&mut p.vars()),
+                    }
+                }
+                ret
+            }
+            Cons(p1, p2) => {
+                let mut ret = p1.vars();
+                ret.append(&mut p2.vars());
+                ret
+            }
+            Stream(p1, p2) => {
+                let mut ret = p1.vars();
+                ret.append(&mut p2.vars());
+                ret
+            }
+            Or(p1, p2) => {
+                let mut ret = p1.vars();
+                ret.append(&mut p2.vars());
+                ret
+            }
+            Var(x) => vec![x.clone()],
         }
     }
 }

@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::{exprs::Expr, parser::ast::Pattern};
+
 #[derive(Error, Debug)]
 pub enum InterpretError {
     #[error("Uncaught type error in expression {0}")]
@@ -11,7 +13,7 @@ pub enum InterpretError {
     #[error("Field {0} missing in expression {1}")]
     StructFieldMissingError(String, String),
     #[error("Pattern {0} doesn't match {1}")]
-    PatternMatchError(String, String),
+    PatternMatchError(Pattern, Expr),
     #[error("No pattern matches expression {0}")]
     NoPatternMatchesError(String),
     #[error("Expression {0} cannot take a step forward")]

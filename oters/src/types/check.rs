@@ -115,75 +115,105 @@ impl ProgramChecker {
                     // Add struct to the type declarations
                     self.type_decs.insert(id.clone(), t);
                 }
-                PExpr::Let(id, expr) => {
+                PExpr::Let(pat, expr) => {
                     let mut e = Expr::from_pexpr(*expr.clone())?;
 
                     let mut ctx = VarContext::new();
 
                     // If e is recursive within one time step
-                    let ret_type = if matches!(e, Expr::Fn(..)) && e.is_static_recursive(&id) {
-                        // Add a recursive variable into the context
-                        let t = Type::Function(
-                            Box::new(Type::GenericVar(self.fresh_type_var(), false)),
-                            Box::new(Type::GenericVar(self.fresh_type_var(), false)),
-                        );
-                        ctx.push_var(id.clone(), t.clone());
-                        Some(t)
-                    } else {
-                        None
+                    let ret_type = match pat {
+                        Pattern::Var(var) => {
+                            if matches!(e, Expr::Fn(..)) && e.is_static_recursive(&var) {
+                                // Add a recursive variable into the context
+                                let t = Type::Function(
+                                    Box::new(Type::GenericVar(self.fresh_type_var(), false)),
+                                    Box::new(Type::GenericVar(self.fresh_type_var(), false)),
+                                );
+                                ctx.push_var(var.clone(), t.clone());
+                                Some(t)
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
                     };
 
                     if matches!(ret_type, None) {
                         // If e is a recursive variable then convert it into a fix expression
-                        let fix_var = format!("rec_{}", id);
-                        let (is_rec, rec_e) = e.clone().substitute(
-                            &id,
-                            &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(fix_var.clone()))))),
-                        );
-                        e = if is_rec {
-                            Expr::Fix(fix_var, Box::new(rec_e))
-                        } else {
-                            e
-                        };
+                        for var in pat.vars() {
+                            let fix_var = format!("rec_{}", var);
+                            // Recursive variables are translated to fix points to ensure guarded recursion...
+                            let (is_rec, rec_e) = e.clone().substitute(
+                                &var,
+                                &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(
+                                    fix_var.clone(),
+                                ))))),
+                            );
+                            e = if is_rec {
+                                Expr::Fix(fix_var, Box::new(rec_e))
+                            } else {
+                                e
+                            };
+                        }
                     }
 
                     // Convert to Rattus λ✓
                     e = e.single_tick(0);
 
                     // Type check the expression
-                    let mut t = self.infer(&e, ctx)?;
+                    let t = self.infer(&e, ctx)?;
+                    let (t_pat, vars) = self.check_pattern(pat.clone())?;
 
+                    // Unify binding pattern type and expression type
+                    let mut constraints = VecDeque::from([(t.clone(), t_pat)]);
+
+                    // Unify recrusive variable and return type
                     if let Some(rec_t) = ret_type {
-                        let mut subs = unify(VecDeque::from([(t.clone(), rec_t)]))?;
-                        self.substitutions.append(&mut subs);
+                        constraints.push_back((t, rec_t));
                     }
+                    let mut subs = unify(constraints)?;
+
+                    self.substitutions.append(&mut subs);
 
                     // Unify the substitutions
                     self.unify_subs()?;
 
-                    // Apply the substitutions
-                    t = t.apply_subs(&self.substitutions);
+                    for (var, t) in vars {
+                        // Apply the substitutions
+                        let mut t = t.apply_subs(&self.substitutions);
 
-                    // Convert free variables to generics
-                    let free_vars = t.get_free_vars();
+                        // Convert free variables to generics
+                        let free_vars = t.get_free_vars();
 
-                    let t = if !free_vars.is_empty() {
-                        Type::Generic(free_vars.into_iter().collect(), Box::new(t))
-                    } else {
-                        t
-                    };
+                        t = if !free_vars.is_empty() {
+                            Type::Generic(free_vars.into_iter().collect(), Box::new(t))
+                        } else {
+                            t
+                        };
 
-                    // Make sure the resulting type is well formed
-                    t.well_formed(TypeContext::new())?;
-                    println!("{}", t);
+                        // Make sure the resulting type is well formed
+                        t.well_formed(TypeContext::new())?;
+                        println!("{}: {}", var, t);
 
-                    // Add it to the map of value declarations
-                    self.value_decs.insert(id.clone(), t);
+                        // Add it to the map of value declarations
+                        self.value_decs.insert(var.clone(), t);
+                    }
+
                     self.substitutions = Vec::new();
 
-                    checked_exprs.push(LetBinding::Let(id.clone(), e));
+                    checked_exprs.push(LetBinding::Let(pat.clone(), e));
                 }
-                PExpr::LetAndWith(x, e1, y, e2, e3) => {
+                PExpr::LetAndWith(pat1, e1, pat2, e2, e3) => {
+                    let (x, y) = match (pat1, pat2) {
+                        (Pattern::Var(x), Pattern::Var(y)) => (x, y),
+                        _ => {
+                            return Err(TypeError::InvalidMutuallyRecursiveDefinition(
+                                Expr::from_pexpr(*e1.clone())?,
+                            )
+                            .into())
+                        }
+                    };
+
                     // Γ ⊢ 𝑒₃ ∶ 𝑡₂
                     let mut e3 = Expr::from_pexpr(*e3.clone())?;
                     e3 = e3.single_tick(0);
@@ -682,46 +712,59 @@ impl ProgramChecker {
                     None => Err(e),
                 },
             },
-            LetIn(var, e1, e2) => {
+            LetIn(pat, e1, e2) => {
                 let mut ctx1 = ctx.clone();
                 // If e is recursive within one time step
-                let t_e_ = if matches!(*e1.clone(), Expr::Fn(..)) && e1.is_static_recursive(&var) {
-                    // Add a recursive variable into the context
-                    let t = Type::Function(
-                        Box::new(Type::GenericVar(self.fresh_type_var(), false)),
-                        Box::new(Type::GenericVar(self.fresh_type_var(), false)),
-                    );
-                    ctx1.push_var(var.clone(), t.clone());
-                    Some(t)
-                } else {
-                    None
+                let t_e_ = match pat {
+                    Pattern::Var(var) => {
+                        if matches!(*e1.clone(), Expr::Fn(..)) && e1.is_static_recursive(&var) {
+                            // Add a recursive variable into the context
+                            let t = Type::Function(
+                                Box::new(Type::GenericVar(self.fresh_type_var(), false)),
+                                Box::new(Type::GenericVar(self.fresh_type_var(), false)),
+                            );
+                            ctx1.push_var(var.clone(), t.clone());
+                            Some(t)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
                 };
 
                 // Similar to top level let
-                let mut t_e = self.infer(&e1, ctx1.clone())?;
+                let t_e = self.infer(&e1, ctx1.clone())?;
+                let (t_pat, vars) = self.check_pattern(pat.clone())?;
 
+                let mut constraints = VecDeque::from([(t_e.clone(), t_pat)]);
                 if let Some(rec_t) = t_e_ {
-                    let mut subs = unify(VecDeque::from([(t_e.clone(), rec_t)]))?;
-                    self.substitutions.append(&mut subs);
+                    constraints.push_back((t_e.clone(), rec_t));
                 }
+                let mut subs = unify(constraints)?;
+                self.substitutions.append(&mut subs);
+
                 self.unify_subs()?;
-                t_e = t_e.apply_subs(&self.substitutions);
-
-                let mut t_e_free_vars = t_e.get_free_vars();
-                let ctx_free_vars = ctx1.get_free_vars();
-
-                for var in ctx_free_vars {
-                    t_e_free_vars.remove(&var);
-                }
-
-                let t_let = if t_e_free_vars.is_empty() {
-                    t_e.clone()
-                } else {
-                    Type::Generic(t_e_free_vars.into_iter().collect(), Box::new(t_e.clone()))
-                };
 
                 let mut ctx = ctx.clone();
-                ctx.push_var(var.clone(), t_let);
+                for (let_var, t_var) in vars {
+                    let mut t_var = t_var.apply_subs(&self.substitutions);
+
+                    let mut t_var_free_vars = t_var.get_free_vars();
+                    let ctx_free_vars = ctx1.get_free_vars();
+
+                    for var in ctx_free_vars {
+                        t_var_free_vars.remove(&var);
+                    }
+
+                    t_var = if t_var_free_vars.is_empty() {
+                        t_var
+                    } else {
+                        Type::Generic(t_var_free_vars.into_iter().collect(), Box::new(t_e.clone()))
+                    };
+
+                    ctx.push_var(let_var.clone(), t_var);
+                }
+
                 Ok(self.infer(e2, ctx)?)
             }
             Location(_) => Err(InvalidExprError::IllegalLocation.into()),

@@ -46,13 +46,19 @@ impl Interpreter {
     fn init(&mut self, bindings: Vec<LetBinding>) -> Result<()> {
         for binding in bindings {
             match binding {
-                LetBinding::Let(id, expr) => {
+                LetBinding::Let(pat, expr) => {
                     // Reduce all the expressions
                     let (e, s) = self.eval(expr.clone(), self.store.clone())?;
 
-                    // Globals contain reduced expressions e.g. functions, values, streams, etc.
-                    self.globals.insert(id.clone(), e);
-                    self.eval_order.push(id);
+                    let (res, bound_vars) = Self::match_pattern(&e, &pat)?;
+                    if !res {
+                        return Err(PatternMatchError(pat, expr).into());
+                    }
+
+                    for (var, e) in bound_vars {
+                        self.globals.insert(var.clone(), e);
+                        self.eval_order.push(var);
+                    }
                     self.store = s;
                 }
 
@@ -297,19 +303,25 @@ impl Interpreter {
                     }
                 }
             },
-            LetIn(var, e1, e2) => {
+            LetIn(pat, e1, e2) => {
                 let (val, _s) = self.eval(*e1.clone(), s)?;
+                let (res, bound_vars) = Self::match_pattern(&val, &pat)?;
+                if !res {
+                    return Err(PatternMatchError(pat, *e1).into());
+                }
+
                 match &val {
                     Fn(arg, body) => {
                         // Substitution for recursive function according to Part 1B Semantics
-                        if val.is_static_recursive(&var) {
-                            self.eval(
+                        if bound_vars.len() == 1 && val.is_static_recursive(&bound_vars[0].0) {
+                            let var = bound_vars[0].0.clone();
+                            return self.eval(
                                 e2.substitute(
                                     &var,
                                     &Fn(
                                         arg.clone(),
                                         Box::new(LetIn(
-                                            var.clone(),
+                                            Pattern::Var(var.clone()),
                                             Box::new(val.clone()),
                                             body.clone(),
                                         )),
@@ -317,13 +329,17 @@ impl Interpreter {
                                 )
                                 .1,
                                 _s,
-                            )
-                        } else {
-                            self.eval(e2.substitute(&var, &val).1, _s)
+                            );
                         }
                     }
-                    _ => self.eval(e2.substitute(&var, &val).1, _s),
+                    _ => (),
                 }
+
+                let mut e2 = *e2;
+                for (var, val) in bound_vars {
+                    e2 = e2.substitute(&var, &val).1;
+                }
+                self.eval(e2, _s)
             }
         }
     }
@@ -398,7 +414,7 @@ impl Interpreter {
                         Ok((false, Vec::with_capacity(0)))
                     }
                 }
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             Int(i1) => match val {
                 Expr::Int(i2) => {
@@ -408,7 +424,7 @@ impl Interpreter {
                         Ok((false, Vec::with_capacity(0)))
                     }
                 }
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             Float(f1) => match val {
                 Expr::Float(f2) => {
@@ -418,7 +434,7 @@ impl Interpreter {
                         Ok((false, Vec::with_capacity(0)))
                     }
                 }
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             String(s1) => match val {
                 Expr::String(s2) => {
@@ -428,11 +444,11 @@ impl Interpreter {
                         Ok((false, Vec::with_capacity(0)))
                     }
                 }
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             Unit => match val {
                 Expr::Unit => Ok((true, Vec::with_capacity(0))),
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             Tuple(patterns) => match val.clone() {
                 Expr::Tuple(vals) => {
@@ -446,13 +462,10 @@ impl Interpreter {
                         }
                         Ok((matches, subs))
                     } else {
-                        Err(
-                            PatternMatchError(format!("{:?}", pattern), format!("{:?}", val))
-                                .into(),
-                        )
+                        Err(PatternMatchError(pattern.clone(), val.clone()).into())
                     }
                 }
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             List(patterns) => match val.clone() {
                 Expr::List(vals) => {
@@ -469,7 +482,7 @@ impl Interpreter {
                         Ok((false, Vec::with_capacity(0)))
                     }
                 }
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             Variant(c1, o1) => match val {
                 Expr::Variant(c2, o2) => {
@@ -483,39 +496,27 @@ impl Interpreter {
                         let (p, v) = (*o1.clone().unwrap(), *o2.clone().unwrap());
                         return Self::match_pattern(&v, &p);
                     }
-                    Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into())
+                    Err(PatternMatchError(pattern.clone(), val.clone()).into())
                 }
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             Struct(s1, patterns) => match val {
                 Expr::Struct(s2, vals) => {
                     if s1 != s2 {
-                        return Err(PatternMatchError(
-                            format!("{:?}", pattern),
-                            format!("{:?}", val),
-                        )
-                        .into());
+                        return Err(PatternMatchError(pattern.clone(), val.clone()).into());
                     }
 
                     let (mut matches, mut subs) = (true, Vec::new());
                     for (i, (field, o)) in patterns.into_iter().enumerate() {
                         if i >= vals.len() {
-                            return Err(PatternMatchError(
-                                format!("{:?}", pattern),
-                                format!("{:?}", val),
-                            )
-                            .into());
+                            return Err(PatternMatchError(pattern.clone(), val.clone()).into());
                         }
                         if field == &"..".to_string() {
                             break;
                         }
 
                         if field != &vals[i].0 {
-                            return Err(PatternMatchError(
-                                format!("{:?}", pattern),
-                                format!("{:?}", val),
-                            )
-                            .into());
+                            return Err(PatternMatchError(pattern.clone(), val.clone()).into());
                         }
 
                         let (b, mut ss) = match o {
@@ -528,7 +529,7 @@ impl Interpreter {
                     }
                     Ok((matches, subs))
                 }
-                _ => Err(PatternMatchError(format!("{}", pattern), format!("{}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             Cons(p1, p2) => match val {
                 Expr::List(vals) => {
@@ -539,24 +540,16 @@ impl Interpreter {
                     subs1.append(&mut subs2);
                     Ok((b1 && b2, subs1))
                 }
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             Stream(p1, p2) => match val {
                 Expr::Into(tuple) => match &**tuple {
                     Expr::Tuple(pair) => {
                         if pair.len() != 2 {
-                            return Err(PatternMatchError(
-                                format!("{:?}", pattern),
-                                format!("{:?}", val),
-                            )
-                            .into());
+                            return Err(PatternMatchError(pattern.clone(), val.clone()).into());
                         }
                         if !matches!(&*pair[1], Expr::Location(_)) {
-                            return Err(PatternMatchError(
-                                format!("{:?}", pattern),
-                                format!("{:?}", val),
-                            )
-                            .into());
+                            return Err(PatternMatchError(pattern.clone(), val.clone()).into());
                         }
 
                         let (b1, mut subs1) = Self::match_pattern(&pair[0], p1)?;
@@ -565,11 +558,9 @@ impl Interpreter {
                         subs1.append(&mut subs2);
                         Ok((b1 && b2, subs1))
                     }
-                    _ => Err(
-                        PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into(),
-                    ),
+                    _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
                 },
-                _ => Err(PatternMatchError(format!("{:?}", pattern), format!("{:?}", val)).into()),
+                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
             Or(p1, p2) => {
                 let (b, subs) = Self::match_pattern(val, p1)?;

@@ -1,33 +1,15 @@
-type Str<A> = (A, @Str)
-
-enum Option<T> {
-  None, 
-  Some T,
+let nats = {
+  let aux = fn n -> n << @(aux (n + 1));
+  aux 0 
 }
 
-type Event<A> = Str<Option<A>>
-
-let map = fn f xs ->
-  match xs with { 
-    x << xs => !#f x << @(map f !@xs),
-  }
-
-let scan = fn f #acc as ->
+let fold = fn f #acc as ->
   match as with {
     a << as => {
       let acc' = !#f acc a;
-      acc' << @(scan f acc' !@as)
+      acc' << @(fold f acc' !@as)
     }
   }
 
-let switch = fn xs es -> 
-  match (xs, es) with {
-    (x << xs, e << es) => match e with {
-      None => x << @(switch !@xs !@es),
-      Some (a << as) => a << @(switch !@as !@es)
-    }
-  }
+let _ = fold #(fn x y -> x + y) 0 nats
 
-let const = fn x -> !#x << @(const x)
-
-let twos = map #(fn x -> x + 1) (const #1)

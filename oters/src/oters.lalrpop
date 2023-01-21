@@ -302,12 +302,28 @@ PatternTerm: Box<Pattern> = {
 
 Pattern: Box<Pattern> = OrPattern;
 
+BindingPattern: Box<Pattern> = {
+  <BindingPatternTerm> "::" <BindingPattern> => Box::new(Pattern::Cons(<>)),
+  <BindingPatternTerm> "<<" <BindingPattern> => Box::new(Pattern::Stream(<>)),
+  BindingPatternTerm,
+}
+
+BindingPatternTerm: Box<Pattern> = {
+  <LowerId> => Box::new(Pattern::Var(<>)),
+  "_" => Box::new(Pattern::Underscore),
+  "(" <p: BindingPattern> "," <mut v: Comma<BindingPattern>> ")" => {
+    v.insert(0, p);
+    Box::new(Pattern::Tuple(v))
+  },
+  "(" <BindingPattern> ")",
+}
+
 // -------------------- Expressions -------------------- 
 
 OpExpr = OrExpr;
 
 BlockTerm: Box<PExpr> = {
-  "let" <i: LowerId> "=" <e: Expr> ";" => Box::new(PExpr::Let(i, e)),
+  "let" <p: BindingPattern> "=" <e: Expr> ";" => Box::new(PExpr::Let(*p, e)),
   <e: Expr> ";" => e
 };
 
@@ -357,7 +373,7 @@ pub Expr: Box<PExpr> = {
 // -------------------- Top-Level Expressions -------------------- 
 
 LetExpr: Box<PExpr> = {
-  "let" <i: LowerId> "=" <e: Expr> => Box::new(PExpr::Let(i, e)),
+  "let" <p: BindingPattern> "=" <e: Expr> => Box::new(PExpr::Let(*p, e)),
 };
 
 GenericParams: Vec<String> = {
@@ -386,8 +402,8 @@ EnumExpr: Box<PExpr> = {
 }
 
 LetWithAnd: Box<PExpr> = {
-    "let" <i1: LowerId> "=" <e1:Expr> "and" <i2:LowerId> "=" <e2: Expr> "with" <e3:Expr> =>
-        Box::new(PExpr::LetAndWith(i1, e1, i2, e2, e3)),
+    "let" <p1: BindingPattern> "=" <e1:Expr> "and" <p2:BindingPattern> "=" <e2: Expr> "with" <e3:Expr> =>
+        Box::new(PExpr::LetAndWith(*p1, e1, *p2, e2, e3)),
 };
 
 pub Item: Box<PExpr> = {

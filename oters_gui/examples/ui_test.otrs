@@ -1,4 +1,4 @@
-let bg_color = set_bg_color Color {r: 255, g:255, b:255, a: 255}
+let _ = set_bg_color Color {r: 255, g:255, b:255, a: 255}
 
 let button = fn f_id size content -> {
   let btn_id = create_button (f_id, size);
@@ -32,17 +32,15 @@ let label = fn f_id size content -> {
   (lab_id, aux content)
 }
 
-let const = fn #val -> val << @(const val)
+let const = fn val -> val << @(const val)
 
 let menu = frame ((0,0), (200, 500))
 
-let my_btn = button menu (100, 50) (const "Click me!") 
-let my_cbx = checkbox menu (30, 30)
-let my_lab = label menu (180, 50) (const "This is a label")
+let (btn_id, btn_stream) = button menu (100, 50) (const "Click me!") 
+let (cbx_id, cbx_stream) = checkbox menu (30, 30)
+let (lab_id, lab_stream) = label menu (180, 50) (const "This is a label")
 
-let grp_elems = match (my_btn, my_cbx, my_lab) with {
-  ((btn_id, _), (cbx_id, _), (lab_id, _)) => [btn_id, cbx_id, lab_id] << @(grp_elems),
-}
+let grp_elems = [btn_id, cbx_id, lab_id] << @(grp_elems)
 
 let group = match vgroup menu (200, 500) grp_elems with {
   (grp_id, stream) => {
