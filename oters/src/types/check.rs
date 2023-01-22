@@ -317,7 +317,7 @@ impl ProgramChecker {
     // Type Inference for a let expression according to Rattus λ rules
     pub fn infer(&mut self, e: &Expr, mut ctx: VarContext) -> Result<Type> {
         use Expr::*;
-        let __t = match e {
+        match e {
             Bool(_) => Ok(Type::Bool),
             Int(_) => Ok(Type::Int),
             Float(_) => Ok(Type::Float),
@@ -661,31 +661,24 @@ impl ProgramChecker {
                 Ok(t_ret)
             }
             Var(var) => match ctx.clone().get_var(var) {
-                Ok((t, true)) => match t {
+                Ok((t, true)) => {
                     // Instantiate generic variables of ∀ types
-                    Type::Generic(scheme, t) => {
-                        let mut t_ = *t.clone();
+                    let (t_, constraints) = t.instantiate();
+                    let mut subs = unify(constraints)?;
+                    self.substitutions.append(&mut subs);
+                    ctx.apply_subs(&subs);
 
-                        let mut constraints = VecDeque::new();
-                        for arg in scheme {
-                            let fresh_t = Type::GenericVar(self.fresh_type_var(), false);
-                            t_ = t_.sub_generic(&arg, &fresh_t);
-                            constraints.push_back((Type::GenericVar(arg, false), fresh_t));
-                        }
-                        let mut subs = unify(constraints)?;
-                        self.substitutions.append(&mut subs);
-                        ctx.apply_subs(&subs);
-
-                        Ok(t_)
-                    }
-                    t => Ok(t),
-                },
+                    Ok(t_)
+                }
                 // Variable access is in wrong time step but we can assume stable
-                Ok((t, false)) => match &t {
-                    Type::GenericVar(_var, false) => {
+                Ok((t, false)) => match t.instantiate() {
+                    (Type::GenericVar(_var, false), mut constraints) => {
                         // Unify the variable with a new stable one
                         let t_ = Type::GenericVar(self.fresh_type_var(), true);
-                        let mut subs = unify(VecDeque::from([(t.clone(), t_.clone())]))?;
+
+                        constraints.push_back((Type::GenericVar(_var, false), t_.clone()));
+                        println!("{:?}", constraints);
+                        let mut subs = unify(constraints)?;
                         self.substitutions.append(&mut subs);
                         ctx.apply_subs(&subs);
 
@@ -768,9 +761,7 @@ impl ProgramChecker {
                 Ok(self.infer(e2, ctx)?)
             }
             Location(_) => Err(InvalidExprError::IllegalLocation.into()),
-        };
-        let ret = __t.unwrap();
-        Ok(ret)
+        }
     }
 
     fn infer_binop(&mut self, t1: Type, op: BOpcode, t2: Type) -> Result<Type> {

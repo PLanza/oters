@@ -3,11 +3,11 @@ mod errors;
 mod tests;
 mod utils;
 
-use crate::parser::ast::TypeExpr;
+use crate::{exprs::VarContext, parser::ast::TypeExpr};
 pub use errors::TypeError;
 pub use utils::*;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use anyhow::Result;
 
@@ -582,6 +582,25 @@ impl Type {
                 result
             }
             GenericVar(var, _) => HashSet::from([var.clone()]),
+        }
+    }
+
+    pub(super) fn instantiate(&self) -> (Type, VecDeque<(Type, Type)>) {
+        use Type::*;
+        let fresh_var = 0;
+        match self {
+            Generic(scheme, t) => {
+                let mut t_ = *t.clone();
+
+                let mut constraints = VecDeque::new();
+                for arg in scheme {
+                    let fresh_t = Type::GenericVar(format!("__ti{}", fresh_var), false);
+                    t_ = t_.sub_generic(&arg, &fresh_t);
+                    constraints.push_back((Type::GenericVar(arg.clone(), false), fresh_t));
+                }
+                (t_, constraints)
+            }
+            _ => (self.clone(), VecDeque::new()),
         }
     }
 

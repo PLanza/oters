@@ -14,7 +14,7 @@ fn print_int(i: i64) {
 export_list!();
 
 fn main() -> Result<()> {
-    let program = parser::parse_file("oters/examples/ex4.otrs".to_string())?;
+    let program = parser::parse_file("oters/examples/ex2.otrs".to_string())?;
     let mut checker = ProgramChecker::new((
         EXPORT_FNS.clone(),
         EXPORT_STRUCTS.clone(),
