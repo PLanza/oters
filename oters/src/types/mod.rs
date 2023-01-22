@@ -3,7 +3,7 @@ mod errors;
 mod tests;
 mod utils;
 
-use crate::{exprs::VarContext, parser::ast::TypeExpr};
+use crate::parser::ast::TypeExpr;
 pub use errors::TypeError;
 pub use utils::*;
 
@@ -587,7 +587,7 @@ impl Type {
 
     pub(super) fn instantiate(&self) -> (Type, VecDeque<(Type, Type)>) {
         use Type::*;
-        let fresh_var = 0;
+        let mut fresh_var = 0;
         match self {
             Generic(scheme, t) => {
                 let mut t_ = *t.clone();
@@ -597,10 +597,79 @@ impl Type {
                     let fresh_t = Type::GenericVar(format!("__ti{}", fresh_var), false);
                     t_ = t_.sub_generic(&arg, &fresh_t);
                     constraints.push_back((Type::GenericVar(arg.clone(), false), fresh_t));
+                    fresh_var += 1;
                 }
                 (t_, constraints)
             }
             _ => (self.clone(), VecDeque::new()),
+        }
+    }
+    pub(super) fn stablify(&self, bound_vars: &Vec<String>) -> (Type, VecDeque<(Type, Type)>) {
+        use Type::*;
+        match self {
+            Unit | Int | Float | String | Bool | Delay(_) | Stable(_) | FixVar(_) | Fix(..) => {
+                (self.clone(), VecDeque::new())
+            }
+            Tuple(tuple) => {
+                let mut constraints = VecDeque::new();
+                let mut types = Vec::new();
+                for t in tuple {
+                    let (t_, mut constraints_) = t.stablify(bound_vars);
+                    types.push(Box::new(t_));
+                    constraints.append(&mut constraints_);
+                }
+                (Tuple(types), constraints)
+            }
+            List(t) => {
+                let (t_, constraints) = t.stablify(bound_vars);
+                (List(Box::new(t_)), constraints)
+            }
+            Function(t1, t2) => {
+                let (t1_, mut constraints) = t1.stablify(bound_vars);
+                let (t2_, mut constraints_) = t2.stablify(bound_vars);
+                constraints.append(&mut constraints_);
+                (Function(Box::new(t1_), Box::new(t2_)), constraints)
+            }
+            Generic(gens, t) => {
+                let (t_, constraints) = t.stablify(&gens);
+                (Generic(gens.clone(), Box::new(t_)), constraints)
+            }
+            GenericVar(var, _) => {
+                if bound_vars.contains(&var) {
+                    (self.clone(), VecDeque::new())
+                } else {
+                    let t_ = GenericVar(format!("#__{}", var), true);
+                    let constraints = VecDeque::from([(self.clone(), t_.clone())]);
+                    (t_, constraints)
+                }
+            }
+            Struct(map) => {
+                let mut constraints = VecDeque::new();
+                let mut fields = HashMap::new();
+                for (field, t) in map {
+                    let (t_, mut constraints_) = t.stablify(bound_vars);
+                    fields.insert(field.clone(), Box::new(t_));
+                    constraints.append(&mut constraints_);
+                }
+                (Struct(fields), constraints)
+            }
+            Enum(map) => {
+                let mut constraints = VecDeque::new();
+                let mut variants = HashMap::new();
+                for (variant, opt) in map {
+                    match opt {
+                        None => {
+                            variants.insert(variant.clone(), None);
+                        }
+                        Some(t) => {
+                            let (t_, mut constraints_) = t.stablify(bound_vars);
+                            variants.insert(variant.clone(), Some(Box::new(t_)));
+                            constraints.append(&mut constraints_);
+                        }
+                    }
+                }
+                (Enum(variants), constraints)
+            }
         }
     }
 

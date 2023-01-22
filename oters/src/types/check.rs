@@ -671,21 +671,20 @@ impl ProgramChecker {
                     Ok(t_)
                 }
                 // Variable access is in wrong time step but we can assume stable
-                Ok((t, false)) => match t.instantiate() {
-                    (Type::GenericVar(_var, false), mut constraints) => {
-                        // Unify the variable with a new stable one
-                        let t_ = Type::GenericVar(self.fresh_type_var(), true);
-
-                        constraints.push_back((Type::GenericVar(_var, false), t_.clone()));
-                        println!("{:?}", constraints);
-                        let mut subs = unify(constraints)?;
-                        self.substitutions.append(&mut subs);
-                        ctx.apply_subs(&subs);
-
-                        Ok(t_)
+                Ok((t, false)) => {
+                    let (t, mut constraints) = t.instantiate();
+                    let (t_, mut constraints_) = t.stablify(&Vec::new());
+                    if !t_.is_stable()? {
+                        return Err(TypeError::InvalidVariableAccess(var.clone()).into());
                     }
-                    _ => Err(TypeError::InvalidVariableAccess(var.clone()).into()),
-                },
+                    constraints.append(&mut constraints_);
+
+                    let mut subs = unify(constraints)?;
+                    self.substitutions.append(&mut subs);
+                    ctx.apply_subs(&subs);
+
+                    Ok(t_)
+                }
                 // Check that it's not a global variable
                 Err(e) => match self.value_decs.clone().get(var) {
                     Some(t) => match t {
@@ -1227,11 +1226,17 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                     }
 
                     (GenericVar(alpha, true), t2) => {
-                        // Only unify stable variables with stable types (unless above two cases)
-                        if !t2.is_stable().unwrap() {
+                        // Collapse all unstable generic vars to stable ones
+                        let (t2_, constraints_) = t2.stablify(&Vec::new());
+
+                        // If the resulting type is still not stable, then don't unify
+                        if !t2_.is_stable().unwrap() {
                             return Err(TypeError::ExpectedStableType(t2.clone()).into());
                         }
 
+                        for (var, val) in constraints_ {
+                            sub_constraints(&mut constraints, &var, &val);
+                        }
                         sub_constraints(&mut constraints, &GenericVar(alpha.clone(), true), &t2);
                         let mut subs = unify(constraints)?;
 
@@ -1240,10 +1245,14 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                     }
 
                     (t1, GenericVar(alpha, true)) => {
-                        if !t1.is_stable().unwrap() {
+                        let (t1_, constraints_) = t1.stablify(&Vec::new());
+                        if !t1_.is_stable().unwrap() {
                             return Err(TypeError::ExpectedStableType(t1.clone()).into());
                         }
 
+                        for (var, val) in constraints_ {
+                            sub_constraints(&mut constraints, &var, &val);
+                        }
                         sub_constraints(&mut constraints, &t2, &t1);
                         let mut subs = unify(constraints)?;
 

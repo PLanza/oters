@@ -32,7 +32,7 @@ let label = fn f_id size content -> {
   (lab_id, aux content)
 }
 
-let const = fn val -> val << @(const val)
+let const = fn #val -> val << @(const val)
 
 let menu = frame ((0,0), (200, 500))
 
@@ -40,8 +40,7 @@ let (btn_id, btn_stream) = button menu (100, 50) (const "Click me!")
 let (cbx_id, cbx_stream) = checkbox menu (30, 30)
 let (lab_id, lab_stream) = label menu (180, 50) (const "This is a label")
 
-let grp_elems = [btn_id, cbx_id, lab_id] << @(grp_elems)
-
+let grp_elems = const [btn_id, cbx_id, lab_id]
 let group = match vgroup menu (200, 500) grp_elems with {
   (grp_id, stream) => {
     attach_root (menu, grp_id);
