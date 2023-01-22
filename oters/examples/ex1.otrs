@@ -3,19 +3,13 @@ let nats = {
   aux 0 
 }
 
-let fold = fn f #acc as ->
-  match as with {
-    a << as => {
-      let acc' = !#f acc a;
-      acc' << @(fold f acc' !@as)
-    }
-  }
+let fold = fn f #acc (a << as) -> {
+  let acc' = !#f acc a;
+  acc' << @(fold f acc' !@as)
+}
 
 let triangles = fold #(fn x y -> x + y) 0 nats
 
-let head = fn stream -> 
-  match stream with {
-    hd << tl => hd,
-  }
+let head = fn (hd << tl) -> hd 
 
 let print_triangles = print_int (head triangles) << @print_triangles

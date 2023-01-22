@@ -1,7 +1,4 @@
-let head = fn stream ->
-  match stream with {
-      x<<xs => x
-  }
+let head = fn (hd << tl) -> hd
 
 let reset_btn = (button ((447, 300), "RESET")) << @reset_btn
 let start_btn = {

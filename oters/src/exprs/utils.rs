@@ -52,7 +52,7 @@ impl Display for Expr {
                 None => write!(f, "{}", constr),
                 Some(e) => write!(f, "{}({})", constr, e),
             },
-            Fn((var, _), e) => write!(f, "fn {} -> (\n{}\n)", var, e),
+            Fn(pat, e) => write!(f, "fn {} -> (\n{}\n)", pat, e),
             Fix(var, e) => write!(f, "fix {}.({})", var, e),
             If(e1, e2, e3) => write!(f, "if {} then\n{}\nelse\n{}", e1, e2, e3),
             Seq(e1, e2) => write!(f, "{}; \n{}", e1, e2),
@@ -157,7 +157,13 @@ impl Display for Pattern {
             Cons(p1, p2) => write!(f, "{} :: {}", p1, p2),
             Stream(p1, p2) => write!(f, "{} << {}", p1, p2),
             Or(p1, p2) => write!(f, "{} || {}", p1, p2),
-            Var(x) => write!(f, "{}", x),
+            Var(x, b) => {
+                if *b {
+                    write!(f, "#{}", x)
+                } else {
+                    write!(f, "{}", x)
+                }
+            }
         }
     }
 }

@@ -52,7 +52,7 @@ pub enum Expr {
     Tuple(Vec<Box<Expr>>),
     Struct(String, Vec<(String, Box<Expr>)>),
     Variant(String, Option<Box<Expr>>),
-    Fn((String, bool), Box<Expr>),
+    Fn(Pattern, Box<Expr>),
     Fix(String, Box<Expr>), // From Patrick Bahr's Rattus
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Seq(Box<Expr>, Box<Expr>),
@@ -142,12 +142,8 @@ impl Expr {
             }
             PExpr::Fn(args, e) => {
                 let mut e = Expr::from_pexpr(*e)?;
-                for s in args.iter().rev() {
-                    e = Expr::Fn(s.clone(), Box::new(e));
-                }
-
-                if args.is_empty() {
-                    return Ok(Expr::Fn(("_".to_string(), true), Box::new(e)));
+                for pat in args.iter().rev() {
+                    e = Expr::Fn(pat.clone(), Box::new(e));
                 }
 
                 Ok(e)
@@ -189,7 +185,7 @@ impl Expr {
                         }
 
                         match pat.clone() {
-                            Pattern::Var(var) => {
+                            Pattern::Var(var, _) => {
                                 // If e is "traditionally" recursive in the same time step
                                 if matches!(expr, Expr::Fn(..)) && expr.is_static_recursive(&var) {
                                     return Ok(Expr::LetIn(
@@ -323,13 +319,13 @@ impl Expr {
 
                 (b, Tuple(tuple))
             }
-            Fn(arg, e) => {
+            Fn(pat, e) => {
                 // Tighter binding variable
-                if arg.0 == var.clone() {
-                    return (false, Fn(arg, e.clone()));
+                if pat.contains(var) {
+                    return (false, Fn(pat, e.clone()));
                 }
                 let (b, e_) = e.substitute(var, term);
-                (b, Fn(arg, Box::new(e_)))
+                (b, Fn(pat, Box::new(e_)))
             }
             Fix(alpha, e) => {
                 // Tighter binding variable
@@ -428,7 +424,7 @@ impl Expr {
                 match r {
                     None => Delay(Box::new(e.single_tick(new_vs))),
                     Some(r_e) => LetIn(
-                        Pattern::Var(format!("_d{}", new_vs)),
+                        Pattern::Var(format!("_d{}", new_vs), false),
                         Box::new(r_e),
                         Box::new(Delay(Box::new(sub_e)).single_tick(new_vs + 1)),
                     ),
@@ -468,14 +464,14 @@ impl Expr {
                 Some(e) => Variant(id.clone(), Some(Box::new(e.single_tick(new_vs)))),
             },
             // Rule 2
-            Fn(var, e) => {
+            Fn(pat, e) => {
                 let (r, sub_e) = e.sub_single_tick(&format!("_d{}", new_vs), true);
                 match r {
-                    None => Fn(var.clone(), Box::new(e.single_tick(new_vs))),
+                    None => Fn(pat.clone(), Box::new(e.single_tick(new_vs))),
                     Some(r_e) => LetIn(
-                        Pattern::Var(format!("_d{}", new_vs)),
+                        Pattern::Var(format!("_d{}", new_vs), false),
                         Box::new(Adv(Box::new(r_e))),
-                        Box::new(Fn(var.clone(), Box::new(sub_e)).single_tick(new_vs + 1)),
+                        Box::new(Fn(pat.clone(), Box::new(sub_e)).single_tick(new_vs + 1)),
                     ),
                 }
             }
@@ -695,7 +691,7 @@ impl Expr {
                 None => false,
                 Some(e) => e.is_static_recursive(name),
             },
-            Fn(var, e) => !(&var.0 == name) && e.is_static_recursive(name),
+            Fn(pat, e) => !pat.contains(name) && e.is_static_recursive(name),
             If(e1, e2, e3) => {
                 e1.is_static_recursive(name)
                     || e2.is_static_recursive(name)
@@ -911,7 +907,7 @@ impl Pattern {
             Cons(p1, p2) => p1.contains(var) || p2.contains(var),
             Stream(p1, p2) => p1.contains(var) || p2.contains(var),
             Or(p1, p2) => p1.contains(var) || p2.contains(var),
-            Var(x) => x == var,
+            Var(x, _) => x == var,
         }
     }
 
@@ -963,7 +959,7 @@ impl Pattern {
                 ret.append(&mut p2.vars());
                 ret
             }
-            Var(x) => vec![x.clone()],
+            Var(x, _) => vec![x.clone()],
         }
     }
 }

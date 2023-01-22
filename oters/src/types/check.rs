@@ -122,7 +122,7 @@ impl ProgramChecker {
 
                     // If e is recursive within one time step
                     let ret_type = match pat {
-                        Pattern::Var(var) => {
+                        Pattern::Var(var, _) => {
                             if matches!(e, Expr::Fn(..)) && e.is_static_recursive(&var) {
                                 // Add a recursive variable into the context
                                 let t = Type::Function(
@@ -205,7 +205,7 @@ impl ProgramChecker {
                 }
                 PExpr::LetAndWith(pat1, e1, pat2, e2, e3) => {
                     let (x, y) = match (pat1, pat2) {
-                        (Pattern::Var(x), Pattern::Var(y)) => (x, y),
+                        (Pattern::Var(x, _), Pattern::Var(y, _)) => (x, y),
                         _ => {
                             return Err(TypeError::InvalidMutuallyRecursiveDefinition(
                                 Expr::from_pexpr(*e1.clone())?,
@@ -554,21 +554,22 @@ impl ProgramChecker {
                     _ => Err(TypeError::NotAnEnum(id.clone()).into()),
                 }
             }
-            Fn((var, stability), e) => {
-                let t1 = Type::GenericVar(self.fresh_type_var(), *stability);
+            Fn(pat, e) => {
+                let (t_pat, vars) = self.check_pattern(pat.clone())?;
                 let mut ctx = ctx.clone();
                 ctx = ctx.one_tick()?;
-                ctx.push_var(var.clone(), t1.clone());
+                for (var, t_var) in vars {
+                    ctx.push_var(var.clone(), t_var.clone());
+                }
 
-                let t2 = Type::GenericVar(self.fresh_type_var(), false);
                 let t_fn_ret = self.infer(e, ctx.clone())?;
 
-                let mut subs = unify(VecDeque::from([(t_fn_ret.clone(), t2.clone())]))?;
-                self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
-                // After unification the variable's type may have changed in the context
-                Ok(Type::Function(Box::new(ctx.get_var(var)?.0), Box::new(t2)))
+                // After unification the variable's type may have changed
+                t_pat.apply_subs(&self.substitutions);
+
+                Ok(Type::Function(Box::new(t_pat), Box::new(t_fn_ret)))
             }
             Fix(alpha, e) => {
                 let mut ctx = ctx.clone().stable()?;
@@ -708,7 +709,7 @@ impl ProgramChecker {
                 let mut ctx1 = ctx.clone();
                 // If e is recursive within one time step
                 let t_e_ = match pat {
-                    Pattern::Var(var) => {
+                    Pattern::Var(var, _) => {
                         if matches!(*e1.clone(), Expr::Fn(..)) && e1.is_static_recursive(&var) {
                             // Add a recursive variable into the context
                             let t = Type::Function(
@@ -1103,7 +1104,7 @@ impl ProgramChecker {
             Stream(x, xs_p) => {
                 let (t, mut vars) = self.check_pattern(*x.clone())?;
                 match &*xs_p {
-                    Var(xs) => {
+                    Var(xs, _) => {
                         let fix_var = self.fresh_type_var();
                         let t_ret = Type::Fix(
                             fix_var.clone(),
@@ -1148,8 +1149,8 @@ impl ProgramChecker {
 
                 Ok((t2, vars1))
             }
-            Var(var) => {
-                let t = Type::GenericVar(self.fresh_type_var(), false);
+            Var(var, stability) => {
+                let t = Type::GenericVar(self.fresh_type_var(), stability);
                 Ok((t.clone(), HashMap::from([(var, t)])))
             }
         }

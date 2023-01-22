@@ -256,9 +256,17 @@ impl Interpreter {
 
                 let (_e1, _s) = self.eval(*e1.clone(), s)?;
                 match _e1 {
-                    Fn((var, _), expr) => {
-                        let (val, __s) = self.eval(*e2, _s)?;
-                        self.eval(expr.substitute(&var, &val).1, __s)
+                    Fn(pat, expr) => {
+                        let (val, __s) = self.eval(*e2.clone(), _s)?;
+                        let (is_match, bindings) = Self::match_pattern(&val, &pat)?;
+                        if !is_match {
+                            return Err(PatternMatchError(pat, *e2).into());
+                        }
+                        let mut expr = *expr.clone();
+                        for (var, val) in bindings {
+                            expr = expr.substitute(&var, &val).1;
+                        }
+                        self.eval(expr, __s)
                     }
                     _ => Err(UncaughtTypeError(format!("{:?}", e1)).into()),
                 }
@@ -321,7 +329,7 @@ impl Interpreter {
                                     &Fn(
                                         arg.clone(),
                                         Box::new(LetIn(
-                                            Pattern::Var(var.clone()),
+                                            Pattern::Var(var.clone(), false),
                                             Box::new(val.clone()),
                                             body.clone(),
                                         )),
@@ -402,6 +410,7 @@ impl Interpreter {
         self.allocator.dealloc_set(to_dealloc);
     }
 
+    // Returns if there has been a match and any variable bindings
     fn match_pattern(val: &Expr, pattern: &Pattern) -> Result<(bool, Vec<(String, Expr)>)> {
         use Pattern::*;
         match pattern {
@@ -520,7 +529,7 @@ impl Interpreter {
                         }
 
                         let (b, mut ss) = match o {
-                            None => Self::match_pattern(&vals[i].1, &Var(field.clone()))?,
+                            None => Self::match_pattern(&vals[i].1, &Var(field.clone(), false))?,
                             Some(p) => Self::match_pattern(&vals[i].1, &p)?,
                         };
 
@@ -570,7 +579,7 @@ impl Interpreter {
                     Self::match_pattern(val, p2)
                 }
             }
-            Var(var) => Ok((true, vec![(var.clone(), val.clone())])),
+            Var(var, _) => Ok((true, vec![(var.clone(), val.clone())])),
         }
     }
 }

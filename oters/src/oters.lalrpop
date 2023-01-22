@@ -296,26 +296,19 @@ PatternTerm: Box<Pattern> = {
   TuplePattern, 
   ListPattern,
   StructPattern,
-  <LowerId> => Box::new(Pattern::Var(<>)),
+  <LowerId> => Box::new(Pattern::Var(<>, false)),
   "(" <Pattern> ")",
 }
 
 Pattern: Box<Pattern> = OrPattern;
 
-BindingPattern: Box<Pattern> = {
-  <BindingPatternTerm> "::" <BindingPattern> => Box::new(Pattern::Cons(<>)),
-  <BindingPatternTerm> "<<" <BindingPattern> => Box::new(Pattern::Stream(<>)),
-  BindingPatternTerm,
-}
-
-BindingPatternTerm: Box<Pattern> = {
-  <LowerId> => Box::new(Pattern::Var(<>)),
+LetPattern: Box<Pattern> = {
+  <LowerId> => Box::new(Pattern::Var(<>, false)),
   "_" => Box::new(Pattern::Underscore),
-  "(" <p: BindingPattern> "," <mut v: Comma<BindingPattern>> ")" => {
+  "(" <p: LetPattern> "," <mut v: Comma<LetPattern>> ")" => {
     v.insert(0, p);
     Box::new(Pattern::Tuple(v))
   },
-  "(" <BindingPattern> ")",
 }
 
 // -------------------- Expressions -------------------- 
@@ -323,7 +316,7 @@ BindingPatternTerm: Box<Pattern> = {
 OpExpr = OrExpr;
 
 BlockTerm: Box<PExpr> = {
-  "let" <p: BindingPattern> "=" <e: Expr> ";" => Box::new(PExpr::Let(*p, e)),
+  "let" <p: LetPattern> "=" <e: Expr> ";" => Box::new(PExpr::Let(*p, e)),
   <e: Expr> ";" => e
 };
 
@@ -338,19 +331,26 @@ IfExpr: Box<PExpr> = {
   "if" <e1: Expr> "then" <e2: Expr> "else" <e3: Expr> => Box::new(PExpr::If(e1, e2, e3))
 };
 
-FnArg: (String, bool) = {
-    <LowerId> => (<>, false),
-    "#" <LowerId> => (<>, true), // Mark arguments that are stable
+FnArgOp: Box<Pattern> = {
+    <FnArg> "::" <FnArgOp> => Box::new(Pattern::Cons(<>)),
+    <FnArg> "<<" <FnArgOp> => Box::new(Pattern::Stream(<>)),
+    FnArg,
+}
+
+FnArg: Box<Pattern> = {
+    "_" => Box::new(Pattern::Underscore),
+    <LowerId> => Box::new(Pattern::Var(<>, false)),
+    "#" <LowerId> => Box::new(Pattern::Var(<>, true)), // Mark arguments that are stable
+    "(" <p: FnArg> "," <mut v: Comma<FnArg>> ")" => {
+        v.insert(0, p);
+        Box::new(Pattern::Tuple(v))
+    },
+    "(" <FnArgOp> ")",
+
   }
 
-FnArgList: Vec<(String, bool)> = {
-  <v: FnArg+> => v,
-  // Add pattern variants for Lists, Tuples, Streams
-};
-
 FnExpr: Box<PExpr> = {
-  "fn" "_" "->" <e: Expr> => Box::new(PExpr::Fn(Vec::new(), e)),
-  "fn" <a: FnArgList> "->" <e: Expr> => Box::new(PExpr::Fn(a, e)),
+  "fn" <v: FnArgOp+> "->" <e: Expr> => Box::new(PExpr::Fn(v.into_iter().map(|p| *p).collect(), e)),
 };
 
 MatchItem: (Box<Pattern>, Box<PExpr>) = {
@@ -373,7 +373,7 @@ pub Expr: Box<PExpr> = {
 // -------------------- Top-Level Expressions -------------------- 
 
 LetExpr: Box<PExpr> = {
-  "let" <p: BindingPattern> "=" <e: Expr> => Box::new(PExpr::Let(*p, e)),
+  "let" <p: LetPattern> "=" <e: Expr> => Box::new(PExpr::Let(*p, e)),
 };
 
 GenericParams: Vec<String> = {
@@ -402,7 +402,7 @@ EnumExpr: Box<PExpr> = {
 }
 
 LetWithAnd: Box<PExpr> = {
-    "let" <p1: BindingPattern> "=" <e1:Expr> "and" <p2:BindingPattern> "=" <e2: Expr> "with" <e3:Expr> =>
+    "let" <p1: LetPattern> "=" <e1:Expr> "and" <p2: LetPattern> "=" <e2: Expr> "with" <e3:Expr> =>
         Box::new(PExpr::LetAndWith(*p1, e1, *p2, e2, e3)),
 };
 

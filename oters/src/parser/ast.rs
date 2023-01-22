@@ -17,7 +17,7 @@ pub enum PExpr {
     List(VecDeque<Box<PExpr>>),
     StructExpr(String, Vec<(String, Box<PExpr>)>),
     Tuple(Vec<Box<PExpr>>),
-    Fn(Vec<(String, bool)>, Box<PExpr>),
+    Fn(Vec<Pattern>, Box<PExpr>),
     If(Box<PExpr>, Box<PExpr>, Box<PExpr>),
     Block(Vec<Box<PExpr>>),
     App(Box<PExpr>, Box<PExpr>),
@@ -87,5 +87,5 @@ pub enum Pattern {
     Cons(Box<Pattern>, Box<Pattern>),
     Stream(Box<Pattern>, Box<Pattern>),
     Or(Box<Pattern>, Box<Pattern>),
-    Var(String),
+    Var(String, bool),
 }
