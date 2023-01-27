@@ -10,6 +10,7 @@ pub use utils::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use anyhow::Result;
+use daggy::Dag;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -51,8 +52,8 @@ impl Type {
     // Converts TExpr to Type
     pub fn from_texpr(
         t: TypeExpr,
-        t_context: TypeContext,         // Holds generic type variables
-        t_decs: &HashMap<String, Type>, // Holds type declarations (e.g. Structs, Enums, Type)
+        t_context: TypeContext, // Holds generic type variables
+        t_decs: &Dag<HashMap<String, Type>, String>,
     ) -> Result<Type> {
         use Type::*;
         use TypeExpr::*;
@@ -75,7 +76,7 @@ impl Type {
             }
             TEList(t) => Ok(List(Box::new(Type::from_texpr(*t, t_context, t_decs)?))),
             // All generic arguments and user declared types are "dereferenced"
-            TEUser(id, v) => {
+            TEUser(path, id, v) => {
                 for s in &t_context.vars {
                     // Check if the ident is a Generic Argument
                     if id == s.clone() {
@@ -84,7 +85,8 @@ impl Type {
                 }
 
                 // If it's a delcared type copy its definition
-                let mut t = match t_decs.get(&id) {
+                let map = traverse_path(&t_decs, &path)?;
+                let mut t = match map.get(&id) {
                     Some(t) => t.clone(),
                     None => return Err(TypeError::UserTypeNotFound(id).into()),
                 };
@@ -123,11 +125,16 @@ impl Type {
         id: String,
         params: Vec<String>,
         t: TypeExpr,
-        t_decs: &HashMap<String, Type>,
+        t_decs: &Dag<HashMap<String, Type>, String>,
     ) -> Result<Type> {
         // Add type being defined in the declarations for recursive types
         let mut t_decs = t_decs.clone();
-        t_decs.insert(id.clone(), Type::GenericVar(id.clone(), false));
+        insert_dec(
+            &mut t_decs,
+            id.clone(),
+            Type::GenericVar(id.clone(), false),
+            &Vec::new(),
+        );
 
         // Add type parameters to the type context
         let t_context = TypeContext {
@@ -156,10 +163,15 @@ impl Type {
         id: String,
         params: Vec<String>,
         fields: Vec<(String, Box<TypeExpr>)>,
-        t_decs: &HashMap<String, Type>,
+        t_decs: &Dag<HashMap<String, Type>, String>,
     ) -> Result<Type> {
         let mut t_decs = t_decs.clone();
-        t_decs.insert(id.clone(), Type::GenericVar(id.clone(), false));
+        insert_dec(
+            &mut t_decs,
+            id.clone(),
+            Type::GenericVar(id.clone(), false),
+            &Vec::new(),
+        );
 
         let t_context = TypeContext {
             vars: params.clone(),
@@ -186,10 +198,15 @@ impl Type {
         id: String,
         params: Vec<String>,
         variants: Vec<(String, Option<Box<TypeExpr>>)>,
-        t_decs: &HashMap<String, Type>,
+        t_decs: &Dag<HashMap<String, Type>, String>,
     ) -> Result<Type> {
         let mut t_decs = t_decs.clone();
-        t_decs.insert(id.clone(), Type::GenericVar(id.clone(), false));
+        insert_dec(
+            &mut t_decs,
+            id.clone(),
+            Type::GenericVar(id.clone(), false),
+            &Vec::new(),
+        );
 
         let t_context = TypeContext {
             vars: params.clone(),

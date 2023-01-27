@@ -66,14 +66,14 @@ impl Value {
                 }
                 Ok(Value::Tuple(tuple))
             }
-            Struct(name, fields) => {
+            Struct(_, name, fields) => {
                 let mut strct = HashMap::new();
                 for (field, val) in fields {
                     strct.insert(field, Box::new(Value::from_expr(*val)?));
                 }
                 Ok(Value::Struct(name, strct))
             }
-            Variant(name, opt) => Ok(Value::Variant(
+            Variant(_, name, opt) => Ok(Value::Variant(
                 name,
                 match opt {
                     None => None,
@@ -95,13 +95,16 @@ impl Value {
             List(vals) => Expr::List(vals.into_iter().map(|v| Box::new(v.to_expr())).collect()),
             Tuple(vals) => Expr::Tuple(vals.into_iter().map(|v| Box::new(v.to_expr())).collect()),
             Struct(name, fields) => Expr::Struct(
+                Vec::new(),
                 name,
                 fields
                     .into_iter()
                     .map(|(f, v)| (f, Box::new(v.to_expr())))
                     .collect(),
             ),
-            Variant(name, opt) => Expr::Variant(name, opt.map(|val| Box::new(val.to_expr()))),
+            Variant(name, opt) => {
+                Expr::Variant(Vec::new(), name, opt.map(|val| Box::new(val.to_expr())))
+            }
         }
     }
 }

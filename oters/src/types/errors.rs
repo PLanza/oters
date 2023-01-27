@@ -26,8 +26,6 @@ pub enum TypeError {
     StructFieldDoesNotExist(String, String),
     #[error("The fields for struct {0} do not match")]
     StructFieldsDoNotMatch(String),
-    #[error("The enum variant {0} has not been declared")]
-    EnumVariantDoesNotExist(String),
     #[error("Improper fields are applied to the enum variant {0}")]
     VariantFieldsDoNotMatch(String),
     #[error("The variable {0}, is not a enum")]
@@ -38,4 +36,6 @@ pub enum TypeError {
     ExpectedStableType(Type),
     #[error("Mutually recursive definition {0} must produce a Stream")]
     InvalidMutuallyRecursiveDefinition(Expr),
+    #[error("Invalid path {0}")]
+    InvalidPath(String),
 }

@@ -1,0 +1,19 @@
+use std::Stream::Str
+
+type Event<A> = Str<std::Option<A>>
+
+let switch = fn (x << xs) (e << es) -> 
+  match e with {
+    None => x << @(switch !@xs !@es),
+    Some (a << as) => a << @(switch !@as !@es)
+  }
+
+let switch_trans' = fn (a << as) (e << es) bs -> 
+  match e with {
+    None => a << @(switch_trans' !@as !@es !@(tail bs)),
+    Some f => {
+      let (b' << bs') = f bs;
+      b' << @(switch_trans' !@bs' !@es !@(tail bs))
+    }
+  }
+let switch_trans = fn f es as -> switch_trans' (f as) es as

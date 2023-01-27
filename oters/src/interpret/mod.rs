@@ -7,6 +7,8 @@ use crate::export::{ExportFns, Value};
 use crate::exprs::{BOpcode, Expr, LetBinding, UOpcode};
 use crate::parser::ast::Pattern;
 
+use daggy::petgraph::visit::{EdgeRef, IntoEdges};
+use daggy::{Dag, NodeIndex, Walker};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::vec;
 
@@ -14,11 +16,12 @@ use anyhow::Result;
 
 pub struct Interpreter {
     allocator: Allocator,
-    globals: HashMap<String, Expr>,
-    eval_order: Vec<String>,
+    globals: HashMap<(Vec<String>, String), Expr>,
+    eval_order: Vec<(Vec<String>, String)>,
     imports: ExportFns,
     store: Store,
-    mut_rec_streams: HashMap<String, Expr>,
+    mut_rec_streams: HashMap<(Vec<String>, String), Expr>,
+    current_path: Vec<String>,
 }
 
 // Potentially change locations to be shared references
@@ -29,7 +32,11 @@ pub struct Store {
 }
 
 impl Interpreter {
-    pub fn new(bindings: Vec<LetBinding>, imports: ExportFns) -> Result<Self> {
+    pub fn new(
+        bindings: Dag<Vec<LetBinding>, String>,
+        imports: ExportFns,
+        files: Vec<String>,
+    ) -> Result<Self> {
         let mut interp = Interpreter {
             allocator: Allocator::new(),
             globals: HashMap::new(),
@@ -37,13 +44,45 @@ impl Interpreter {
             imports,
             store: Store::new(),
             mut_rec_streams: HashMap::new(),
+            current_path: Vec::new(),
         };
-        interp.init(bindings)?;
+        interp.init(bindings, files)?;
 
         Ok(interp)
     }
 
-    fn init(&mut self, bindings: Vec<LetBinding>) -> Result<()> {
+    fn init(&mut self, bindings: Dag<Vec<LetBinding>, String>, files: Vec<String>) -> Result<()> {
+        let (mut std, mut gui, mut user_code) = (Vec::new(), Vec::new(), Vec::new());
+        for edge in bindings.edges(0.into()) {
+            if edge.weight() == "std" {
+                std = flatten(&bindings, &vec!["std".to_string()], edge.target());
+            } else if edge.weight() == "gui" {
+                gui = flatten(&bindings, &vec!["gui".to_string()], edge.target());
+            } else {
+                // Insert user code files in order of dependency
+                user_code.insert(
+                    files.iter().enumerate().fold(0, |ret, (i, s)| {
+                        let ret = if s == edge.weight() { i } else { ret };
+                        ret
+                    }),
+                    (vec![edge.weight().clone()], bindings[edge.target()].clone()),
+                )
+            }
+        }
+        for (path, bindings) in std {
+            self.init_bindings(bindings, path)?;
+        }
+        for (path, bindings) in gui {
+            self.init_bindings(bindings, path)?;
+        }
+        for (path, bindings) in user_code {
+            self.init_bindings(bindings, path)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn init_bindings(&mut self, bindings: Vec<LetBinding>, path: Vec<String>) -> Result<()> {
         for binding in bindings {
             match binding {
                 LetBinding::Let(pat, expr) => {
@@ -56,8 +95,8 @@ impl Interpreter {
                     }
 
                     for (var, e) in bound_vars {
-                        self.globals.insert(var.clone(), e);
-                        self.eval_order.push(var);
+                        self.globals.insert((path.clone(), var.clone()), e);
+                        self.eval_order.push((path.clone(), var));
                     }
                     self.store = s;
                 }
@@ -71,16 +110,17 @@ impl Interpreter {
                         Box::new(Expr::Location(loc_2)),
                     ])));
                     s.extend(loc_2, y_str.clone());
-                    self.globals.insert(y.clone(), y_str.clone());
+                    self.globals
+                        .insert((path.clone(), y.clone()), y_str.clone());
 
                     let (v1, s) = self.eval(e1.clone(), s)?;
-                    self.eval_order.push(x.clone());
-                    self.globals.insert(x.clone(), v1);
+                    self.eval_order.push((path.clone(), x.clone()));
+                    self.globals.insert((path.clone(), x), v1);
 
                     let (v2, s) = self.eval(e2.clone(), s)?;
-                    self.eval_order.push(y.clone());
-                    self.globals.insert(y.clone(), v2.clone());
-                    self.mut_rec_streams.insert(y, v2);
+                    self.eval_order.push((path.clone(), y.clone()));
+                    self.globals.insert((path.clone(), y.clone()), v2.clone());
+                    self.mut_rec_streams.insert((path.clone(), y), v2);
 
                     self.store = s;
                 }
@@ -92,16 +132,21 @@ impl Interpreter {
     pub fn eval_step(&mut self) -> Result<()> {
         self.step();
 
-        for var in self.eval_order.clone() {
+        for (path, var) in self.eval_order.clone() {
             // println!("{}: {}", stream, self.stream_outs.get(&stream).unwrap());
             // println!("{}: {}", var, self.globals.get(&var).unwrap());
             // println!("{:?}\n", self.store.now.keys());
-            let e = self.globals.get(&var).unwrap().clone();
+            self.current_path = path.clone();
+            let e = self
+                .globals
+                .get(&(path.clone(), var.clone()))
+                .unwrap()
+                .clone();
 
             let (e, s) = self.eval(e, self.store.clone())?;
             self.store = s;
 
-            self.globals.insert(var.clone(), e);
+            self.globals.insert((path, var), e);
         }
         Ok(())
     }
@@ -196,7 +241,7 @@ impl Interpreter {
 
                 Ok((Tuple(tuple_vec), store))
             }
-            Struct(str, fields) => {
+            Struct(path, str, fields) => {
                 let mut field_vec = Vec::new();
                 let mut store = s.clone();
 
@@ -206,13 +251,13 @@ impl Interpreter {
                     store = _s;
                 }
 
-                Ok((Struct(str, field_vec), store))
+                Ok((Struct(path, str, field_vec), store))
             }
-            Variant(constr, opt) => match opt {
-                None => Ok((Variant(constr, opt), s)),
+            Variant(path, constr, opt) => match opt {
+                None => Ok((Variant(path, constr, opt), s)),
                 Some(e) => {
                     let (val, _s) = self.eval(*e.clone(), s)?;
-                    Ok((Variant(constr, Some(Box::new(val))), _s))
+                    Ok((Variant(path, constr, Some(Box::new(val))), _s))
                 }
             },
             Fn(..) => Ok((e, s)),
@@ -242,7 +287,7 @@ impl Interpreter {
             }
             App(e1, e2) => {
                 match &*e1 {
-                    Var(var) => {
+                    Var(_, var) => {
                         // If the function has been imported, call it with converted arguments
                         if self.imports.contains_key(var) {
                             let (func, arg_ts, _) = self.imports.get(var).unwrap().clone();
@@ -274,7 +319,7 @@ impl Interpreter {
             ProjStruct(e, field) => {
                 let (_e, _s) = self.eval(*e.clone(), s)?;
                 match _e {
-                    Struct(_, fields) => {
+                    Struct(_, _, fields) => {
                         for (f, val) in fields {
                             if f == field {
                                 return Ok((*val, _s));
@@ -301,16 +346,23 @@ impl Interpreter {
                 }
                 Err(NoPatternMatchesError(format!("{:?}", e)).into())
             }
-            Var(x) => match self.globals.get(&x) {
-                None => Err(UnboundVariableError(x).into()),
-                Some(v) => {
-                    if let Some(stream) = self.mut_rec_streams.get(&x) {
-                        Ok((stream.clone(), s))
-                    } else {
-                        Ok((v.clone(), s))
+            Var(path, x) => {
+                let path = if path.is_empty() {
+                    self.current_path.clone()
+                } else {
+                    path
+                };
+                match self.globals.get(&(path.clone(), x.clone())) {
+                    None => Err(UnboundVariableError(x).into()),
+                    Some(v) => {
+                        if let Some(stream) = self.mut_rec_streams.get(&(path, x)) {
+                            Ok((stream.clone(), s))
+                        } else {
+                            Ok((v.clone(), s))
+                        }
                     }
                 }
-            },
+            }
             LetIn(pat, e1, e2) => {
                 let (val, _s) = self.eval(*e1.clone(), s)?;
                 let (res, bound_vars) = Self::match_pattern(&val, &pat)?;
@@ -493,8 +545,8 @@ impl Interpreter {
                 }
                 _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
-            Variant(c1, o1) => match val {
-                Expr::Variant(c2, o2) => {
+            Variant(_, c1, o1) => match val {
+                Expr::Variant(_, c2, o2) => {
                     if c1 != c2 {
                         return Ok((false, Vec::with_capacity(0)));
                     }
@@ -509,8 +561,11 @@ impl Interpreter {
                 }
                 _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
             },
-            Struct(s1, patterns) => match val {
-                Expr::Struct(s2, vals) => {
+            Struct(path1, s1, patterns) => match val {
+                Expr::Struct(path2, s2, vals) => {
+                    if path1 != path2 {
+                        return Err(PatternMatchError(pattern.clone(), val.clone()).into());
+                    }
                     if s1 != s2 {
                         return Err(PatternMatchError(pattern.clone(), val.clone()).into());
                     }
@@ -520,7 +575,7 @@ impl Interpreter {
                         if i >= vals.len() {
                             return Err(PatternMatchError(pattern.clone(), val.clone()).into());
                         }
-                        if field == &"..".to_string() {
+                        if field == ".." {
                             break;
                         }
 
@@ -649,7 +704,7 @@ impl Expr {
     fn step_value(&self) -> Expr {
         use Expr::*;
         match self {
-            Bool(_) | Int(_) | Float(_) | String(_) | Unit | Var(_) | Location(_) | Fn(..)
+            Bool(_) | Int(_) | Float(_) | String(_) | Unit | Var(..) | Location(_) | Fn(..)
             | Fix(..) => self.clone(),
             Stable(v) => Stable(Box::new(v.step_value())),
             Into(v) => match *v.clone() {
@@ -668,15 +723,38 @@ impl Expr {
             },
             List(list) => List(list.iter().map(|v| Box::new(v.step_value())).collect()),
             Tuple(tuple) => Tuple(tuple.iter().map(|v| Box::new(v.step_value())).collect()),
-            Struct(name, fields) => Struct(
+            Struct(path, name, fields) => Struct(
+                path.clone(),
                 name.clone(),
                 fields
                     .iter()
                     .map(|(f, v)| (f.clone(), Box::new(v.step_value())))
                     .collect(),
             ),
-            Variant(name, v) => Variant(name.clone(), v.clone().map(|v| Box::new(v.step_value()))),
+            Variant(path, name, v) => Variant(
+                path.clone(),
+                name.clone(),
+                v.clone().map(|v| Box::new(v.step_value())),
+            ),
             _ => unreachable!("Not a value"),
         }
     }
+}
+
+fn flatten(
+    dag: &Dag<Vec<LetBinding>, String>,
+    path: &Vec<String>,
+    root: NodeIndex,
+) -> Vec<(Vec<String>, Vec<LetBinding>)> {
+    let mut children = dag.children(root);
+    let mut bindings = vec![(path.clone(), dag[root].clone())];
+
+    while let Some((e_id, n_id)) = children.walk_next(dag) {
+        let mut child_path = path.clone();
+        child_path.push(dag.edge_weight(e_id).unwrap().clone());
+
+        let mut child_bindings = flatten(dag, &child_path, n_id);
+        bindings.append(&mut child_bindings);
+    }
+    bindings
 }

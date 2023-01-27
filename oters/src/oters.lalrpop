@@ -5,6 +5,10 @@ use lalrpop_util::ParseError;
 
 grammar;
 
+// ------------------ Comments -------------------
+
+Comment: () = r"//[^\n\r]*[\n\r]*" => ();
+
 // -------------------- Utils -------------------- 
 
 // A comma separated list with minimum one element and optional trailing comma
@@ -33,7 +37,6 @@ LowerId: String = {
 UpperId: String = {
   <s: r"[A-Z][A-Za-z0-9'_]*"> => s.to_string()
 }
-
 
 // -------------------- Literals -------------------- 
 
@@ -97,9 +100,10 @@ GenericArgs: Vec<Box<TypeExpr>> = {
   "<" <Comma<Type>> ">"
 };
 
+
 UserType: Box<TypeExpr> = {
-  UpperId => Box::new(TypeExpr::TEUser(<>,Vec::new())),
-  UpperId GenericArgs => Box::new(TypeExpr::TEUser(<>))
+  <v: (<LowerId> "::")*> <t: UpperId> => Box::new(TypeExpr::TEUser(v, t,Vec::new())),
+  <v: (<LowerId> "::")*> <t: UpperId> <g: GenericArgs> => Box::new(TypeExpr::TEUser(v, t, g))
 };
 
 TypeTerm: Box<TypeExpr> = { 
@@ -126,7 +130,7 @@ CompOp: Opcode = {
 };
 
 ConsStreamOp: Opcode = {
-  "::" => Opcode::Cons,
+  ":" => Opcode::Cons,
   "<<" => Opcode::Stream,
 };
 
@@ -191,17 +195,24 @@ MulDivMod: Box<PExpr> = {
   AppExpr
 };
 
+VariantStructExpr: Box<PExpr> = {
+  <mut v: (<LowerId> "::")*> <t: UpperId> "::" <s: UpperId> <e: VariantStructExpr> => {
+    v.push(t);
+    Box::new(PExpr::Variant(v, s, Some(e))) // e.g. Some (64)
+  },
+  <mut v: (<LowerId> "::")*> <t: UpperId> "::" <s: UpperId> => {
+    v.push(t);
+    Box::new(PExpr::Variant(v, s, None))
+  },
+  <v: (<LowerId> "::")*> <s: UpperId> <f: Fields<Expr>> => Box::new(PExpr::StructExpr(v, s, f)), // Circle {pos: (0, 0), r: 10 }
+  AppExpr,
+}
+
 // Left associative 
 AppExpr: Box<PExpr> = {
-  <AppExpr> <VariantStructExpr> => Box::new(PExpr::App(<>)),
-  VariantStructExpr,
+  <AppExpr> <DotExpr> => Box::new(PExpr::App(<>)),
+  DotExpr,
 };
-
-VariantStructExpr: Box<PExpr> = {
-  <s: UpperId> <e: VariantStructExpr> => Box::new(PExpr::Variant(s, Some(e))), // Some (64)
-  <s: UpperId> <f: Fields<Expr>> => Box::new(PExpr::StructExpr(s, f)),         // Circle {pos: (0, 0), r: 10 }
-  DotExpr
-}
 
 // Left associative 
 DotExpr: Box<PExpr> = {
@@ -229,6 +240,12 @@ TupleTerm: Box<PExpr> = {
   }
 };
 
+VarTerm: Box<PExpr> = {
+  <p: (<LowerId> "::")*> <v: LowerId> => {
+    Box::new(PExpr::Var(p, v))
+  },
+}
+
 Term: Box<PExpr> = { 
   Bool => Box::new(PExpr::Bool(<>)),
   Int => Box::new(PExpr::Int(<>)),
@@ -237,7 +254,7 @@ Term: Box<PExpr> = {
   Unit => Box::new(PExpr::Unit),
   ListTerm,
   TupleTerm,
-  LowerId => Box::new(PExpr::Var(<>)),
+  VarTerm,
   "(" <Expr> ")",
 };
 
@@ -252,7 +269,7 @@ OrPattern: Box<Pattern> = {
 
 // Right associative
 ConsPattern: Box<Pattern> = {
-  <PatternTerm> "::" <ConsPattern> => Box::new(Pattern::Cons(<>)),
+  <PatternTerm> ":" <ConsPattern> => Box::new(Pattern::Cons(<>)),
   <PatternTerm> "<<" <ConsPattern> => Box::new(Pattern::Stream(<>)),
   PatternTerm,
 };
@@ -281,7 +298,7 @@ StructPatternList: Vec<(String, Option<Box<Pattern>>)> = {
 };
 
 StructPattern: Box<Pattern> = {
-  <s: UpperId> <v: StructPatternList> => Box::new(Pattern::Struct(s, v))
+  <p: (<LowerId> "::")*> <s: UpperId> <v: StructPatternList> => Box::new(Pattern::Struct(p, s, v))
 };
 
 PatternTerm: Box<Pattern> = {
@@ -291,8 +308,14 @@ PatternTerm: Box<Pattern> = {
   Float => Box::new(Pattern::Float(<>)),
   String => Box::new(Pattern::String(<>)),
   Unit => Box::new(Pattern::Unit),
-  <s: UpperId> <p: PatternTerm> => Box::new(Pattern::Variant(s, Some(p))),
-  <UpperId> => Box::new(Pattern::Variant(<>, None)),
+  <mut v: (<LowerId> "::")*> <t: UpperId> "::" <s: UpperId> <p: PatternTerm> => {
+    v.push(t);
+    Box::new(Pattern::Variant(v, s, Some(p)))
+  },
+  <mut v: (<LowerId> "::")*> <t: UpperId> "::" <s: UpperId> => {
+    v.push(t);
+    Box::new(Pattern::Variant(v, s, None))
+  },
   TuplePattern, 
   ListPattern,
   StructPattern,
@@ -303,12 +326,19 @@ PatternTerm: Box<Pattern> = {
 Pattern: Box<Pattern> = OrPattern;
 
 LetPattern: Box<Pattern> = {
+  <LetPatternTerm> ":" <LetPattern> => Box::new(Pattern::Cons(<>)),
+  <LetPatternTerm> "<<" <LetPattern> => Box::new(Pattern::Stream(<>)),
+  LetPatternTerm,
+}
+
+LetPatternTerm: Box<Pattern> = {
   <LowerId> => Box::new(Pattern::Var(<>, false)),
   "_" => Box::new(Pattern::Underscore),
   "(" <p: LetPattern> "," <mut v: Comma<LetPattern>> ")" => {
     v.insert(0, p);
     Box::new(Pattern::Tuple(v))
   },
+  "(" <LetPattern> ")",
 }
 
 // -------------------- Expressions -------------------- 
@@ -367,7 +397,6 @@ pub Expr: Box<PExpr> = {
   IfExpr,
   FnExpr,
   MatchExpr,
-  <UpperId> => Box::new(PExpr::Variant(<>, None)), 
 };
 
 // -------------------- Top-Level Expressions -------------------- 
@@ -405,6 +434,21 @@ LetWithAnd: Box<PExpr> = {
     "let" <p1: LetPattern> "=" <e1:Expr> "and" <p2: LetPattern> "=" <e2: Expr> "with" <e3:Expr> =>
         Box::new(PExpr::LetAndWith(*p1, e1, *p2, e2, e3)),
 };
+
+UseExpr: Box<PExpr> = {
+  "use" <mut v: (<LowerId> "::")+> <t: LowerId> => {
+    v.push(t);
+    Box::new(PExpr::Use(v, false))
+  },
+  "use" <mut v: (<LowerId> "::")+> <t: UpperId> => {
+    v.push(t);
+    Box::new(PExpr::Use(v, true))
+  },
+  "use" <mut v: (<LowerId> "::")+> "*" => {
+    v.push("*".to_string());
+    Box::new(PExpr::Use(v, false))
+  },
+}
 
 pub Item: Box<PExpr> = {
   LetExpr,

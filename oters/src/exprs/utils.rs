@@ -37,8 +37,12 @@ impl Display for Expr {
                 str.push_str(&format!("{})", v[v.len() - 1]));
                 write!(f, "{}", str)
             }
-            Struct(id, fields) => {
-                let mut str = id.clone();
+            Struct(path, id, fields) => {
+                let mut str = "".to_string();
+                for module in path {
+                    str.push_str(&format!("{}::", module));
+                }
+                str.push_str(id);
                 str.push_str(" {");
 
                 for i in 0..fields.len() {
@@ -48,10 +52,16 @@ impl Display for Expr {
                 str.push('}');
                 write!(f, "{}", str)
             }
-            Variant(constr, o) => match o {
-                None => write!(f, "{}", constr),
-                Some(e) => write!(f, "{}({})", constr, e),
-            },
+            Variant(path, constr, o) => {
+                let mut path_str = "".to_string();
+                for module in path {
+                    path_str.push_str(&format!("{}::", module));
+                }
+                match o {
+                    None => write!(f, "{}{}", path_str, constr),
+                    Some(e) => write!(f, "{}{}({})", path_str, constr, e),
+                }
+            }
             Fn(pat, e) => write!(f, "fn {} -> (\n{}\n)", pat, e),
             Fix(var, e) => write!(f, "fix {}.({})", var, e),
             If(e1, e2, e3) => write!(f, "if {} then\n{}\nelse\n{}", e1, e2, e3),
@@ -68,7 +78,14 @@ impl Display for Expr {
                 str.push('}');
                 write!(f, "{}", str)
             }
-            Var(x) => write!(f, "{}", x),
+            Var(path, x) => {
+                let mut str = "".to_string();
+                for module in path {
+                    str.push_str(&format!("{}::", module));
+                }
+                str.push_str(x);
+                write!(f, "{}", str)
+            }
             LetIn(pat, e1, e2) => write!(f, "let {} = {} in\n{}", pat, e1, e2),
             Location(i) => write!(f, "loc {}", i),
         }
@@ -136,8 +153,12 @@ impl Display for Pattern {
                 str.push_str(&format!("{})", v[v.len() - 1]));
                 write!(f, "{}", str)
             }
-            Struct(id, fields) => {
-                let mut str = id.clone();
+            Struct(path, id, fields) => {
+                let mut str = "".to_string();
+                for module in path {
+                    str.push_str(&format!("{}::", module));
+                }
+                str.push_str(id);
                 str.push_str(" {");
 
                 for i in 0..fields.len() {
@@ -150,10 +171,16 @@ impl Display for Pattern {
                 str.push('}');
                 write!(f, "{}", str)
             }
-            Variant(constr, o) => match o {
-                None => write!(f, "{}", constr),
-                Some(e) => write!(f, "{}({})", constr, e),
-            },
+            Variant(path, constr, o) => {
+                let mut path_str = "".to_string();
+                for module in path {
+                    path_str.push_str(&format!("{}::", module));
+                }
+                match o {
+                    None => write!(f, "{}{}", path_str, constr),
+                    Some(e) => write!(f, "{}{}({})", path_str, constr, e),
+                }
+            }
             Cons(p1, p2) => write!(f, "{} :: {}", p1, p2),
             Stream(p1, p2) => write!(f, "{} << {}", p1, p2),
             Or(p1, p2) => write!(f, "{} || {}", p1, p2),

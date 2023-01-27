@@ -1,0 +1,27 @@
+let button = fn f_id size content -> {
+  let btn_id = create_button (f_id, size);
+  let aux = fn (label << content) -> 
+    draw_button (f_id, btn_id, label) << @(aux !@content);
+  (btn_id, aux content)
+}
+
+let vgroup = fn f_id size elems -> {
+  let grp_id = create_vgroup (f_id,size);
+  let aux = fn (es_now << es_later) -> 
+    draw_vgroup (f_id, grp_id, es_now) << @(aux !@es_later);
+  (grp_id, aux elems)
+}
+
+let checkbox = fn f_id size -> {
+  let cbx_id = create_checkbox (f_id, size);
+  let aux = draw_checkbox (f_id, cbx_id) << @aux;
+  (cbx_id, aux)
+}
+
+let label = fn f_id size content -> {
+  let lab_id = create_label (f_id, size);
+  let aux = fn (cnt_now << cnt_later)  -> 
+     draw_label (f_id, lab_id, cnt_now) << @(aux !@cnt_later);
+  (lab_id, aux content)
+}
+

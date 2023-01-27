@@ -1,4 +1,8 @@
-use super::Type;
+use daggy::petgraph::visit::{IntoEdges, IntoNeighbors};
+use daggy::{petgraph::visit::EdgeRef, Dag};
+
+use super::{Type, TypeError};
+use std::collections::HashMap;
 use std::fmt::Display;
 
 impl Display for Type {
@@ -75,4 +79,52 @@ impl Display for Type {
             }
         }
     }
+}
+
+pub fn traverse_path<T: Clone>(dag: &Dag<T, String>, path: &Vec<String>) -> anyhow::Result<T> {
+    let mut node = 0.into();
+    for module in path {
+        let mut child = None;
+        for edge in dag.edges(node) {
+            if edge.weight() == module {
+                child = Some(edge.target());
+                break;
+            }
+        }
+        node = if let Some(child) = child {
+            child
+        } else {
+            return Err(TypeError::InvalidPath(format!("{:?}", path)).into());
+        }
+    }
+
+    Ok(dag[node].clone())
+}
+
+pub fn insert_dec(
+    dag: &mut Dag<HashMap<String, Type>, String>,
+    name: String,
+    t: Type,
+    path: &Vec<String>,
+) {
+    let mut node = 0.into();
+    for module in path {
+        let mut child = None;
+        for neighbor in dag.neighbors(node) {
+            match dag.find_edge(node, neighbor) {
+                Some(edge) => {
+                    child = Some(neighbor);
+                    break;
+                }
+                None => (),
+            }
+        }
+        node = if let Some(child) = child {
+            child
+        } else {
+            dag.add_child(node, module.clone(), HashMap::new()).1
+        };
+    }
+
+    dag[node].insert(name, t);
 }

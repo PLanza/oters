@@ -15,21 +15,22 @@ pub enum PExpr {
     BinOp(Box<PExpr>, Opcode, Box<PExpr>),
     UnOp(Opcode, Box<PExpr>),
     List(VecDeque<Box<PExpr>>),
-    StructExpr(String, Vec<(String, Box<PExpr>)>),
+    StructExpr(Vec<String>, String, Vec<(String, Box<PExpr>)>),
     Tuple(Vec<Box<PExpr>>),
     Fn(Vec<Pattern>, Box<PExpr>),
     If(Box<PExpr>, Box<PExpr>, Box<PExpr>),
     Block(Vec<Box<PExpr>>),
     App(Box<PExpr>, Box<PExpr>),
     ProjStruct(Box<PExpr>, String),
-    Variant(String, Option<Box<PExpr>>),
+    Variant(Vec<String>, String, Option<Box<PExpr>>), // Variant's type, name, and contents
     Match(Box<PExpr>, Vec<(Box<Pattern>, Box<PExpr>)>),
-    Var(String),
+    Var(Vec<String>, String),
     TypeDef(String, Vec<String>, Box<TypeExpr>), // Type Alias with Generic Parameters and defined type
     StructDef(String, Vec<String>, Vec<(String, Box<TypeExpr>)>), // Struct with generic parameters
     EnumDef(String, Vec<String>, Vec<(String, Option<Box<TypeExpr>>)>), // Enum with generic parameters
     Let(Pattern, Box<PExpr>),
     LetAndWith(Pattern, Box<PExpr>, Pattern, Box<PExpr>, Box<PExpr>),
+    Use(Vec<String>, bool), // Bool indicates whether it's a value or type being imported
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -66,7 +67,7 @@ pub enum TypeExpr {
     TEBool,
     TETuple(Vec<Box<TypeExpr>>),
     TEList(Box<TypeExpr>),
-    TEUser(String, Vec<Box<TypeExpr>>), // Structs, Enums, Generics, and Type Aliases with their generic arguments
+    TEUser(Vec<String>, String, Vec<Box<TypeExpr>>), // Structs, Enums, Generics, and Type Aliases with their generic arguments
     TEFunction(Box<TypeExpr>, Box<TypeExpr>),
     TEDelay(Box<TypeExpr>),  // From Patrick Bahr's Rattus
     TEStable(Box<TypeExpr>), // From Patrick Bahr's Rattus
@@ -82,8 +83,8 @@ pub enum Pattern {
     Unit,
     Tuple(Vec<Box<Pattern>>),
     List(Vec<Box<Pattern>>),
-    Variant(String, Option<Box<Pattern>>),
-    Struct(String, Vec<(String, Option<Box<Pattern>>)>),
+    Variant(Vec<String>, String, Option<Box<Pattern>>),
+    Struct(Vec<String>, String, Vec<(String, Option<Box<Pattern>>)>),
     Cons(Box<Pattern>, Box<Pattern>),
     Stream(Box<Pattern>, Box<Pattern>),
     Or(Box<Pattern>, Box<Pattern>),

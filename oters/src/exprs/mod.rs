@@ -50,8 +50,8 @@ pub enum Expr {
     Into(Box<Expr>),   // From Patrick Bahr's Rattus
     List(VecDeque<Box<Expr>>),
     Tuple(Vec<Box<Expr>>),
-    Struct(String, Vec<(String, Box<Expr>)>),
-    Variant(String, Option<Box<Expr>>),
+    Struct(Vec<String>, String, Vec<(String, Box<Expr>)>),
+    Variant(Vec<String>, String, Option<Box<Expr>>),
     Fn(Pattern, Box<Expr>),
     Fix(String, Box<Expr>), // From Patrick Bahr's Rattus
     If(Box<Expr>, Box<Expr>, Box<Expr>),
@@ -59,7 +59,7 @@ pub enum Expr {
     App(Box<Expr>, Box<Expr>),
     ProjStruct(Box<Expr>, String),
     Match(Box<Expr>, Vec<(Pattern, Box<Expr>)>),
-    Var(String),
+    Var(Vec<String>, String),
     LetIn(Pattern, Box<Expr>, Box<Expr>),
     Location(u64), // Only created by the interpreter
 }
@@ -124,13 +124,13 @@ impl Expr {
 
                 Ok(Expr::List(list))
             }
-            PExpr::StructExpr(id, v) => {
+            PExpr::StructExpr(path, name, v) => {
                 let mut fields = Vec::new();
                 for (f, e) in v {
                     fields.push((f, Box::new(Expr::from_pexpr(*e)?)));
                 }
 
-                Ok(Expr::Struct(id, fields))
+                Ok(Expr::Struct(path, name, fields))
             }
             PExpr::Tuple(v) => {
                 let mut tuple = Vec::new();
@@ -173,6 +173,7 @@ impl Expr {
                             let temp = rec_e.clone().substitute(
                                 &var,
                                 &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(
+                                    Vec::new(),
                                     fix_var.clone(),
                                 ))))),
                             );
@@ -224,9 +225,13 @@ impl Expr {
                 Box::new(Expr::from_pexpr(*e2)?),
             )),
             PExpr::ProjStruct(e, s) => Ok(Expr::ProjStruct(Box::new(Expr::from_pexpr(*e)?), s)),
-            PExpr::Variant(id, o) => match o {
-                None => Ok(Expr::Variant(id, None)),
-                Some(e) => Ok(Expr::Variant(id, Some(Box::new(Expr::from_pexpr(*e)?)))),
+            PExpr::Variant(path, name, o) => match o {
+                None => Ok(Expr::Variant(path, name, None)),
+                Some(e) => Ok(Expr::Variant(
+                    path,
+                    name,
+                    Some(Box::new(Expr::from_pexpr(*e)?)),
+                )),
             },
             PExpr::Match(e, v) => {
                 let mut p_es = Vec::new();
@@ -235,7 +240,7 @@ impl Expr {
                 }
                 Ok(Expr::Match(Box::new(Expr::from_pexpr(*e)?), p_es))
             }
-            PExpr::Var(s) => Ok(Expr::Var(s)),
+            PExpr::Var(path, var) => Ok(Expr::Var(path, var)),
             _ => unreachable!(),
         }
     }
@@ -297,7 +302,7 @@ impl Expr {
 
                 (b, List(list))
             }
-            Struct(id, v) => {
+            Struct(path, id, v) => {
                 let mut fields = Vec::new();
                 let mut b = false;
                 for (f, e) in v {
@@ -306,7 +311,7 @@ impl Expr {
                     fields.push((f, Box::new(e_)));
                 }
 
-                (b, Struct(id, fields))
+                (b, Struct(path, id, fields))
             }
             Tuple(v) => {
                 let mut tuple = Vec::new();
@@ -362,12 +367,12 @@ impl Expr {
 
                 (b, ProjStruct(Box::new(e_), s))
             }
-            Variant(id, o) => match o {
+            Variant(path, id, o) => match o {
                 Some(e) => {
                     let (b, e_) = e.substitute(var, term);
-                    (b, Variant(id, Some(Box::new(e_))))
+                    (b, Variant(path, id, Some(Box::new(e_))))
                 }
-                None => (false, Variant(id, None)),
+                None => (false, Variant(path, id, None)),
             },
             Match(e, v) => {
                 let (mut b, e_) = e.substitute(var, term);
@@ -387,11 +392,11 @@ impl Expr {
 
                 (b, Match(Box::new(e_), patterns))
             }
-            Var(s) => {
+            Var(path, s) => {
                 if s == var.clone() {
                     (true, term.clone())
                 } else {
-                    (false, Var(s))
+                    (false, Var(path, s))
                 }
             }
             LetIn(pat, e1, e2) => {
@@ -411,7 +416,7 @@ impl Expr {
     pub fn single_tick(&self, new_vs: u32) -> Expr {
         use Expr::*;
         match self {
-            Unit | Int(_) | Float(_) | Bool(_) | String(_) | Var(_) => self.clone(),
+            Unit | Int(_) | Float(_) | Bool(_) | String(_) | Var(..) => self.clone(),
             BinOp(e1, op, e2) => BinOp(
                 Box::new(e1.single_tick(new_vs)),
                 *op,
@@ -451,17 +456,21 @@ impl Expr {
 
                 Tuple(list)
             }
-            Struct(str, fields) => {
+            Struct(path, str, fields) => {
                 let mut _fields = Vec::new();
                 for (field, e) in fields {
                     _fields.push((field.clone(), Box::new(e.single_tick(new_vs))));
                 }
 
-                Struct(str.clone(), _fields)
+                Struct(path.clone(), str.clone(), _fields)
             }
-            Variant(id, o) => match o {
+            Variant(path, id, o) => match o {
                 None => self.clone(),
-                Some(e) => Variant(id.clone(), Some(Box::new(e.single_tick(new_vs)))),
+                Some(e) => Variant(
+                    path.clone(),
+                    id.clone(),
+                    Some(Box::new(e.single_tick(new_vs))),
+                ),
             },
             // Rule 2
             Fn(pat, e) => {
@@ -530,14 +539,17 @@ impl Expr {
                 let (r, e) = e.sub_single_tick(sub_var, for_fn);
                 (r, UnOp(*op, Box::new(e)))
             }
-            Delay(_) | Stable(_) | Fix(_, _) | Fn(_, _) | Var(_) => (None, self.clone()),
+            Delay(_) | Stable(_) | Fix(_, _) | Fn(_, _) | Var(..) => (None, self.clone()),
             Adv(e) => match *e.clone() {
-                Var(_) => (None, self.clone()),
+                Var(..) => (None, self.clone()),
                 _ => {
                     if for_fn {
-                        (Some(*e.clone()), Var(sub_var.clone()))
+                        (Some(*e.clone()), Var(Vec::new(), sub_var.clone()))
                     } else {
-                        (Some(*e.clone()), Adv(Box::new(Var(sub_var.clone()))))
+                        (
+                            Some(*e.clone()),
+                            Adv(Box::new(Var(Vec::new(), sub_var.clone()))),
+                        )
                     }
                 }
             },
@@ -581,7 +593,7 @@ impl Expr {
                 }
                 (r_ret, Tuple(ret_es))
             }
-            Struct(str, v) => {
+            Struct(path, str, v) => {
                 let mut ret_es = Vec::new();
                 let mut r_ret = None;
                 for (f, e) in v {
@@ -593,13 +605,13 @@ impl Expr {
                         ret_es.push((f.clone(), e.clone()));
                     }
                 }
-                (r_ret, Struct(str.clone(), ret_es))
+                (r_ret, Struct(path.clone(), str.clone(), ret_es))
             }
-            Variant(s, o) => match o {
+            Variant(path, s, o) => match o {
                 None => (None, self.clone()),
                 Some(e) => {
                     let (r, e) = e.sub_single_tick(sub_var, for_fn);
-                    (r, Variant(s.clone(), Some(Box::new(e))))
+                    (r, Variant(path.clone(), s.clone(), Some(Box::new(e))))
                 }
             },
             If(e1, e2, e3) => {
@@ -683,11 +695,11 @@ impl Expr {
                 acc = acc || e.is_static_recursive(name);
                 acc
             }),
-            Struct(_, fs) => fs.iter().fold(false, |mut acc, f| {
+            Struct(_, _, fs) => fs.iter().fold(false, |mut acc, f| {
                 acc = acc || f.1.is_static_recursive(name);
                 acc
             }),
-            Variant(_, o) => match o {
+            Variant(_, _, o) => match o {
                 None => false,
                 Some(e) => e.is_static_recursive(name),
             },
@@ -707,7 +719,7 @@ impl Expr {
                         acc
                     })
             }
-            Var(var) => var == name,
+            Var(_, var) => var == name,
             LetIn(pat, e1, e2) => {
                 !(pat.contains(name))
                     && (e1.is_static_recursive(name) || e2.is_static_recursive(name))
@@ -888,11 +900,11 @@ impl Pattern {
                 }
                 ret
             }
-            Variant(_, o) => match o {
+            Variant(_, _, o) => match o {
                 None => false,
                 Some(p) => p.contains(var),
             },
-            Struct(_, fields) => {
+            Struct(_, _, fields) => {
                 let mut ret = false;
                 for (field, o) in fields {
                     let b = match o {
@@ -930,11 +942,11 @@ impl Pattern {
                 }
                 ret
             }
-            Variant(_, o) => match o {
+            Variant(_, _, o) => match o {
                 None => Vec::new(),
                 Some(p) => p.vars(),
             },
-            Struct(_, fields) => {
+            Struct(_, _, fields) => {
                 let mut ret = Vec::new();
                 for (field, o) in fields {
                     match o {

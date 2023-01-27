@@ -1,3 +1,4 @@
+use super::Expr;
 use super::Pattern;
 use crate::parser::ast::PExpr;
 
@@ -20,6 +21,8 @@ pub enum InvalidExprError {
     IllegalLetExpr,
     #[error("Locations can only be created by the interpreter")]
     IllegalLocation,
+    #[error("Cannot import {0}")]
+    IllegalUse(Expr),
 }
 
 #[derive(Error, Debug)]

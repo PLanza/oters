@@ -1,0 +1,15 @@
+type Str<A> = (A, @Str)
+
+let const = fn #val -> val << @(const val)
+let head = fn (hd << tl) -> hd 
+let tail = fn (hd << tl) -> tl 
+
+let map = fn f (x << xs) -> (!#f x) << @(map f !@xs)
+
+let zip = fn (a << as) (b << bs) -> (a, b) << @(zip !@as !@bs)
+
+let fold = fn f acc (x << xs) -> {
+  let acc' = !#f acc x;
+  acc' << @(fold f acc' !@xs)
+}
+

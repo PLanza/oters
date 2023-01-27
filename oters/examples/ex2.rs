@@ -21,7 +21,8 @@ fn main() -> Result<()> {
         EXPORT_ENUMS.clone(),
     ));
 
-    let exprs = checker.type_check_program(&program)?;
+    checker.type_check_program(&program)?;
+    let exprs = checker.get_checked_exprs();
 
     let mut interpreter = Interpreter::new(exprs, EXPORT_FNS.clone())?;
     loop {

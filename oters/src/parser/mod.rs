@@ -60,6 +60,10 @@ pub fn parse_file(path: String) -> Result<Program> {
     let path = std::path::Path::new(&path);
     let source = read_to_string(path)?;
 
+    parse_source(source)
+}
+
+pub fn parse_source(source: String) -> Result<Program> {
     let parser = oters::ProgramParser::new();
 
     // The parsed abstract syntax tree
