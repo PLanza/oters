@@ -29,6 +29,7 @@ pub struct VarContext {
 pub enum LetBinding {
     Let(Pattern, Expr),
     LetAndWith(String, Expr, String, Expr, Expr),
+    Use(Vec<String>, String),
 }
 
 // The actual expressions of the language.

@@ -9,7 +9,7 @@ use crate::parser::ast::{PExpr, Pattern, Program};
 use daggy::Dag;
 
 use anyhow::Result;
-use daggy::petgraph::visit::IntoNeighbors;
+use daggy::petgraph::visit::{EdgeRef, IntoEdges};
 
 #[derive(Debug)]
 pub struct ProgramChecker {
@@ -26,35 +26,7 @@ pub struct ProgramChecker {
 }
 
 impl ProgramChecker {
-    pub fn new(exports: (ExportFns, ExportStructs, ExportEnums)) -> Self {
-        /*
-        let mut value_decs = HashMap::new();
-        for (s, (_, args, ret)) in exports.0 {
-            let t = if args.len() == 1 {
-                Type::Function(Box::new(args[0].clone()), Box::new(ret))
-            } else {
-                Type::Function(
-                    Box::new(Type::Tuple(args.into_iter().map(|t| Box::new(t)).collect())),
-                    Box::new(ret),
-                )
-            };
-            value_decs.insert(s, t);
-        }
-
-        let mut type_decs = HashMap::new();
-        for (s, map) in exports.1 {
-            type_decs.insert(s, Type::Struct(map));
-        }
-
-        let mut variant_map = HashMap::new();
-        for (enum_name, map) in exports.2 {
-            // Add variants to map
-            for (variant, _) in &map {
-                variant_map.insert(variant.clone(), enum_name.clone());
-            }
-            type_decs.insert(enum_name, Type::Enum(map));
-        } */
-
+    pub fn new() -> Self {
         let mut type_decs = Dag::new();
         let td_root = type_decs.add_node(HashMap::new());
         assert_eq!(td_root, 0.into());
@@ -81,13 +53,10 @@ impl ProgramChecker {
         let mut node = 0.into();
         for module in path {
             let mut child = None;
-            for neighbor in self.checked_exprs.neighbors(node) {
-                match self.checked_exprs.find_edge(node, neighbor) {
-                    Some(_) => {
-                        child = Some(neighbor);
-                        break;
-                    }
-                    None => (),
+            for edge in self.checked_exprs.edges(node) {
+                if edge.weight() == module {
+                    child = Some(edge.target());
+                    break;
                 }
             }
             node = if let Some(child) = child {
@@ -102,8 +71,46 @@ impl ProgramChecker {
         self.checked_exprs[node].push(binding);
     }
 
-    pub fn type_check_program(&mut self, program: &Program, path: Vec<String>) -> Result<()> {
+    pub fn type_check_program(
+        &mut self,
+        program: &Program,
+        path: Vec<String>,
+        exports: Option<(ExportFns, ExportStructs, ExportEnums)>,
+    ) -> Result<()> {
         self.current_path = path.clone();
+
+        // Add exports to declarations
+        match exports {
+            Some(exports) => {
+                for (s, (_, args, ret)) in exports.0 {
+                    let t = if args.len() == 1 {
+                        Type::Function(Box::new(args[0].clone()), Box::new(ret))
+                    } else {
+                        Type::Function(
+                            Box::new(Type::Tuple(args.into_iter().map(|t| Box::new(t)).collect())),
+                            Box::new(ret),
+                        )
+                    };
+                    insert_dec(&mut self.value_decs, s, t, &path);
+                }
+
+                let mut type_decs = HashMap::new();
+                for (s, map) in exports.1 {
+                    type_decs.insert(s, Type::Struct(map));
+                }
+
+                let mut variant_map = HashMap::new();
+                for (enum_name, map) in exports.2 {
+                    // Add variants to map
+                    for (variant, _) in &map {
+                        variant_map.insert(variant.clone(), enum_name.clone());
+                    }
+                    insert_dec(&mut self.type_decs, enum_name, Type::Enum(map), &path);
+                }
+            }
+            None => (),
+        }
+
         // Checks expressions in order of appearance
         // Expression cannot reference value declared below it
         //   => Cyclic declarations are disallowed
@@ -117,6 +124,7 @@ impl ProgramChecker {
                         params.clone(),
                         *t.clone(),
                         &self.type_decs,
+                        &path,
                     )?;
 
                     // Check that the type is well formed
@@ -232,6 +240,7 @@ impl ProgramChecker {
 
                         // Make sure the resulting type is well formed
                         t.well_formed(TypeContext::new())?;
+                        println!("{:?}::{}: {}", path, var, t);
 
                         // Add it to the map of value declarations
                         insert_dec(&mut self.value_decs, var, t, &path)
@@ -309,7 +318,7 @@ impl ProgramChecker {
                         },
                         _ => return Err(TypeError::InvalidMutuallyRecursiveDefinition(e1).into()),
                     }
-                    println!("{}", t1);
+                    println!("{:?}::{}: {}", path, x, t1);
                     insert_dec(&mut self.value_decs, x.clone(), t1, &path);
 
                     // Γ, x∶ Str<𝑡₁> ⊢ 𝑒₂ ∶ Str<𝑡₂>
@@ -346,7 +355,7 @@ impl ProgramChecker {
                     self.substitutions.append(&mut subs);
                     s_t2.well_formed(TypeContext::new())?;
 
-                    println!("{}", s_t2);
+                    println!("{:?}::{}: {}", path, y, s_t2);
                     insert_dec(&mut self.value_decs, y.clone(), s_t2, &path);
 
                     self.substitutions = Vec::new();
@@ -358,30 +367,35 @@ impl ProgramChecker {
                 }
                 PExpr::Use(use_path, is_type) => {
                     let last_elem = use_path.iter().last().unwrap();
+                    let use_path: &Vec<String> = &use_path[0..use_path.len() - 1].into();
                     if last_elem == "*" {
                         // Copy all elements in path to root node
-                        let types = traverse_path(
-                            &mut self.type_decs,
-                            &use_path[0..use_path.len() - 1].into(),
-                        )?;
-                        let values = traverse_path(
-                            &mut self.value_decs,
-                            &use_path[0..use_path.len() - 1].into(),
-                        )?;
+                        let types = traverse_path(&mut self.type_decs, &use_path)?;
+                        let values = traverse_path(&mut self.value_decs, &use_path)?;
+                        if !values.is_empty() {
+                            self.insert_checked_expr(
+                                LetBinding::Use(use_path.clone(), last_elem.clone()),
+                                &path,
+                            )
+                        }
                         for (s, t) in types {
                             insert_dec(&mut self.type_decs, s, t, &path);
                         }
                         for (s, t) in values {
-                            insert_dec(&mut self.type_decs, s, t, &path);
+                            insert_dec(&mut self.value_decs, s, t, &path);
                         }
                     } else {
                         // Copy last_elem to root node
                         let dag = if *is_type {
                             &mut self.type_decs
                         } else {
+                            self.insert_checked_expr(
+                                LetBinding::Use(use_path.clone(), last_elem.clone()),
+                                &path,
+                            );
                             &mut self.value_decs
                         };
-                        let node = traverse_path(dag, &use_path[0..use_path.len() - 1].into())?;
+                        let node = traverse_path(dag, &use_path)?;
                         insert_dec(
                             dag,
                             last_elem.clone(),

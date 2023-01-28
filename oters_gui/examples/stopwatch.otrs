@@ -23,17 +23,17 @@ let state = {
   let aux = fn curr -> 
     if head start_btn then
       match curr with {
-        Reset => curr << @(aux (Started)),
-        Started => curr << @(aux (Stopped)),
-        Stopped => curr << @(aux (Started)),
+        State::Reset => curr << @(aux (State::Started)),
+        State::Started => curr << @(aux (State::Stopped)),
+        State::Stopped => curr << @(aux (State::Started)),
       }
     else 
       if head reset_btn then 
-        curr << @(aux (Reset))
+        curr << @(aux (State::Reset))
       else 
         curr << @(aux curr)
   ;
-  aux (Reset)
+  aux (State::Reset)
 }
 
 let secs_since_start = fn _ -> floor (time_since_start ()) 
@@ -42,16 +42,16 @@ let stopwatch = {
   let aux = fn prev_state click_time base_time -> {
     let curr_state = head state;    
     match (prev_state, curr_state) with {
-      (Reset, Reset) => 0 << @(aux curr_state 0 0),
-      (Started, Reset) => (base_time + secs_since_start () - click_time) << @(aux curr_state 0 0),
-      (Stopped, Reset) => base_time << @(aux curr_state 0 0),
-      (Started, Started) => (base_time + secs_since_start () - click_time) << @(aux curr_state click_time base_time),
-      (_, Started) => base_time << @(aux curr_state (secs_since_start()) base_time),
-      (Started, Stopped) => (base_time + secs_since_start () - click_time) << @(aux curr_state click_time (base_time + secs_since_start() - click_time)),
-      (Stopped, Stopped) => base_time << @(aux curr_state click_time base_time),
+      (State::Reset, State::Reset) => 0 << @(aux curr_state 0 0),
+      (State::Started, State::Reset) => (base_time + secs_since_start () - click_time) << @(aux curr_state 0 0),
+      (State::Stopped, State::Reset) => base_time << @(aux curr_state 0 0),
+      (State::Started, State::Started) => (base_time + secs_since_start () - click_time) << @(aux curr_state click_time base_time),
+      (_, State::Started) => base_time << @(aux curr_state (secs_since_start()) base_time),
+      (State::Started, State::Stopped) => (base_time + secs_since_start () - click_time) << @(aux curr_state click_time (base_time + secs_since_start() - click_time)),
+      (State::Stopped, State::Stopped) => base_time << @(aux curr_state click_time base_time),
     }
   };
-  aux (Reset) 0 0
+  aux (State::Reset) 0 0
 }
 
 let seconds = (head stopwatch % 60) << @seconds

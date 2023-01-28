@@ -2,3 +2,5 @@ enum Option<A> {
   None,
   Some A,
 }
+
+type Stream<A> = (A, @Stream)

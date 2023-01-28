@@ -110,13 +110,10 @@ pub fn insert_dec(
     let mut node = 0.into();
     for module in path {
         let mut child = None;
-        for neighbor in dag.neighbors(node) {
-            match dag.find_edge(node, neighbor) {
-                Some(edge) => {
-                    child = Some(neighbor);
-                    break;
-                }
-                None => (),
+        for edge in dag.edges(node) {
+            if edge.weight() == module {
+                child = Some(edge.target());
+                break;
             }
         }
         node = if let Some(child) = child {

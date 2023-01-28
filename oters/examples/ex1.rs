@@ -15,16 +15,23 @@ export_list!();
 
 fn main() -> Result<()> {
     let program = parser::parse_file("oters/examples/ex1.otrs".to_string())?;
-    let mut checker = ProgramChecker::new((
+    let mut checker = ProgramChecker::new();
+
+    checker.type_check_program(
+        &program,
+        vec!["ex1".to_string()],
+        Some((
+            EXPORT_FNS.clone(),
+            EXPORT_STRUCTS.clone(),
+            EXPORT_ENUMS.clone(),
+        )),
+    )?;
+
+    let mut interpreter = Interpreter::new(
+        checker.checked_exprs,
         EXPORT_FNS.clone(),
-        EXPORT_STRUCTS.clone(),
-        EXPORT_ENUMS.clone(),
-    ));
-
-    checker.type_check_program(&program)?;
-    let exprs = checker.get_checked_exprs();
-
-    let mut interpreter = Interpreter::new(exprs, EXPORT_FNS.clone())?;
+        vec!["ex1".to_string()],
+    )?;
     loop {
         interpreter.eval_step()?;
     }

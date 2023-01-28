@@ -1,0 +1,10 @@
+use std::stream::head
+
+let nats = {
+  let aux = fn n -> n << @(aux (n + 1));
+  aux 0 
+}
+
+let triangles = std::stream::fold #(fn x y -> x + y) 0 nats
+
+let print_triangles = print_int (head triangles) << @print_triangles

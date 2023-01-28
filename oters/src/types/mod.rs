@@ -10,7 +10,7 @@ pub use utils::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use anyhow::Result;
-use daggy::Dag;
+use daggy::{Dag, NodeIndex};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -126,9 +126,13 @@ impl Type {
         params: Vec<String>,
         t: TypeExpr,
         t_decs: &Dag<HashMap<String, Type>, String>,
+        path: &Vec<String>,
     ) -> Result<Type> {
         // Add type being defined in the declarations for recursive types
         let mut t_decs = t_decs.clone();
+        let current_map = traverse_path(&t_decs, path).unwrap_or(HashMap::new());
+        let root_id: NodeIndex = 0.into();
+        t_decs[root_id] = current_map;
         insert_dec(
             &mut t_decs,
             id.clone(),

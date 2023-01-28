@@ -1,4 +1,4 @@
-type Str<A> = (A, @Str)
+use std::Stream
 
 let const = fn #val -> val << @(const val)
 let head = fn (hd << tl) -> hd 

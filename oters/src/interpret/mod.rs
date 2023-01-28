@@ -83,6 +83,7 @@ impl Interpreter {
     }
 
     pub fn init_bindings(&mut self, bindings: Vec<LetBinding>, path: Vec<String>) -> Result<()> {
+        self.current_path = path.clone();
         for binding in bindings {
             match binding {
                 LetBinding::Let(pat, expr) => {
@@ -123,6 +124,22 @@ impl Interpreter {
                     self.mut_rec_streams.insert((path.clone(), y), v2);
 
                     self.store = s;
+                }
+                LetBinding::Use(use_path, val) => {
+                    if val == "*" {
+                        for ((path_2, val), v) in self.globals.clone() {
+                            if use_path == path_2 {
+                                self.globals.insert((path.clone(), val.clone()), v.clone());
+                            }
+                        }
+                    } else {
+                        let v = self
+                            .globals
+                            .get(&(use_path.clone(), val.clone()))
+                            .cloned()
+                            .unwrap();
+                        self.globals.insert((path.clone(), val), v.clone());
+                    }
                 }
             }
         }

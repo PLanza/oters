@@ -2,10 +2,10 @@ let head = fn (hd << tl) -> hd
 
 let loop_fps = draw_fps () << @loop_fps
 
-let line = (draw_shape Line((80,80), (140, 140), 4, Color {r: 255, g: 255, b: 0, a: 255})) << @line
-let circle = (draw_shape Circle((100,100), 20, Color {r: 0, g: 255, b: 0, a: 255})) << @circle
-let triangle = (draw_shape Triangle((140,140), (100, 140), (120, 120), Color {r: 0, g: 0, b: 255, a: 255})) << @triangle
-let rect = (draw_shape Rect((100,100), (40, 40), Color {r: 255, g: 0, b: 0, a: 255})) << @rect
+let line = (draw_shape Shape::Line((80,80), (140, 140), 4, Color {r: 255, g: 255, b: 0, a: 255})) << @line
+let circle = (draw_shape Shape::Circle((100,100), 20, Color {r: 0, g: 255, b: 0, a: 255})) << @circle
+let triangle = (draw_shape Shape::Triangle((140,140), (100, 140), (120, 120), Color {r: 0, g: 0, b: 255, a: 255})) << @triangle
+let rect = (draw_shape Shape::Rect((100,100), (40, 40), Color {r: 255, g: 0, b: 0, a: 255})) << @rect
 
 let angles = {
   let aux = fn n -> n << @(aux (n+0.05));
@@ -28,9 +28,9 @@ let x = rot_img #otter_img
 
 let on_x = 
   if is_key_down "X" then
-    (draw_shape Circle((500,500), 20, Color {r: 0, g: 0, b: 255, a: 255})) << @on_x
+    (draw_shape Shape::Circle((500,500), 20, Color {r: 0, g: 0, b: 255, a: 255})) << @on_x
   else
     () << @on_x
   
-let cursor = (draw_shape Circle(mouse_pos (), 5, Color {r: 0, g: 255, b: 0, a: 255})) << @cursor
+let cursor = (draw_shape Shape::Circle(mouse_pos (), 5, Color {r: 0, g: 255, b: 0, a: 255})) << @cursor
 

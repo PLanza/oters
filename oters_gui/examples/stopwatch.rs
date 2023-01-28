@@ -1,8 +1,4 @@
-use anyhow::Result;
 use oters::export::{export_list, export_oters};
-use oters::interpret::Interpreter;
-use oters::parser;
-use oters::types::check::ProgramChecker;
 
 use macroquad::prelude::*;
 use macroquad::ui::root_ui;
@@ -40,23 +36,21 @@ fn time_to_string(hours: i64, mins: i64, secs: i64) -> String {
 
 export_list!();
 
-#[macroquad::main("Stopwatch")]
-async fn main() -> Result<()> {
-    let program = parser::parse_file("oters_gui/examples/stopwatch.otrs".to_string())?;
-    let mut checker = ProgramChecker::new((
-        EXPORT_FNS.clone(),
-        EXPORT_STRUCTS.clone(),
-        EXPORT_ENUMS.clone(),
-    ));
-
-    let exprs = checker.type_check_program(&program)?;
-
-    let mut interpreter = Interpreter::new(exprs, EXPORT_FNS.clone())?;
-
-    loop {
-        clear_background(WHITE);
-
-        interpreter.eval_step()?;
-        next_frame().await
-    }
+fn main() {
+    let config = oters_gui::WindowConfig {
+        title: "Stopwatch".to_string(),
+        dimensions: (720, 480),
+        resizable: true,
+        fullscreen: false,
+        icon: None,
+    };
+    oters_gui::run(
+        vec!["./oters_gui/examples/stopwatch.otrs".to_string()],
+        config,
+        (
+            EXPORT_FNS.clone(),
+            EXPORT_STRUCTS.clone(),
+            EXPORT_ENUMS.clone(),
+        ),
+    );
 }

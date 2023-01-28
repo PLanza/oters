@@ -1,5 +1,7 @@
+use std::path::Path;
+
 use anyhow::Result;
-use oters::export::export_list;
+use oters::export::{export_list, ExportEnums, ExportFns, ExportStructs};
 pub mod color;
 pub mod image;
 pub mod input;
@@ -28,30 +30,54 @@ pub struct WindowConfig {
     pub icon: Option<Icon>,
 }
 
-pub async fn run_loop(files: Vec<String>) -> Result<()> {
-    let mut checker = oters::types::check::ProgramChecker::new((
-        EXPORT_FNS.clone(),
-        EXPORT_STRUCTS.clone(),
-        EXPORT_ENUMS.clone(),
-    ));
+pub async fn run_loop(
+    files: Vec<String>,
+    exports: (ExportFns, ExportStructs, ExportEnums),
+) -> Result<()> {
+    let mut checker = oters::types::check::ProgramChecker::new();
 
     // Load std and gui libraries
     oters::load_std_lib(&mut checker)?;
     let gui_lib = oters::parser::parse_source(include_str!("gui.otrs").to_string())?;
-    checker.type_check_program(&gui_lib, vec!["gui".to_string()])?;
+    checker.type_check_program(
+        &gui_lib,
+        vec!["gui".to_string()],
+        Some((
+            EXPORT_FNS.clone(),
+            EXPORT_STRUCTS.clone(),
+            EXPORT_ENUMS.clone(),
+        )),
+    )?;
 
     // Link user Rust code
 
     // Link user programs
     // Files must be in order of dependency
-    for file in files {
-        let user_program = oters::parser::parse_file(file)?;
-        checker.type_check_program(&user_program)?;
+    let file_stems: Vec<String> = files
+        .iter()
+        .map(|f| {
+            let path = Path::new(&f);
+            path.file_stem().unwrap().to_str().unwrap().to_string()
+        })
+        .collect();
+
+    let mut first = true;
+    for (file, stem) in files.iter().zip(&file_stems) {
+        let user_program = oters::parser::parse_file(file.clone())?;
+        let exports = if first {
+            first = false;
+            Some(exports.clone())
+        } else {
+            None
+        };
+        checker.type_check_program(&user_program, vec![stem.clone()], exports)?;
     }
 
-    let exprs = checker.get_checked_exprs();
+    let exprs = checker.checked_exprs;
 
-    let mut interpreter = oters::interpret::Interpreter::new(exprs, EXPORT_FNS.clone())?;
+    let mut export_fns = EXPORT_FNS.clone();
+    export_fns.extend(exports.0);
+    let mut interpreter = oters::interpret::Interpreter::new(exprs, export_fns, file_stems)?;
 
     loop {
         macroquad::prelude::clear_background(macroquad::color::WHITE);
@@ -61,7 +87,11 @@ pub async fn run_loop(files: Vec<String>) -> Result<()> {
     }
 }
 
-pub fn run(files: Vec<String>, config: WindowConfig) {
+pub fn run(
+    files: Vec<String>,
+    config: WindowConfig,
+    exports: (ExportFns, ExportStructs, ExportEnums),
+) {
     let conf = macroquad::miniquad::conf::Conf {
         window_title: config.title,
         sample_count: 4,
@@ -73,7 +103,7 @@ pub fn run(files: Vec<String>, config: WindowConfig) {
         ..Default::default()
     };
     macroquad::Window::from_config(conf, async {
-        if let Err(err) = run_loop(files).await {
+        if let Err(err) = run_loop(files, exports).await {
             macroquad::logging::error!("Error: {:?}", err);
         }
     });

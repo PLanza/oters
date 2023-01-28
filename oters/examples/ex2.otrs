@@ -9,14 +9,14 @@ let nats = from 0
 
 let when = fn pred (x << xs) ->
   if !#pred x then
-    Some(from 0) << @(when pred !@xs)
+    Option::Some(from 0) << @(when pred !@xs)
   else 
-    (None) << @(when pred !@xs)
+    Option::None << @(when pred !@xs)
 
 let switch = fn (x << xs) (e << es) -> 
   match e with {
-    None => x << @(switch !@xs !@es),
-    Some (a << as) => a << @(switch !@as !@es)
+    Option::None => x << @(switch !@xs !@es),
+    Option::Some (a << as) => a << @(switch !@as !@es)
   }
 
 let loop_10 = switch nats (when #(fn x -> x % 10 == 0) nats)
@@ -28,7 +28,7 @@ let print_loop_10 = print_int (head loop_10) << @print_loop_10
 let contains = fn xs v -> 
   match xs with {
     [] => false,
-    x::xs => 
+    x:xs => 
       if v == x then
         true
       else 

@@ -23,10 +23,17 @@ fn values() -> Vec<(String, Box<super::ast::PExpr>)> {
             Box::new(String("He said \\\"Hi\\\"".to_string())),
         ),
         ("()".to_string(), Box::new(Unit)),
-        ("var".to_string(), Box::new(Var("var".to_string()))),
         (
-            "( None )".to_string(),
-            Box::new(Variant("None".to_string(), None)),
+            "var".to_string(),
+            Box::new(Var(Vec::new(), "var".to_string())),
+        ),
+        (
+            "( Option::None )".to_string(),
+            Box::new(Variant(
+                vec!["Option".to_string()],
+                "None".to_string(),
+                None,
+            )),
         ),
     ]
 }
@@ -89,7 +96,7 @@ fn binops() -> Vec<(String, Box<super::ast::PExpr>)> {
         (" - ".to_string(), Sub),
         (" / ".to_string(), Div),
         (" * ".to_string(), Mul),
-        (" :: ".to_string(), Cons),
+        (" : ".to_string(), Cons),
         (" << ".to_string(), Stream),
         (" == ".to_string(), Eq),
         (" < ".to_string(), Lt),
@@ -146,7 +153,7 @@ fn struct_val() -> (String, Box<super::ast::PExpr>) {
 
     (
         code,
-        Box::new(StructExpr("MyStruct".to_string(), struct_vec)),
+        Box::new(StructExpr(Vec::new(), "MyStruct".to_string(), struct_vec)),
     )
 }
 
@@ -229,7 +236,7 @@ fn primitive_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
         ("()".to_string(), Box::new(TEUnit)),
         (
             "T".to_string(),
-            Box::new(TEUser("T".to_string(), Vec::with_capacity(0))),
+            Box::new(TEUser(Vec::new(), "T".to_string(), Vec::with_capacity(0))),
         ),
     ]
 }
@@ -343,7 +350,10 @@ fn user_type() -> (String, Box<super::ast::TypeExpr>) {
     code.pop();
     code.push_str(">");
 
-    (code, Box::new(TEUser("MyType".to_string(), generics_vec)))
+    (
+        code,
+        Box::new(TEUser(Vec::new(), "MyType".to_string(), generics_vec)),
+    )
 }
 
 #[test]
@@ -573,17 +583,25 @@ fn variant_exprs() -> Vec<(String, Box<super::ast::PExpr>)> {
     let mut variants_vec = Vec::new();
 
     for e in exprs {
-        let code = format!("MyEnum ({})", e.0);
+        let code = format!("MyEnum::Constr({})", e.0);
 
         variants_vec.push((
             code.to_string(),
-            Box::new(Variant("MyEnum".to_string(), Some(e.1.clone()))),
+            Box::new(Variant(
+                vec!["MyEnum".to_string()],
+                "Constr".to_string(),
+                Some(e.1.clone()),
+            )),
         ));
     }
 
     variants_vec.push((
-        "MyEnum".to_string(),
-        Box::new(Variant("MyEnum".to_string(), None)),
+        "MyEnum::Constr".to_string(),
+        Box::new(Variant(
+            vec!["MyEnum".to_string()],
+            "Constr".to_string(),
+            None,
+        )),
     ));
 
     variants_vec

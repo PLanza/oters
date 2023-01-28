@@ -192,7 +192,7 @@ AddSub: Box<PExpr> = {
 // Left associative 
 MulDivMod: Box<PExpr> = {
   MulDivMod MulDivModOp AppExpr => Box::new(PExpr::BinOp(<>)),
-  AppExpr
+  VariantStructExpr
 };
 
 VariantStructExpr: Box<PExpr> = {
@@ -456,6 +456,7 @@ pub Item: Box<PExpr> = {
   EnumExpr,
   StructExpr,
   LetWithAnd,
+  UseExpr,
 }
 
 pub Program: Vec<Box<PExpr>> = {
