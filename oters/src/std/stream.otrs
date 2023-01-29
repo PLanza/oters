@@ -1,15 +1,39 @@
 use std::Stream
+use std::Option
 
-let const = fn #val -> val << @(const val)
 let head = fn (hd << tl) -> hd 
 let tail = fn (hd << tl) -> tl 
+
+let const = fn #val -> val << @(const val)
+let const_box = fn val -> !#val << @(const_box val)
 
 let map = fn f (x << xs) -> (!#f x) << @(map f !@xs)
 
 let zip = fn (a << as) (b << bs) -> (a, b) << @(zip !@as !@bs)
 
-let fold = fn f acc (x << xs) -> {
+let fold = fn f #acc (x << xs) -> {
   let acc' = !#f acc x;
   acc' << @(fold f acc' !@xs)
 }
 
+let unfold = fn f x -> x << @(unfold f (!#f x))
+
+let filter = fn pred (x << xs) -> {
+  let hd = if !#pred x then
+      Option::Some(x)
+    else 
+      Option::None;
+  hd << @(filter pred !@xs)
+}
+
+let shift = fn init (x << xs) -> init << @(shift x !@xs)
+
+let integral_diffs = fn #acc (t << ts) (a << as) -> {
+  let acc' = acc + t * a;
+  acc' << @(integral_diffs acc' !@ts !@as)
+}
+
+let integral = fn #acc ts as -> {
+  let ts' = fold #(fn prev_t curr_t -> curr_t - prev_t) 0 ts;
+  integral_diffs acc ts' as 
+}

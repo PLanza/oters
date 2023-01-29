@@ -1,13 +1,6 @@
 use std::stream::head
 
-let nats = {
-  let aux = fn n -> n << @(aux (n + 1));
-  aux 0 
-}
-
-let triangles = std::stream::fold #(fn x y -> x + y) 0 nats
-
-let print_triangles = ({
-  std::print_int (head triangles);
+let print_millis = ({
+  std::print_int (head std::millis);
   std::print_string "\n"
-}) << @print_triangles
+}) << @print_millis

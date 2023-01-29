@@ -5,10 +5,6 @@ use lalrpop_util::ParseError;
 
 grammar;
 
-// ------------------ Comments -------------------
-
-Comment: () = r"//[^\n\r]*[\n\r]*" => ();
-
 // -------------------- Utils -------------------- 
 
 // A comma separated list with minimum one element and optional trailing comma
@@ -364,7 +360,7 @@ IfExpr: Box<PExpr> = {
 };
 
 FnArgOp: Box<Pattern> = {
-    <FnArg> "::" <FnArgOp> => Box::new(Pattern::Cons(<>)),
+    <FnArg> ":" <FnArgOp> => Box::new(Pattern::Cons(<>)),
     <FnArg> "<<" <FnArgOp> => Box::new(Pattern::Stream(<>)),
     FnArg,
 }

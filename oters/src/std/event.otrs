@@ -2,6 +2,8 @@ use std::*
 
 type Event<A> = Stream<Option<A>>
 
+let never = Option::None << @never
+
 let switch = fn (x << xs) (e << es) -> 
   match e with {
     Option::None => x << @(switch !@xs !@es),
@@ -17,3 +19,11 @@ let switch_trans' = fn (a << as) (e << es) bs ->
     }
   }
 let switch_trans = fn f es as -> switch_trans' (f as) es as
+
+let trigger = fn pred (x << xs) -> {
+  let x' = if !#pred x then
+    Option::Some(x) 
+  else 
+    Option::None;
+  x' << @(trigger pred !@xs)
+}

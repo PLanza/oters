@@ -20,3 +20,8 @@ pub fn print_string(s: String) {
 pub fn print_bool(b: bool) {
     print!("{b}")
 }
+
+#[export_oters]
+pub fn timestamp_millis() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}

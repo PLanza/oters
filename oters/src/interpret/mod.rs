@@ -760,7 +760,7 @@ impl Expr {
                 name.clone(),
                 v.clone().map(|v| Box::new(v.step_value())),
             ),
-            _ => unreachable!("Not a value"),
+            _ => self.clone(),
         }
     }
 }
