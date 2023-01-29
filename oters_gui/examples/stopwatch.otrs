@@ -1,4 +1,4 @@
-let head = fn (hd << tl) -> hd
+use std::stream::head
 
 let reset_btn = (button ((447, 300), "RESET")) << @reset_btn
 let start_btn = {

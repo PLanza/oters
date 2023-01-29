@@ -367,6 +367,7 @@ FnArgOp: Box<Pattern> = {
 
 FnArg: Box<Pattern> = {
     "_" => Box::new(Pattern::Underscore),
+    Unit => Box::new(Pattern::Unit),
     <LowerId> => Box::new(Pattern::Var(<>, false)),
     "#" <LowerId> => Box::new(Pattern::Var(<>, true)), // Mark arguments that are stable
     "(" <p: FnArg> "," <mut v: Comma<FnArg>> ")" => {

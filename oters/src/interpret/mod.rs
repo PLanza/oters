@@ -132,13 +132,26 @@ impl Interpreter {
                                 self.globals.insert((path.clone(), val.clone()), v.clone());
                             }
                         }
+                        for ((path_2, val), v) in self.imports.clone() {
+                            if use_path == path_2 {
+                                self.imports.insert((path.clone(), val.clone()), v.clone());
+                            }
+                        }
                     } else {
-                        let v = self
-                            .globals
-                            .get(&(use_path.clone(), val.clone()))
-                            .cloned()
-                            .unwrap();
-                        self.globals.insert((path.clone(), val), v.clone());
+                        let v = self.globals.get(&(use_path.clone(), val.clone())).cloned();
+                        match v {
+                            Some(v) => {
+                                self.globals.insert((path.clone(), val), v.clone());
+                            }
+                            None => {
+                                let v = self
+                                    .imports
+                                    .get(&(use_path.clone(), val.clone()))
+                                    .cloned()
+                                    .unwrap();
+                                self.imports.insert((path.clone(), val), v.clone());
+                            }
+                        }
                     }
                 }
             }
@@ -213,7 +226,7 @@ impl Interpreter {
                             },
                         ),
                     },
-                    _ => Err(UncaughtTypeError(format!("HERE{:?}", e)).into()),
+                    _ => Err(UncaughtTypeError(format!("{:?}", e)).into()),
                 }
             }
             Unbox(e) => {
@@ -312,7 +325,9 @@ impl Interpreter {
                         };
 
                         // If the function has been imported, call it with converted arguments
-                        if self.imports.contains_key(&(path.clone(), var.clone())) {
+                        if !self.globals.contains_key(&(path.clone(), var.clone()))
+                            && self.imports.contains_key(&(path.clone(), var.clone()))
+                        {
                             let (func, arg_ts, _) =
                                 self.imports.get(&(path, var.clone())).unwrap().clone();
                             let (val, _s) = self.eval(*e2, s)?;

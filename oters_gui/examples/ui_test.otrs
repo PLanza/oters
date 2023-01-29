@@ -1,6 +1,11 @@
-let _ = set_bg_color Color {r: 255, g:255, b:255, a: 255}
+use std::stream::const
 
-let menu = frame ((0,0), (200, 500))
+use gui::widget::*
+use gui::window::set_bg_color
+
+let _ = set_bg_color (gui::Color {r: 255, g:255, b:255, a: 255})
+
+let menu = gui::frame ((0,0), (200, 500))
 
 let (btn_id, btn_stream) = button menu (100, 50) (const "Click me!") 
 let (cbx_id, cbx_stream) = checkbox menu (30, 30)
@@ -9,7 +14,7 @@ let (lab_id, lab_stream) = label menu (180, 50) (const "This is a label")
 let grp_elems = const [btn_id, cbx_id, lab_id]
 let group = match vgroup menu (200, 500) grp_elems with {
   (grp_id, stream) => {
-    attach_root (menu, grp_id);
+    gui::attach_root (menu, grp_id);
     stream
   }
 }

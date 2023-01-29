@@ -13,7 +13,6 @@ use oters::export::export_oters;
 
 use lazy_static::lazy_static;
 
-// TODO: Incorporate into interpreter
 lazy_static! {
     pub(self) static ref FRAMES: Mutex<Vec<Frame>> = Mutex::new(Vec::new());
 }
@@ -39,12 +38,6 @@ pub struct UIInstance {
     pos: (u32, u32),
     size: (u32, u32),
     visible: bool,
-}
-
-#[export_oters]
-pub enum UIElement {
-    Button(i64, String),
-    Container(i64, String),
 }
 
 #[export_oters]

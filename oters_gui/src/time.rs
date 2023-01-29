@@ -8,7 +8,7 @@ pub fn fps() -> i64 {
 }
 
 #[export_oters]
-pub fn draw_fps() {
+pub fn draw_fps_once() {
     draw_text(
         &format!("{}", macroquad::time::get_fps()),
         5.0,

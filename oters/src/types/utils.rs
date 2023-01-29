@@ -125,3 +125,21 @@ pub fn insert_dec(
 
     dag[node].insert(name, t);
 }
+
+pub fn create_path(dag: &mut Dag<HashMap<String, Type>, String>, path: &Vec<String>) {
+    let mut node = 0.into();
+    for module in path {
+        let mut child = None;
+        for edge in dag.edges(node) {
+            if edge.weight() == module {
+                child = Some(edge.target());
+                break;
+            }
+        }
+        node = if let Some(child) = child {
+            child
+        } else {
+            dag.add_child(node, module.clone(), HashMap::new()).1
+        };
+    }
+}

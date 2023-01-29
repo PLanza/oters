@@ -1,0 +1,2 @@
+let draw_fps = fn () -> draw_fps_once () << @(draw_fps ())
+

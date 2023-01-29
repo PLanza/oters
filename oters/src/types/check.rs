@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use super::{insert_dec, traverse_path, Type, TypeContext, TypeError};
+use super::{create_path, insert_dec, traverse_path, Type, TypeContext, TypeError};
 use crate::export::{ExportEnums, ExportFns, ExportStructs};
 use crate::exprs::{
     BOpcode, Expr, InvalidExprError, InvalidPatternError, LetBinding, UOpcode, VarContext,
@@ -82,6 +82,13 @@ impl ProgramChecker {
         // Add exports to declarations
         match exports {
             Some(exports) => {
+                if exports.0.len() == 0 {
+                    create_path(&mut self.value_decs, &path);
+                }
+                if exports.1.len() == 0 && exports.2.len() == 0 {
+                    create_path(&mut self.type_decs, &path);
+                }
+
                 for (s, (_, args, ret)) in exports.0 {
                     let t = if args.len() == 1 {
                         Type::Function(Box::new(args[0].clone()), Box::new(ret))
@@ -94,17 +101,11 @@ impl ProgramChecker {
                     insert_dec(&mut self.value_decs, s, t, &path);
                 }
 
-                let mut type_decs = HashMap::new();
-                for (s, map) in exports.1 {
-                    type_decs.insert(s, Type::Struct(map));
+                for (s, fields) in exports.1 {
+                    insert_dec(&mut self.type_decs, s, Type::Struct(fields), &path);
                 }
 
-                let mut variant_map = HashMap::new();
                 for (enum_name, map) in exports.2 {
-                    // Add variants to map
-                    for (variant, _) in &map {
-                        variant_map.insert(variant.clone(), enum_name.clone());
-                    }
                     insert_dec(&mut self.type_decs, enum_name, Type::Enum(map), &path);
                 }
             }
