@@ -13,7 +13,7 @@ pub mod types;
 pub use oters_macro::run;
 
 use crate as oters;
-use oters::std::*;
+use crate::std::*;
 oters::export::export_list!();
 
 pub fn load_std_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExportFns> {
