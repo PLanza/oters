@@ -9,7 +9,7 @@ proc-macro = true
 
 [dependencies]
 quote = "*"
-syn = { version = "*", features = ["extra-traits", "full"] }
+syn = { version = "*", features = ["extra-traits", "full", "derive"] }
 proc-macro2 = "*"
 
 lazy_static = "1.4.*"

@@ -65,7 +65,9 @@ String: String = {
     chars.next();
     chars.next_back();
     let s = chars.as_str();
-    s.replace(r#"\\\""#, r#"\""#)
+    let s = s.replace(r#"\\\""#, r#"\""#);
+    let s = s.replace("\\n", "\n");
+    s
   }
 };
 

@@ -22,13 +22,8 @@ fn main() {
         fullscreen: false,
         icon: None,
     };
-    oters_gui::run(
+    oters::run!(
         vec!["./oters_gui/examples/lib_test.otrs".to_string()],
         config,
-        (
-            EXPORT_FNS.clone(),
-            EXPORT_STRUCTS.clone(),
-            EXPORT_ENUMS.clone(),
-        ),
     );
 }

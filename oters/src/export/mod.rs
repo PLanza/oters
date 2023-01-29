@@ -26,6 +26,8 @@ pub type ExportFns = HashMap<String, (fn(Vec<Value>) -> Value, Vec<Type>, Type)>
 pub type ExportStructs = Vec<(String, HashMap<String, Box<Type>>)>;
 pub type ExportEnums = Vec<(String, HashMap<String, Option<Box<Type>>>)>;
 
+pub type PathExportFns = HashMap<(Vec<String>, String), (fn(Vec<Value>) -> Value, Vec<Type>, Type)>;
+
 impl Value {
     pub fn expr_to_args(e: Expr, args_len: usize) -> Result<Vec<Value>> {
         if args_len == 1 {

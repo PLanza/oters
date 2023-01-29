@@ -1,4 +1,4 @@
-use oters::export::{export_list, export_oters};
+use oters::export::export_oters;
 
 use macroquad::prelude::*;
 use macroquad::ui::root_ui;
@@ -34,8 +34,6 @@ fn time_to_string(hours: i64, mins: i64, secs: i64) -> String {
     format!("{:02} : {:02} : {:02}", hours, mins, secs)
 }
 
-export_list!();
-
 fn main() {
     let config = oters_gui::WindowConfig {
         title: "Stopwatch".to_string(),
@@ -44,13 +42,8 @@ fn main() {
         fullscreen: false,
         icon: None,
     };
-    oters_gui::run(
+    oters::run!(
         vec!["./oters_gui/examples/stopwatch.otrs".to_string()],
         config,
-        (
-            EXPORT_FNS.clone(),
-            EXPORT_STRUCTS.clone(),
-            EXPORT_ENUMS.clone(),
-        ),
     );
 }

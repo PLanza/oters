@@ -290,7 +290,7 @@ impl ValueType {
                     })
                     .collect();
 
-                quote!(#path::Struct(std::collections::HashMap::from([#(#map_tokens),*])))
+                quote!(#path::Struct(::std::collections::HashMap::from([#(#map_tokens),*])))
             }
             Enum(name) => {
                 let map = crate::EXPORT_ENUMS
@@ -314,7 +314,7 @@ impl ValueType {
                     })
                     .collect();
 
-                quote!(#path::Enum(std::collections::HashMap::from([#(#map_tokens),*])))
+                quote!(#path::Enum(::std::collections::HashMap::from([#(#map_tokens),*])))
             }
         }
     }

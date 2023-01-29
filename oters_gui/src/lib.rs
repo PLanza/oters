@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use oters::export::{export_list, ExportEnums, ExportFns, ExportStructs};
+use oters::export::{export_list, ExportEnums, ExportFns, ExportStructs, PathExportFns};
 pub mod color;
 pub mod image;
 pub mod input;
@@ -37,7 +37,8 @@ pub async fn run_loop(
     let mut checker = oters::types::check::ProgramChecker::new();
 
     // Load std and gui libraries
-    oters::load_std_lib(&mut checker)?;
+    let std_imports = oters::load_std_lib(&mut checker)?;
+
     let gui_lib = oters::parser::parse_source(include_str!("gui.otrs").to_string())?;
     checker.type_check_program(
         &gui_lib,
@@ -48,8 +49,6 @@ pub async fn run_loop(
             EXPORT_ENUMS.clone(),
         )),
     )?;
-
-    // Link user Rust code
 
     // Link user programs
     // Files must be in order of dependency
@@ -75,8 +74,20 @@ pub async fn run_loop(
 
     let exprs = checker.checked_exprs;
 
-    let mut export_fns = EXPORT_FNS.clone();
-    export_fns.extend(exports.0);
+    let mut export_fns: PathExportFns = EXPORT_FNS
+        .clone()
+        .into_iter()
+        .map(|(name, val)| ((vec!["gui".to_string()], name), val))
+        .collect();
+
+    export_fns.extend(std_imports);
+    export_fns.extend(
+        exports
+            .0
+            .into_iter()
+            .map(|(name, val)| ((vec![file_stems[0].clone()], name), val))
+            .collect::<PathExportFns>(),
+    );
     let mut interpreter = oters::interpret::Interpreter::new(exprs, export_fns, file_stems)?;
 
     loop {

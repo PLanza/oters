@@ -7,7 +7,7 @@ use crate::types::ValueType;
 use lazy_static::lazy_static;
 use proc_macro::{Span, TokenStream};
 use quote::{quote, spanned::Spanned};
-use syn::{FnArg, Ident, ReturnType};
+use syn::{parse::Parser, FnArg, Ident, ReturnType};
 
 lazy_static! {
     static ref EXPORT_FNS: Mutex<HashMap<String, (Vec<ValueType>, ValueType)>> =
@@ -225,9 +225,9 @@ fn export_enum(item: syn::ItemEnum) -> TokenStream {
 
     quote!(#clone).into()
 }
-// Called after all #[export_oters]s and puts all the exported items into hashmaps
-#[proc_macro]
-pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+
+use proc_macro2::TokenStream as TokenStream2;
+fn get_exports() -> (TokenStream2, TokenStream2, TokenStream2) {
     let path = quote!(oters::types::Type);
 
     let fns_map = EXPORT_FNS.lock().unwrap().clone();
@@ -256,13 +256,6 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         })
         .collect();
 
-    let fn_names: Vec<String> = functions.clone().into_iter().map(|tuple| tuple.0).collect();
-    let fn_pointers: Vec<Ident> = functions.clone().into_iter().map(|tuple| tuple.1).collect();
-    let arg_types: Vec<proc_macro2::TokenStream> =
-        functions.clone().into_iter().map(|tuple| tuple.2).collect();
-    let ret_types: Vec<proc_macro2::TokenStream> =
-        functions.into_iter().map(|tuple| tuple.3).collect();
-
     let structs_map = EXPORT_STRUCTS.lock().unwrap().clone();
     let structs: Vec<(String, proc_macro2::TokenStream)> = structs_map
         .into_iter()
@@ -277,13 +270,10 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
             (
                 name,
-                quote!(HashMap::from([#((#field_names.to_string(), std::boxed::Box::new(#field_tys))),*])),
+                quote!(::std::collections::HashMap::from([#((#field_names.to_string(), std::boxed::Box::new(#field_tys))),*])),
             )
         })
         .collect();
-    let struct_names: Vec<String> = structs.clone().into_iter().map(|pair| pair.0).collect();
-    let struct_maps: Vec<proc_macro2::TokenStream> =
-        structs.into_iter().map(|pair| pair.1).collect();
 
     let enums_map: HashMap<String, HashMap<String, Option<ValueType>>> =
         EXPORT_ENUMS.lock().unwrap().clone();
@@ -313,31 +303,81 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
             (
                 name,
-                quote!(HashMap::from([#((#variant_names.to_string(), #variant_tys)),*])),
+                quote!(::std::collections::HashMap::from([#((#variant_names.to_string(), #variant_tys)),*])),
             )
         })
         .collect();
 
+    let fn_names: Vec<String> = functions.clone().into_iter().map(|tuple| tuple.0).collect();
+    let fn_pointers: Vec<Ident> = functions.clone().into_iter().map(|tuple| tuple.1).collect();
+    let arg_types: Vec<proc_macro2::TokenStream> =
+        functions.clone().into_iter().map(|tuple| tuple.2).collect();
+    let ret_types: Vec<proc_macro2::TokenStream> =
+        functions.into_iter().map(|tuple| tuple.3).collect();
+
+    let struct_names: Vec<String> = structs.clone().into_iter().map(|pair| pair.0).collect();
+    let struct_maps: Vec<proc_macro2::TokenStream> =
+        structs.into_iter().map(|pair| pair.1).collect();
+
     let enum_names: Vec<String> = enums.clone().into_iter().map(|pair| pair.0).collect();
     let enum_maps: Vec<proc_macro2::TokenStream> = enums.into_iter().map(|pair| pair.1).collect();
 
+    let function_tokens = quote! {
+        ::std::collections::HashMap::from([#(
+                (#fn_names.to_string(),
+                    (#fn_pointers as fn(Vec<oters::export::Value>) -> oters::export::Value,
+                        #arg_types,
+                        #ret_types)
+                )
+        ),*])
+    };
+    let struct_tokens = quote!(vec![#((#struct_names.to_string(), #struct_maps)),*]);
+    let enum_tokens = quote!(vec![#((#enum_names.to_string(), #enum_maps)),*]);
+
+    (function_tokens, struct_tokens, enum_tokens)
+}
+
+// Called after all #[export_oters]s and puts all the exported items into hashmaps
+// Called by the standard library, not used by users
+#[proc_macro]
+pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let (functions, structs, enums) = get_exports();
+
     let out = quote! {
-        use std::collections::HashMap;
         use lazy_static::lazy_static;
         lazy_static! {
-            pub static ref EXPORT_FNS: oters::export::ExportFns =
-                HashMap::from([#(
-                        (#fn_names.to_string(),
-                         (#fn_pointers as fn(Vec<oters::export::Value>) -> oters::export::Value,
-                          #arg_types,
-                          #ret_types)
-                         )
-                        ),*]);
-            pub static ref EXPORT_STRUCTS: Vec<(String, HashMap<String, Box<oters::types::Type>>)> =
-                vec![#((#struct_names.to_string(), #struct_maps)),*];
-            pub static ref EXPORT_ENUMS: Vec<(String, HashMap<String, Option<Box<oters::types::Type>>>)> =
-                vec![#((#enum_names.to_string(), #enum_maps)),*];
+            pub static ref EXPORT_FNS: oters::export::ExportFns = #functions;
+            pub static ref EXPORT_STRUCTS: Vec<(String, ::std::collections::HashMap<String, Box<oters::types::Type>>)> = #structs;
+            pub static ref EXPORT_ENUMS: Vec<(String, ::std::collections::HashMap<String, Option<Box<oters::types::Type>>>)> = #enums;
         }
+    };
+
+    out.into()
+}
+
+// Wrapper around oters_gui::run() that implicitly imports Rust exports
+#[proc_macro]
+pub fn run(args: TokenStream) -> TokenStream {
+    let parse_error = syn::Error::new(
+        proc_macro2::TokenStream::from(args.clone()).__span(),
+        "Pass a Vec<String> of file paths, and a WindowConfig",
+    );
+
+    use syn::{punctuated::Punctuated, token::Comma, Expr};
+    let args = match Punctuated::<Expr, Comma>::parse_terminated.parse(args) {
+        Ok(args) => args,
+        Err(_) => return parse_error.to_compile_error().into(),
+    };
+
+    if args.len() != 2 {
+        return parse_error.to_compile_error().into();
+    }
+    let files = args[0].clone();
+    let config = args[1].clone();
+
+    let (functions, structs, enums) = get_exports();
+    let out = quote! {
+        oters_gui::run(#files, #config, (#functions, #structs, #enums));
     };
 
     out.into()
@@ -385,7 +425,7 @@ fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::To
                 let __struct = #e;
                 oters::export::Value::#ret_ty(
                     #name.to_string(),
-                    std::collections::HashMap::from([#((#fields.to_string(), std::boxed::Box::new(#field_vals))),*])
+                    ::std::collections::HashMap::from([#((#fields.to_string(), std::boxed::Box::new(#field_vals))),*])
                 )
             }}
         }

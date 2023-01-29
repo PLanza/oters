@@ -29,7 +29,11 @@ fn main() -> Result<()> {
 
     let mut interpreter = Interpreter::new(
         checker.checked_exprs,
-        EXPORT_FNS.clone(),
+        EXPORT_FNS
+            .clone()
+            .into_iter()
+            .map(|(name, val)| ((vec!["ex1".to_string()], name), val))
+            .collect(),
         vec!["ex1".to_string()],
     )?;
     loop {

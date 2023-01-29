@@ -9,9 +9,8 @@ fn main() {
         fullscreen: false,
         icon: None,
     };
-    oters_gui::run(
+    oters::run!(
         vec!["./oters_gui/examples/ui_test.otrs".to_string()],
-        config,
-        (HashMap::new(), Vec::new(), Vec::new()),
+        config
     );
 }

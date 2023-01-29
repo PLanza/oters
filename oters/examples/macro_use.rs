@@ -3,6 +3,7 @@ extern crate oters_macro;
 
 use oters::export::Value;
 use oters::export::{export_list, export_oters};
+use std::collections::HashMap;
 
 #[export_oters]
 struct Circle {

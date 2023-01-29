@@ -3,7 +3,7 @@ mod errors;
 
 use self::allocator::Allocator;
 use self::errors::InterpretError::*;
-use crate::export::{ExportFns, Value};
+use crate::export::{PathExportFns, Value};
 use crate::exprs::{BOpcode, Expr, LetBinding, UOpcode};
 use crate::parser::ast::Pattern;
 
@@ -18,7 +18,7 @@ pub struct Interpreter {
     allocator: Allocator,
     globals: HashMap<(Vec<String>, String), Expr>,
     eval_order: Vec<(Vec<String>, String)>,
-    imports: ExportFns,
+    imports: PathExportFns,
     store: Store,
     mut_rec_streams: HashMap<(Vec<String>, String), Expr>,
     current_path: Vec<String>,
@@ -34,7 +34,7 @@ pub struct Store {
 impl Interpreter {
     pub fn new(
         bindings: Dag<Vec<LetBinding>, String>,
-        imports: ExportFns,
+        imports: PathExportFns,
         files: Vec<String>,
     ) -> Result<Self> {
         let mut interp = Interpreter {
@@ -304,10 +304,17 @@ impl Interpreter {
             }
             App(e1, e2) => {
                 match &*e1 {
-                    Var(_, var) => {
+                    Var(path, var) => {
+                        let path = if path.is_empty() {
+                            self.current_path.clone()
+                        } else {
+                            path.clone()
+                        };
+
                         // If the function has been imported, call it with converted arguments
-                        if self.imports.contains_key(var) {
-                            let (func, arg_ts, _) = self.imports.get(var).unwrap().clone();
+                        if self.imports.contains_key(&(path.clone(), var.clone())) {
+                            let (func, arg_ts, _) =
+                                self.imports.get(&(path, var.clone())).unwrap().clone();
                             let (val, _s) = self.eval(*e2, s)?;
                             let ret_val = func(Value::expr_to_args(val, arg_ts.len())?);
                             return Ok((ret_val.to_expr(), _s));

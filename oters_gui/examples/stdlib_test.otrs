@@ -7,4 +7,7 @@ let nats = {
 
 let triangles = std::stream::fold #(fn x y -> x + y) 0 nats
 
-let print_triangles = print_int (head triangles) << @print_triangles
+let print_triangles = ({
+  std::print_int (head triangles);
+  std::print_string "\n"
+}) << @print_triangles
