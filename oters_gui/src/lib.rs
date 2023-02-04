@@ -13,7 +13,6 @@ pub mod time;
 pub mod ui;
 pub mod window;
 
-use crate::color::*;
 use crate::image::*;
 use crate::input::*;
 use crate::shapes::*;
@@ -80,6 +79,9 @@ pub async fn run_loop(
     );
     let mut interpreter = oters::interpret::Interpreter::new(exprs, export_fns, file_stems)?;
 
+    let skin = set_style();
+    macroquad::ui::root_ui().push_skin(&skin);
+
     loop {
         macroquad::prelude::clear_background(macroquad::color::WHITE);
 
@@ -108,6 +110,38 @@ pub fn run(
             macroquad::logging::error!("Error: {:?}", err);
         }
     });
+}
+
+fn set_style() -> macroquad::ui::Skin {
+    let mut style_builder = macroquad::ui::root_ui().style_builder();
+    let font = include_bytes!("../assets/Inter-Regular.ttf");
+    style_builder = style_builder.font(font).unwrap();
+    style_builder = style_builder.font_size(18);
+
+    use macroquad::color::Color;
+    style_builder = style_builder.color(macroquad::color_u8!(130, 219, 216, 255));
+    style_builder = style_builder.color_hovered(macroquad::color_u8!(59, 172, 182, 255));
+    style_builder = style_builder.color_clicked(macroquad::color_u8!(47, 143, 157, 255));
+    style_builder = style_builder.color_selected(macroquad::color_u8!(47, 143, 157, 255));
+    style_builder = style_builder.color_selected_hovered(macroquad::color_u8!(59, 172, 182, 255));
+
+    let style = style_builder.build();
+
+    let mut skin = macroquad::ui::root_ui().default_skin().clone();
+    skin.label_style = style.clone();
+    skin.button_style = style.clone();
+    skin.checkbox_style = style.clone();
+
+    let mut editbox_style_builder = macroquad::ui::root_ui().style_builder();
+    editbox_style_builder = editbox_style_builder.font(font).unwrap();
+
+    editbox_style_builder = editbox_style_builder.color(macroquad::color_u8!(233, 233, 233, 255));
+    editbox_style_builder =
+        editbox_style_builder.color_clicked(macroquad::color_u8!(244, 244, 244, 255));
+    let editbox_style = editbox_style_builder.build();
+    skin.editbox_style = editbox_style;
+
+    skin
 }
 
 fn get_exports(
