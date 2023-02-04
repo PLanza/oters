@@ -5,8 +5,8 @@ let button = fn f_id size content -> {
   (btn_id, aux content)
 }
 
-let vgroup = fn f_id size elems -> {
-  let grp_id = create_vgroup (f_id, size);
+let vgroup = fn f_id size elems alignment -> {
+  let grp_id = create_vgroup (f_id, size, alignment);
   let aux = fn (es_now << es_later) -> 
     draw_vgroup (f_id, grp_id, es_now) << @(aux !@es_later);
   (grp_id, aux elems)

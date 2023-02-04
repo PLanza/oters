@@ -222,7 +222,7 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
     )?;
 
     let code = oters::parser::parse_source(include_str!("gui/widget.otrs").to_string())?;
-    let exports = get_exports(gui_widget, Vec::new(), Vec::new());
+    let exports = get_exports(gui_widget, Vec::new(), vec!["Alignment"]);
     load_gui_file(
         checker,
         &mut path_export_fns,
