@@ -48,15 +48,17 @@ pub fn draw_vgroup(frame_id: i64, grp_id: i64, elems: Vec<i64>) {
             let mut dy = 0;
 
             for e_id in elems {
-                let elem = frame.elems[e_id as usize].clone();
+                let elem = &mut frame.elems[e_id as usize];
+                match elem.ty {
+                    UIType::Separator => {
+                        elem.size = (g_size.0 - 2 * PADDING, 2);
+                    }
+                    _ => (),
+                }
                 if !(x + elem.size.0 > max_x) {
                     if !(y + elem.size.1 > max_y) {
-                        frame.elems[e_id as usize] = UIInstance {
-                            ty: elem.ty,
-                            pos: (x, y),
-                            size: elem.size,
-                            visible: true,
-                        };
+                        elem.pos = (x, y);
+                        elem.visible = true;
                         x += elem.size.0 + PADDING;
                         dy = dy.max(elem.size.1 + PADDING);
                     } else {
@@ -66,12 +68,8 @@ pub fn draw_vgroup(frame_id: i64, grp_id: i64, elems: Vec<i64>) {
                     if !(g_pos.0 + PADDING + elem.size.0 > max_x) {
                         x = g_pos.0 + PADDING;
                         y += dy;
-                        frame.elems[e_id as usize] = UIInstance {
-                            ty: elem.ty,
-                            pos: (x, y),
-                            size: elem.size,
-                            visible: true,
-                        };
+                        elem.pos = (x, y);
+                        elem.visible = true;
                     }
                 }
             }

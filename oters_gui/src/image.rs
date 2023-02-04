@@ -7,19 +7,46 @@ use macroquad::{prelude::Rect, texture::Texture2D};
 
 use crate::color::Color;
 
-// TODO: Incorporate as part of run loop
 lazy_static! {
     static ref TEXTURE_MANAGER: Mutex<TextureManager> = Mutex::new(TextureManager::new());
 }
 
+#[derive(Debug, Clone, Copy)]
 #[export_oters]
 pub struct Image {
-    texture_id: i64,
-    width: i64,
-    height: i64,
-    rotation: f64, // In radians
-    flip_x: bool,
-    flip_y: bool,
+    pub texture_id: i64,
+    pub width: i64,
+    pub height: i64,
+    pub rotation: f64, // In radians
+    pub flip_x: bool,
+    pub flip_y: bool,
+}
+
+impl Image {
+    pub fn draw(&self, pos: (u32, u32), dest_size: (u32, u32), src_rect: (i64, i64, i64, i64)) {
+        use macroquad::texture::{draw_texture_ex, DrawTextureParams};
+        let params = DrawTextureParams {
+            dest_size: Some((dest_size.0 as f32, dest_size.1 as f32).into()),
+            source: Some(Rect {
+                x: src_rect.0 as f32,
+                y: src_rect.1 as f32,
+                w: src_rect.2 as f32,
+                h: src_rect.3 as f32,
+            }),
+            flip_x: self.flip_x,
+            flip_y: self.flip_y,
+            rotation: self.rotation as f32,
+            pivot: None,
+        };
+
+        draw_texture_ex(
+            TEXTURE_MANAGER.lock().unwrap().texture_map[self.texture_id as usize],
+            pos.0 as f32,
+            pos.1 as f32,
+            macroquad::color::WHITE,
+            params,
+        )
+    }
 }
 
 struct TextureManager {

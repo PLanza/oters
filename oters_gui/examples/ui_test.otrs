@@ -10,8 +10,13 @@ let menu = gui::frame ((0,0), (200, 500))
 let (btn_id, btn_stream) = button menu (100, 50) (const "Click me!") 
 let (cbx_id, cbx_stream) = checkbox menu (30, 30)
 let (lab_id, lab_stream) = label menu (180, 50) (const "This is a label")
+let (sep_id, sep_stream) = separator menu 
+let (tbx_id, tbx_stream) = textbox menu (150, 100)
 
-let grp_elems = const [btn_id, cbx_id, lab_id]
+let otter_img = gui::image::img_from_file "assets/otter.png"
+let (img_id, img_stream) = image menu (100, 100) (const otter_img)
+
+let grp_elems = const [btn_id, sep_id, cbx_id, lab_id, tbx_id, img_id]
 let group = match vgroup menu (200, 500) grp_elems with {
   (grp_id, stream) => {
     gui::attach_root (menu, grp_id);

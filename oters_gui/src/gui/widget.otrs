@@ -6,7 +6,7 @@ let button = fn f_id size content -> {
 }
 
 let vgroup = fn f_id size elems -> {
-  let grp_id = create_vgroup (f_id,size);
+  let grp_id = create_vgroup (f_id, size);
   let aux = fn (es_now << es_later) -> 
     draw_vgroup (f_id, grp_id, es_now) << @(aux !@es_later);
   (grp_id, aux elems)
@@ -25,3 +25,21 @@ let label = fn f_id size content -> {
   (lab_id, aux content)
 }
 
+let separator = fn f_id -> {
+  let sep_id = create_separator f_id;
+  let aux = draw_separator (f_id, sep_id) << @aux;
+  (sep_id, aux)
+}
+
+let textbox = fn f_id size -> {
+  let tbx_id = create_textbox (f_id, size);
+  let aux = draw_textbox (f_id, tbx_id) << @aux;
+  (tbx_id, aux)
+}
+
+let image = fn f_id size img_stream -> {
+  let img_id = create_guimage (f_id, size);
+  let aux = fn (img_now << img_later) -> 
+    draw_guimage (f_id, img_id, img_now) << @(aux !@img_later);
+  (img_id, aux img_stream)
+}

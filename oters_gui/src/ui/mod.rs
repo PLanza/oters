@@ -1,10 +1,20 @@
 pub mod button;
 pub mod checkbox;
+pub mod combobox;
+pub mod image;
 pub mod label;
+pub mod separator;
+pub mod tabbar;
+pub mod textbox;
 pub mod vgroup;
 pub use button::*;
 pub use checkbox::*;
+pub use combobox::*;
+pub use image::*;
 pub use label::*;
+pub use separator::*;
+pub use tabbar::*;
+pub use textbox::*;
 pub use vgroup::*;
 
 use std::sync::Mutex;
@@ -24,15 +34,20 @@ pub struct Frame {
     size: (u32, u32),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum UIType {
     Button,
     VGroup,
     Checkbox(bool),
     Label,
+    Separator,
+    Textbox(String),
+    ComboBox(u32),
+    TabBar(u32),
+    Image,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct UIInstance {
     ty: UIType,
     pos: (u32, u32),
