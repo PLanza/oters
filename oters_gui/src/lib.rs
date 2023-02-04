@@ -8,6 +8,7 @@ pub mod color;
 pub mod image;
 pub mod input;
 pub mod shapes;
+pub mod text;
 pub mod time;
 pub mod ui;
 pub mod window;
@@ -16,6 +17,7 @@ use crate::color::*;
 use crate::image::*;
 use crate::input::*;
 use crate::shapes::*;
+use crate::text::*;
 use crate::time::*;
 use crate::ui::*;
 use crate::window::*;
@@ -210,6 +212,7 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         "resize_window",
         "set_fullscreen",
     ];
+    let gui_text = vec!["font_from_file", "draw_text", "draw_text_with_font"];
 
     let mut path_export_fns: PathExportFns = HashMap::new();
 
@@ -280,6 +283,16 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         &mut path_export_fns,
         code,
         vec!["gui".to_string(), "window".to_string()],
+        exports,
+    )?;
+
+    let code = oters::parser::parse_source(include_str!("gui/text.otrs").to_string())?;
+    let exports = get_exports(gui_text, Vec::new(), Vec::new());
+    load_gui_file(
+        checker,
+        &mut path_export_fns,
+        code,
+        vec!["gui".to_string(), "text".to_string()],
         exports,
     )?;
 
