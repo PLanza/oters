@@ -1,16 +1,8 @@
 use oters::export::export_oters;
 
-use super::{Frame, UIInstance, UIType, FRAMES};
+use super::{Alignment, Frame, UIInstance, UIType, FRAMES};
 
 const PADDING: u32 = 10;
-
-#[derive(Debug, Clone, Copy)]
-#[export_oters]
-pub enum Alignment {
-    Left,
-    Right,
-}
-
 #[export_oters]
 pub fn create_vgroup(frame_id: i64, size: (i64, i64), align: Alignment) -> i64 {
     let frame = &mut FRAMES.lock().unwrap()[frame_id as usize];
@@ -42,7 +34,7 @@ pub fn draw_vgroup(frame_id: i64, grp_id: i64, elems: Vec<i64>) {
             match align {
                 Alignment::Left => draw_left(g_pos, *g_size, frame, elems),
                 Alignment::Right => draw_right(g_pos, *g_size, frame, elems),
-                _ => (),
+                _ => draw_left(g_pos, *g_size, frame, elems),
             }
         }
         _ => panic!("Expected a vgroup"),
@@ -108,7 +100,7 @@ fn draw_right(g_pos: (u32, u32), g_size: (u32, u32), frame: &mut Frame, elems: V
             if !(y + elem.size.1 > max_y) {
                 elem.pos = (x - elem.size.0, y);
                 elem.visible = true;
-                x -= elem.size.0 - PADDING;
+                x -= elem.size.0 + PADDING;
                 dy = dy.max(elem.size.1 + PADDING);
             } else {
                 break;

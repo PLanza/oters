@@ -165,6 +165,8 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         "draw_label",
         "create_vgroup",
         "draw_vgroup",
+        "create_hgroup",
+        "draw_hgroup",
         "create_separator",
         "draw_separator",
         "create_textbox",

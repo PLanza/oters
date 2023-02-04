@@ -12,6 +12,13 @@ let vgroup = fn f_id size elems alignment -> {
   (grp_id, aux elems)
 }
 
+let hgroup = fn f_id size elems alignment -> {
+  let grp_id = create_hgroup (f_id, size, alignment);
+  let aux = fn (es_now << es_later) -> 
+    draw_hgroup (f_id, grp_id, es_now) << @(aux !@es_later);
+  (grp_id, aux elems)
+}
+
 let checkbox = fn f_id size -> {
   let cbx_id = create_checkbox (f_id, size);
   let aux = draw_checkbox (f_id, cbx_id) << @aux;

@@ -1,18 +1,3 @@
-pub mod button;
-pub mod checkbox;
-pub mod image;
-pub mod label;
-pub mod separator;
-pub mod textbox;
-pub mod vgroup;
-pub use button::*;
-pub use checkbox::*;
-pub use image::*;
-pub use label::*;
-pub use separator::*;
-pub use textbox::*;
-pub use vgroup::*;
-
 use std::sync::Mutex;
 
 use oters::export::export_oters;
@@ -33,7 +18,8 @@ pub struct Frame {
 #[derive(Debug, Clone)]
 enum UIType {
     Button,
-    VGroup(vgroup::Alignment),
+    VGroup(Alignment),
+    HGroup(Alignment),
     Checkbox(bool),
     Label,
     Separator,
@@ -47,6 +33,15 @@ pub struct UIInstance {
     pos: (u32, u32),
     size: (u32, u32),
     visible: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[export_oters]
+pub enum Alignment {
+    Left,
+    Right,
+    Top,
+    Bottom,
 }
 
 #[export_oters]
@@ -70,3 +65,21 @@ pub fn attach_root(frame_id: i64, elem_id: i64) {
     let elem = &mut frame.elems[elem_id as usize];
     elem.visible = true;
 }
+
+pub mod button;
+pub mod checkbox;
+pub mod hgroup;
+pub mod image;
+pub mod label;
+pub mod separator;
+pub mod textbox;
+pub mod vgroup;
+pub use button::*;
+pub use checkbox::*;
+pub use hgroup::*;
+pub use image::*;
+pub use label::*;
+pub use separator::*;
+pub use textbox::*;
+pub use vgroup::*;
+

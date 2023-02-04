@@ -28,8 +28,8 @@ pub fn draw_separator(frame_id: i64, sep_id: i64) {
             visible,
         } => {
             if *visible {
-                let (x1, y1) = (pos.0 as f32, pos.1 as f32);
-                let (x2, y2) = (x1 + size.0 as f32, y1);
+                let (x1, y1) = (pos.0 as f32 + 2.0, pos.1 as f32 + 2.0);
+                let (x2, y2) = (x1 + size.0 as f32 - 2.0, y1 + size.1 as f32 - 2.0);
                 macroquad::prelude::draw_line(x1, y1, x2, y2, 2.0, macroquad::color::GRAY);
             }
         }
