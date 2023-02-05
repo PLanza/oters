@@ -15,7 +15,7 @@ use daggy::petgraph::visit::{EdgeRef, IntoEdges};
 pub struct ProgramChecker {
     // These represent the global top-level declarations
     // Each node represents a pair containing type declarations, and value declarations
-    type_decs: Dag<HashMap<String, Type>, String>,
+    pub(super) type_decs: Dag<HashMap<String, Type>, String>,
     value_decs: Dag<HashMap<String, Type>, String>,
 
     fresh_type_var: i32,
@@ -500,8 +500,8 @@ impl ProgramChecker {
                 let t_ret = Type::GenericVar(self.fresh_type_var(), false);
 
                 let mut subs = unify(VecDeque::from([(
-                    t.clone(),
                     Type::Stable(Box::new(t_ret.clone())),
+                    t.clone(),
                 )]))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);

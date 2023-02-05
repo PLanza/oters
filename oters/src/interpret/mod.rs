@@ -1,5 +1,6 @@
 mod allocator;
 mod errors;
+mod tests;
 
 use self::allocator::Allocator;
 use self::errors::InterpretError::*;

@@ -1,5 +1,3 @@
-use macroquad::math::vec2;
-use macroquad::ui;
 use oters::export::export_oters;
 
 use super::{UIInstance, UIType, FRAMES};

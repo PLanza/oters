@@ -1,4 +1,4 @@
-use daggy::petgraph::visit::{IntoEdges, IntoNeighbors};
+use daggy::petgraph::visit::IntoEdges;
 use daggy::{petgraph::visit::EdgeRef, Dag};
 
 use super::{Type, TypeError};

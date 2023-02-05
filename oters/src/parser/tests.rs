@@ -611,7 +611,7 @@ fn variant_exprs() -> Vec<(String, Box<super::ast::PExpr>)> {
 fn test_variant_exprs() {
     let parser = super::oters::ExprParser::new();
 
-    for v in functions() {
+    for v in variant_exprs() {
         let result = parser.parse(&v.0);
         assert_eq!(result.unwrap(), v.1);
     }

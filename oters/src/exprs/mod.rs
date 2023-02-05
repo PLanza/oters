@@ -1,4 +1,5 @@
 mod errors;
+mod tests;
 mod utils;
 
 use crate::parser::ast::{Opcode, PExpr, Pattern};
@@ -25,7 +26,7 @@ pub struct VarContext {
     pub(crate) ticks: Vec<usize>, // Locations of ticks within the context
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LetBinding {
     Let(Pattern, Expr),
     LetAndWith(String, Expr, String, Expr, Expr),
@@ -951,7 +952,11 @@ impl Pattern {
                 let mut ret = Vec::new();
                 for (field, o) in fields {
                     match o {
-                        None => ret.push(field.clone()),
+                        None => {
+                            if field != ".." {
+                                ret.push(field.clone())
+                            }
+                        }
                         Some(p) => ret.append(&mut p.vars()),
                     }
                 }
