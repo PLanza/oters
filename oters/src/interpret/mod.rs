@@ -4,9 +4,11 @@ mod tests;
 
 use self::allocator::Allocator;
 use self::errors::InterpretError::*;
+use crate::errors::SpError;
 use crate::export::{PathExportFns, Value};
-use crate::exprs::{BOpcode, Expr, LetBinding, UOpcode};
+use crate::exprs::{BOpcode, Expr, LetBinding, SpExpr, UOpcode};
 use crate::parser::ast::Pattern;
+use crate::parser::span::Spanned;
 
 use daggy::petgraph::visit::{EdgeRef, IntoEdges};
 use daggy::{Dag, NodeIndex, Walker};
@@ -17,19 +19,19 @@ use anyhow::Result;
 
 pub struct Interpreter {
     allocator: Allocator,
-    globals: HashMap<(Vec<String>, String), Expr>,
+    globals: HashMap<(Vec<String>, String), SpExpr>,
     eval_order: Vec<(Vec<String>, String)>,
     imports: PathExportFns,
     store: Store,
-    mut_rec_streams: HashMap<(Vec<String>, String), Expr>,
+    mut_rec_streams: HashMap<(Vec<String>, String), SpExpr>,
     current_path: Vec<String>,
 }
 
 // Potentially change locations to be shared references
 #[derive(Clone, Debug)]
 pub struct Store {
-    pub(super) now: HashMap<u64, Expr>,
-    pub(super) later: HashMap<u64, Expr>,
+    pub(super) now: HashMap<u64, SpExpr>,
+    pub(super) later: HashMap<u64, SpExpr>,
 }
 
 impl Interpreter {
@@ -37,7 +39,7 @@ impl Interpreter {
         bindings: Dag<Vec<LetBinding>, String>,
         imports: PathExportFns,
         files: Vec<String>,
-    ) -> Result<Self> {
+    ) -> Result<Self, SpError> {
         let mut interp = Interpreter {
             allocator: Allocator::new(),
             globals: HashMap::new(),
@@ -52,7 +54,11 @@ impl Interpreter {
         Ok(interp)
     }
 
-    fn init(&mut self, bindings: Dag<Vec<LetBinding>, String>, files: Vec<String>) -> Result<()> {
+    fn init(
+        &mut self,
+        bindings: Dag<Vec<LetBinding>, String>,
+        files: Vec<String>,
+    ) -> Result<(), SpError> {
         let (mut std, mut gui, mut user_code) = (Vec::new(), Vec::new(), Vec::new());
         for edge in bindings.edges(0.into()) {
             if edge.weight() == "std" {
@@ -83,7 +89,11 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn init_bindings(&mut self, bindings: Vec<LetBinding>, path: Vec<String>) -> Result<()> {
+    pub fn init_bindings(
+        &mut self,
+        bindings: Vec<LetBinding>,
+        path: Vec<String>,
+    ) -> Result<(), SpError> {
         self.current_path = path.clone();
         for binding in bindings {
             match binding {
@@ -93,7 +103,10 @@ impl Interpreter {
 
                     let (res, bound_vars) = Self::match_pattern(&e, &pat)?;
                     if !res {
-                        return Err(PatternMatchError(pat, expr).into());
+                        return Err(SpError::new(
+                            PatternMatchError(*pat.term, *expr.term).into(),
+                            (pat.span.0, expr.span.1),
+                        ));
                     }
 
                     for (var, e) in bound_vars {
@@ -107,10 +120,13 @@ impl Interpreter {
                     let (v, mut s) = self.eval(e3.clone(), self.store.clone())?;
 
                     let loc_2 = self.allocator.alloc();
-                    let y_str = Expr::Into(Box::new(Expr::Tuple(vec![
-                        Box::new(v),
-                        Box::new(Expr::Location(loc_2)),
-                    ])));
+                    let y_str = SpExpr::new(
+                        Expr::Into(SpExpr::new(
+                            Expr::Tuple(vec![v, SpExpr::new(Expr::Location(loc_2), e2.span)]),
+                            e2.span,
+                        )),
+                        e2.span,
+                    );
                     s.extend(loc_2, y_str.clone());
                     self.globals
                         .insert((path.clone(), y.clone()), y_str.clone());
@@ -160,7 +176,7 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn eval_step(&mut self) -> Result<()> {
+    pub fn eval_step(&mut self) -> Result<(), SpError> {
         self.step();
 
         for (path, var) in self.eval_order.clone() {
@@ -182,43 +198,45 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn eval(&mut self, e: Expr, s: Store) -> Result<(Expr, Store)> {
+    pub fn eval(&mut self, e: SpExpr, s: Store) -> Result<(SpExpr, Store), SpError> {
+        let span = e.span;
+        let e_term = *e.term.clone();
         use Expr::*;
-        match e.clone() {
+        match *e.term {
             Unit | Int(_) | Float(_) | Bool(_) | String(_) | Location(_) => Ok((e, s)),
             BinOp(e1, op, e2) => {
-                let (e_, s) = self.eval_bop(*e1, op, *e2, s)?;
+                let (e_, s) = self.eval_bop(e1, op, e2, s)?;
                 Ok((e_, s))
             }
             UnOp(UOpcode::Neg, e) => {
-                let (_e, _s) = self.eval(*e.clone(), s)?;
-                match _e {
-                    Int(v) => Ok((Int(-v), _s)),
-                    Float(v) => Ok((Float(-v), _s)),
-                    _ => Err(UncaughtTypeError(format!("{:?}", e)).into()),
+                let (_e, _s) = self.eval(e.clone(), s)?;
+                match _e.term.as_ref() {
+                    Int(v) => Ok((SpExpr::new(Int(-v), span), _s)),
+                    Float(v) => Ok((SpExpr::new(Float(-v), span), _s)),
+                    _ => Err(SpError::new(UncaughtTypeError(e_term).into(), span)),
                 }
             }
             UnOp(UOpcode::Not, e) => {
-                let (_e, _s) = self.eval(*e.clone(), s)?;
-                match _e {
-                    Bool(v) => Ok((Bool(!v), _s)),
-                    _ => Err(UncaughtTypeError(format!("{:?}", e)).into()),
+                let (_e, _s) = self.eval(e.clone(), s)?;
+                match _e.term.as_ref() {
+                    Bool(v) => Ok((SpExpr::new(Bool(!v), span), _s)),
+                    _ => Err(SpError::new(UncaughtTypeError(e_term).into(), span)),
                 }
             }
             Delay(e) => {
                 let loc = self.allocator.alloc();
                 let mut s = s.clone();
-                s.extend(loc, *e);
-                Ok((Location(loc), s))
+                s.extend(loc, e);
+                Ok((SpExpr::new(Location(loc), span), s))
             }
-            Stable(e) => Ok((Stable(e), s)),
+            Stable(e) => Ok((SpExpr::new(Stable(e), span), s)),
             Adv(e) => {
                 let s_n = s.now();
-                let (_e, _s_n) = self.eval(*e.clone(), s_n)?;
+                let (_e, _s_n) = self.eval(e.clone(), s_n)?;
 
-                match _e {
+                match _e.term.as_ref() {
                     Location(l) => match _s_n.now.get(&l) {
-                        None => Err(UnboundLocationError(format!("{:?}", e)).into()),
+                        None => Err(SpError::new(UnboundLocationError(e_term).into(), span)),
                         Some(term) => self.eval(
                             term.clone(),
                             Store {
@@ -227,68 +245,68 @@ impl Interpreter {
                             },
                         ),
                     },
-                    _ => Err(UncaughtTypeError(format!("{:?}", e)).into()),
+                    _ => Err(SpError::new(UncaughtTypeError(e_term).into(), span)),
                 }
             }
             Unbox(e) => {
-                let (_e, _s) = self.eval(*e.clone(), s)?;
-                match _e {
-                    Stable(term) => self.eval(*term, _s),
-                    _ => Err(UncaughtTypeError(format!("{:?}", e)).into()),
+                let (_e, _s) = self.eval(e.clone(), s)?;
+                match _e.term.as_ref() {
+                    Stable(term) => self.eval(term.clone(), _s),
+                    _ => Err(SpError::new(UncaughtTypeError(e_term).into(), span)),
                 }
             }
             Out(e) => {
-                let (_e, _s) = self.eval(*e.clone(), s)?;
-                match _e {
-                    Into(value) => Ok((*value, _s)),
-                    _ => Err(UncaughtTypeError(format!("{:?}", e)).into()),
+                let (_e, _s) = self.eval(e.clone(), s)?;
+                match _e.term.as_ref() {
+                    Into(value) => Ok((value.clone(), _s)),
+                    _ => Err(SpError::new(UncaughtTypeError(e_term).into(), span)),
                 }
             }
             Into(e) => {
-                let (value, _s) = self.eval(*e.clone(), s)?;
-                Ok((Into(Box::new(value)), _s))
+                let (value, _s) = self.eval(e.clone(), s)?;
+                Ok((SpExpr::new(Into(value), span), _s))
             }
             List(list) => {
                 let mut list_vec = VecDeque::new();
                 let mut store = s.clone();
 
                 for e in list {
-                    let (_e, _s) = self.eval(*e.clone(), store.clone())?;
-                    list_vec.push_back(Box::new(_e));
+                    let (_e, _s) = self.eval(e.clone(), store.clone())?;
+                    list_vec.push_back(_e);
                     store = _s;
                 }
 
-                Ok((List(list_vec), store))
+                Ok((SpExpr::new(List(list_vec), span), store))
             }
             Tuple(tuple) => {
                 let mut tuple_vec = Vec::new();
                 let mut store = s.clone();
 
                 for e in tuple {
-                    let (_e, _s) = self.eval(*e, store.clone())?;
-                    tuple_vec.push(Box::new(_e));
+                    let (_e, _s) = self.eval(e, store.clone())?;
+                    tuple_vec.push(_e);
                     store = _s;
                 }
 
-                Ok((Tuple(tuple_vec), store))
+                Ok((SpExpr::new(Tuple(tuple_vec), span), store))
             }
             Struct(path, str, fields) => {
                 let mut field_vec = Vec::new();
                 let mut store = s.clone();
 
                 for (f, e) in fields {
-                    let (_e, _s) = self.eval(*e, store.clone())?;
-                    field_vec.push((f, Box::new(_e)));
+                    let (_e, _s) = self.eval(e, store.clone())?;
+                    field_vec.push((f, _e));
                     store = _s;
                 }
 
-                Ok((Struct(path, str, field_vec), store))
+                Ok((SpExpr::new(Struct(path, str, field_vec), span), store))
             }
             Variant(path, constr, opt) => match opt {
-                None => Ok((Variant(path, constr, opt), s)),
+                None => Ok((SpExpr::new(Variant(path, constr, opt), span), s)),
                 Some(e) => {
-                    let (val, _s) = self.eval(*e.clone(), s)?;
-                    Ok((Variant(path, constr, Some(Box::new(val))), _s))
+                    let (val, _s) = self.eval(e.clone(), s)?;
+                    Ok((SpExpr::new(Variant(path, constr, Some(val)), span), _s))
                 }
             },
             Fn(..) => Ok((e, s)),
@@ -296,28 +314,31 @@ impl Interpreter {
                 expr.clone()
                     .substitute(
                         &var.clone(),
-                        &Stable(Box::new(Delay(Box::new(Fix(var, expr))))),
+                        &SpExpr::new(
+                            Stable(SpExpr::new(Delay(SpExpr::new(Fix(var, expr), span)), span)),
+                            span,
+                        ),
                     )
                     .1,
                 s,
             ),
             If(e1, e2, e3) => {
-                let (_e1, _s) = self.eval(*e1.clone(), s)?;
-                match _e1 {
-                    Bool(true) => self.eval(*e2, _s),
-                    Bool(false) => self.eval(*e3, _s),
-                    _ => Err(UncaughtTypeError(format!("{:?}", e1)).into()),
+                let (_e1, _s) = self.eval(e1.clone(), s)?;
+                match _e1.term.as_ref() {
+                    Bool(true) => self.eval(e2, _s),
+                    Bool(false) => self.eval(e3, _s),
+                    _ => Err(SpError::new(UncaughtTypeError(e_term).into(), span)),
                 }
             }
             Seq(e1, e2) => {
-                let (_e1, _s) = self.eval(*e1.clone(), s)?;
-                match _e1 {
-                    Unit => self.eval(*e2, _s),
-                    _ => Err(UncaughtTypeError(format!("{:?}", e1)).into()),
+                let (_e1, _s) = self.eval(e1.clone(), s)?;
+                match _e1.term.as_ref() {
+                    Unit => self.eval(e2, _s),
+                    _ => Err(SpError::new(UncaughtTypeError(e_term).into(), span)),
                 }
             }
             App(e1, e2) => {
-                match &*e1 {
+                match e1.term.as_ref() {
                     Var(path, var) => {
                         let path = if path.is_empty() {
                             self.current_path.clone()
@@ -331,60 +352,69 @@ impl Interpreter {
                         {
                             let (func, arg_ts, _) =
                                 self.imports.get(&(path, var.clone())).unwrap().clone();
-                            let (val, _s) = self.eval(*e2, s)?;
-                            let ret_val = func(Value::expr_to_args(val, arg_ts.len())?);
-                            return Ok((ret_val.to_expr(), _s));
+                            let (val, _s) = self.eval(e2.clone(), s)?;
+                            let ret_val = func(
+                                Value::expr_to_args(val, arg_ts.len())
+                                    .map_err(|e| SpError::new(e, e2.span))?,
+                            );
+                            return Ok((SpExpr::new(ret_val.to_expr(), span), _s));
                         }
                     }
                     _ => (),
                 }
 
-                let (_e1, _s) = self.eval(*e1.clone(), s)?;
-                match _e1 {
+                let (_e1, _s) = self.eval(e1.clone(), s)?;
+                match _e1.term.as_ref() {
                     Fn(pat, expr) => {
-                        let (val, __s) = self.eval(*e2.clone(), _s)?;
+                        let (val, __s) = self.eval(e2.clone(), _s)?;
                         let (is_match, bindings) = Self::match_pattern(&val, &pat)?;
                         if !is_match {
-                            return Err(PatternMatchError(pat, *e2).into());
+                            return Err(SpError::new(
+                                PatternMatchError(*pat.term.clone(), *e2.term.clone()).into(),
+                                span,
+                            ));
                         }
-                        let mut expr = *expr.clone();
+                        let mut expr = expr.clone();
                         for (var, val) in bindings {
                             expr = expr.substitute(&var, &val).1;
                         }
                         self.eval(expr, __s)
                     }
-                    _ => Err(UncaughtTypeError(format!("{:?}", e1)).into()),
+                    _ => Err(SpError::new(UncaughtTypeError(e_term).into(), span)),
                 }
             }
             ProjStruct(e, field) => {
-                let (_e, _s) = self.eval(*e.clone(), s)?;
-                match _e {
+                let (_e, _s) = self.eval(e.clone(), s)?;
+                match _e.term.as_ref() {
                     Struct(_, _, fields) => {
                         for (f, val) in fields {
-                            if f == field {
-                                return Ok((*val, _s));
+                            if f.clone() == field {
+                                return Ok((val.clone(), _s));
                             }
                         }
-                        Err(StructFieldMissingError(field, format!("{:?}", e)).into())
+                        Err(SpError::new(
+                            StructFieldMissingError(field, e_term).into(),
+                            span,
+                        ))
                     }
-                    _ => Err(UncaughtTypeError(format!("{:?}", e)).into()),
+                    _ => Err(SpError::new(UncaughtTypeError(e_term).into(), span)),
                 }
             }
             Match(e, patterns) => {
-                let (val, _s) = self.eval(*e.clone(), s)?;
+                let (val, _s) = self.eval(e.clone(), s)?;
                 for (p, e_) in patterns {
                     let (matches, subs) = Self::match_pattern(&val, &p)?;
                     if !matches {
                         continue;
                     }
 
-                    let mut e_ = *e_.clone();
+                    let mut e_ = e_.clone();
                     for (var, term) in subs {
                         e_ = e_.substitute(&var, &term).1;
                     }
                     return self.eval(e_, _s);
                 }
-                Err(NoPatternMatchesError(format!("{:?}", e)).into())
+                Err(SpError::new(NoPatternMatchesError(e_term).into(), span))
             }
             Var(path, x) => {
                 let path = if path.is_empty() {
@@ -393,7 +423,7 @@ impl Interpreter {
                     path
                 };
                 match self.globals.get(&(path.clone(), x.clone())) {
-                    None => Err(UnboundVariableError(x).into()),
+                    None => Err(SpError::new(UnboundVariableError(x).into(), span)),
                     Some(v) => {
                         if let Some(stream) = self.mut_rec_streams.get(&(path, x)) {
                             Ok((stream.clone(), s))
@@ -404,13 +434,16 @@ impl Interpreter {
                 }
             }
             LetIn(pat, e1, e2) => {
-                let (val, _s) = self.eval(*e1.clone(), s)?;
+                let (val, _s) = self.eval(e1.clone(), s)?;
                 let (res, bound_vars) = Self::match_pattern(&val, &pat)?;
                 if !res {
-                    return Err(PatternMatchError(pat, *e1).into());
+                    return Err(SpError::new(
+                        PatternMatchError(*pat.term, *e1.term).into(),
+                        span,
+                    ));
                 }
 
-                match &val {
+                match val.term.as_ref() {
                     Fn(arg, body) => {
                         // Substitution for recursive function according to Part 1B Semantics
                         if bound_vars.len() == 1 && val.is_static_recursive(&bound_vars[0].0) {
@@ -418,13 +451,25 @@ impl Interpreter {
                             return self.eval(
                                 e2.substitute(
                                     &var,
-                                    &Fn(
-                                        arg.clone(),
-                                        Box::new(LetIn(
-                                            Pattern::Var(var.clone(), false),
-                                            Box::new(val.clone()),
-                                            body.clone(),
-                                        )),
+                                    &SpExpr::new(
+                                        Fn(
+                                            arg.clone(),
+                                            SpExpr::new(
+                                                LetIn(
+                                                    Spanned {
+                                                        term: Box::new(Pattern::Var(
+                                                            var.clone(),
+                                                            false,
+                                                        )),
+                                                        span: pat.span,
+                                                    },
+                                                    val.clone(),
+                                                    body.clone(),
+                                                ),
+                                                e1.span,
+                                            ),
+                                        ),
+                                        e1.span,
                                     ),
                                 )
                                 .1,
@@ -435,7 +480,7 @@ impl Interpreter {
                     _ => (),
                 }
 
-                let mut e2 = *e2;
+                let mut e2 = e2;
                 for (var, val) in bound_vars {
                     e2 = e2.substitute(&var, &val).1;
                 }
@@ -444,13 +489,19 @@ impl Interpreter {
         }
     }
 
-    fn eval_bop(&mut self, e1: Expr, op: BOpcode, e2: Expr, s: Store) -> Result<(Expr, Store)> {
+    fn eval_bop(
+        &mut self,
+        e1: SpExpr,
+        op: BOpcode,
+        e2: SpExpr,
+        s: Store,
+    ) -> Result<(SpExpr, Store), SpError> {
         let (_e1, _s) = self.eval(e1.clone(), s)?;
         let (_e2, __s) = self.eval(e2.clone(), _s)?;
 
         use BOpcode::*;
         use Expr::*;
-        match (_e1, op, _e2) {
+        let result = match (*_e1.term, op, *_e2.term) {
             (Int(v1), Mul, Int(v2)) => Ok((Int(v1 * v2), __s)),
             (Float(v1), Mul, Float(v2)) => Ok((Float(v1 * v2), __s)),
             (Int(v1), Div, Int(v2)) => Ok((Int(v1 / v2), __s)),
@@ -462,7 +513,7 @@ impl Interpreter {
             (Int(v1), Mod, Int(v2)) => Ok((Int(v1 % v2), __s)),
 
             (v, Cons, List(mut list)) => {
-                list.push_front(Box::new(v));
+                list.push_front(SpExpr::new(v, e1.span));
                 Ok((List(list), __s))
             }
 
@@ -475,10 +526,13 @@ impl Interpreter {
 
             (Bool(v1), And, Bool(v2)) => Ok((Bool(v1 && v2), __s)),
             (Bool(v1), Or, Bool(v2)) => Ok((Bool(v1 || v2), __s)),
-            _ => Err(
-                UncaughtTypeError(format!("{:?}", BinOp(Box::new(e1), op, Box::new(e2)))).into(),
-            ),
-        }
+
+            _ => Err(SpError::new(
+                UncaughtTypeError(BinOp(e1.clone(), op, e2.clone())).into(),
+                (e1.span.0, e2.span.1),
+            )),
+        };
+        result.map(|(e, s)| (SpExpr::new(e, (e1.span.0, e2.span.1)), s))
     }
 
     // Step an expression e, forward
@@ -503,11 +557,15 @@ impl Interpreter {
     }
 
     // Returns if there has been a match and any variable bindings
-    fn match_pattern(val: &Expr, pattern: &Pattern) -> Result<(bool, Vec<(String, Expr)>)> {
+    fn match_pattern(
+        val: &SpExpr,
+        pattern: &Spanned<Pattern>,
+    ) -> Result<(bool, Vec<(String, SpExpr)>), SpError> {
+        let (pattern, p_span) = (pattern.term.clone(), pattern.span);
         use Pattern::*;
-        match pattern {
+        match pattern.as_ref() {
             Underscore => Ok((true, Vec::with_capacity(0))),
-            Bool(b1) => match val {
+            Bool(b1) => match val.term.as_ref() {
                 Expr::Bool(b2) => {
                     if b1 == b2 {
                         Ok((true, Vec::with_capacity(0)))
@@ -515,9 +573,12 @@ impl Interpreter {
                         Ok((false, Vec::with_capacity(0)))
                     }
                 }
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
-            Int(i1) => match val {
+            Int(i1) => match val.term.as_ref() {
                 Expr::Int(i2) => {
                     if i1 == i2 {
                         Ok((true, Vec::with_capacity(0)))
@@ -525,9 +586,12 @@ impl Interpreter {
                         Ok((false, Vec::with_capacity(0)))
                     }
                 }
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
-            Float(f1) => match val {
+            Float(f1) => match val.term.as_ref() {
                 Expr::Float(f2) => {
                     if f1 == f2 {
                         Ok((true, Vec::with_capacity(0)))
@@ -535,9 +599,12 @@ impl Interpreter {
                         Ok((false, Vec::with_capacity(0)))
                     }
                 }
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
-            String(s1) => match val {
+            String(s1) => match val.term.as_ref() {
                 Expr::String(s2) => {
                     if s1 == s2 {
                         Ok((true, Vec::with_capacity(0)))
@@ -545,13 +612,19 @@ impl Interpreter {
                         Ok((false, Vec::with_capacity(0)))
                     }
                 }
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
-            Unit => match val {
+            Unit => match val.term.as_ref() {
                 Expr::Unit => Ok((true, Vec::with_capacity(0))),
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
-            Tuple(patterns) => match val.clone() {
+            Tuple(patterns) => match val.term.as_ref() {
                 Expr::Tuple(vals) => {
                     if patterns.len() == vals.len() {
                         let (mut matches, mut subs) = (true, Vec::new());
@@ -563,12 +636,18 @@ impl Interpreter {
                         }
                         Ok((matches, subs))
                     } else {
-                        Err(PatternMatchError(pattern.clone(), val.clone()).into())
+                        Err(SpError::new(
+                            PatternMatchError(*pattern, *val.term.clone()).into(),
+                            p_span,
+                        ))
                     }
                 }
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
-            List(patterns) => match val.clone() {
+            List(patterns) => match val.term.as_ref() {
                 Expr::List(vals) => {
                     if patterns.len() == vals.len() {
                         let (mut matches, mut subs) = (true, Vec::new());
@@ -583,9 +662,12 @@ impl Interpreter {
                         Ok((false, Vec::with_capacity(0)))
                     }
                 }
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
-            Variant(_, c1, o1) => match val {
+            Variant(_, c1, o1) => match val.term.as_ref() {
                 Expr::Variant(_, c2, o2) => {
                     if c1 != c2 {
                         return Ok((false, Vec::with_capacity(0)));
@@ -594,37 +676,61 @@ impl Interpreter {
                         return Ok((true, Vec::with_capacity(0)));
                     }
                     if o1.is_some() && o2.is_some() {
-                        let (p, v) = (*o1.clone().unwrap(), *o2.clone().unwrap());
+                        let (p, v) = (o1.clone().unwrap(), o2.clone().unwrap());
                         return Self::match_pattern(&v, &p);
                     }
-                    Err(PatternMatchError(pattern.clone(), val.clone()).into())
+                    Err(SpError::new(
+                        PatternMatchError(*pattern, *val.term.clone()).into(),
+                        p_span,
+                    ))
                 }
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
-            Struct(path1, s1, patterns) => match val {
+            Struct(path1, s1, patterns) => match val.term.as_ref() {
                 Expr::Struct(path2, s2, vals) => {
                     if path1 != path2 {
-                        return Err(PatternMatchError(pattern.clone(), val.clone()).into());
+                        return Err(SpError::new(
+                            PatternMatchError(*pattern, *val.term.clone()).into(),
+                            p_span,
+                        ));
                     }
                     if s1 != s2 {
-                        return Err(PatternMatchError(pattern.clone(), val.clone()).into());
+                        return Err(SpError::new(
+                            PatternMatchError(*pattern, *val.term.clone()).into(),
+                            p_span,
+                        ));
                     }
 
                     let (mut matches, mut subs) = (true, Vec::new());
                     for (i, (field, o)) in patterns.into_iter().enumerate() {
                         if i >= vals.len() {
-                            return Err(PatternMatchError(pattern.clone(), val.clone()).into());
+                            return Err(SpError::new(
+                                PatternMatchError(*pattern, *val.term.clone()).into(),
+                                p_span,
+                            ));
                         }
                         if field == ".." {
                             break;
                         }
 
                         if field != &vals[i].0 {
-                            return Err(PatternMatchError(pattern.clone(), val.clone()).into());
+                            return Err(SpError::new(
+                                PatternMatchError(*pattern, *val.term.clone()).into(),
+                                p_span,
+                            ));
                         }
 
                         let (b, mut ss) = match o {
-                            None => Self::match_pattern(&vals[i].1, &Var(field.clone(), false))?,
+                            None => Self::match_pattern(
+                                &vals[i].1,
+                                &Spanned {
+                                    term: Box::new(Var(field.clone(), false)),
+                                    span: p_span,
+                                },
+                            )?,
                             Some(p) => Self::match_pattern(&vals[i].1, &p)?,
                         };
 
@@ -633,27 +739,42 @@ impl Interpreter {
                     }
                     Ok((matches, subs))
                 }
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
-            Cons(p1, p2) => match val {
+            Cons(p1, p2) => match val.term.as_ref() {
                 Expr::List(vals) => {
                     let (b1, mut subs1) = Self::match_pattern(&vals[0], p1)?;
                     let tail = vals.range(1..).cloned().collect();
-                    let (b2, mut subs2) = Self::match_pattern(&Expr::List(tail), p2)?;
+                    let (b2, mut subs2) = Self::match_pattern(
+                        &SpExpr::new(Expr::List(tail), (vals[0].span.0, val.span.1)),
+                        p2,
+                    )?;
 
                     subs1.append(&mut subs2);
                     Ok((b1 && b2, subs1))
                 }
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
-            Stream(p1, p2) => match val {
-                Expr::Into(tuple) => match &**tuple {
+            Stream(p1, p2) => match val.term.as_ref() {
+                Expr::Into(tuple) => match tuple.term.as_ref() {
                     Expr::Tuple(pair) => {
                         if pair.len() != 2 {
-                            return Err(PatternMatchError(pattern.clone(), val.clone()).into());
+                            return Err(SpError::new(
+                                PatternMatchError(*pattern, *val.term.clone()).into(),
+                                p_span,
+                            ));
                         }
-                        if !matches!(&*pair[1], Expr::Location(_)) {
-                            return Err(PatternMatchError(pattern.clone(), val.clone()).into());
+                        if !matches!(pair[1].term.as_ref(), Expr::Location(_)) {
+                            return Err(SpError::new(
+                                PatternMatchError(*pattern, *val.term.clone()).into(),
+                                p_span,
+                            ));
                         }
 
                         let (b1, mut subs1) = Self::match_pattern(&pair[0], p1)?;
@@ -662,9 +783,15 @@ impl Interpreter {
                         subs1.append(&mut subs2);
                         Ok((b1 && b2, subs1))
                     }
-                    _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                    _ => Err(SpError::new(
+                        PatternMatchError(*pattern, *val.term.clone()).into(),
+                        p_span,
+                    )),
                 },
-                _ => Err(PatternMatchError(pattern.clone(), val.clone()).into()),
+                _ => Err(SpError::new(
+                    PatternMatchError(*pattern, *val.term.clone()).into(),
+                    p_span,
+                )),
             },
             Or(p1, p2) => {
                 let (b, subs) = Self::match_pattern(val, p1)?;
@@ -687,7 +814,7 @@ impl Store {
         }
     }
 
-    fn extend(&mut self, loc: u64, term: Expr) {
+    fn extend(&mut self, loc: u64, term: SpExpr) {
         self.later.insert(loc, term);
     }
 
@@ -699,19 +826,21 @@ impl Store {
     }
 }
 
-impl Expr {
-    fn is_stream(&self) -> Option<(Expr, Expr)> {
+impl SpExpr {
+    // Return head and tail of stream if the expression is a stream
+    fn is_stream(&self) -> Option<(SpExpr, SpExpr)> {
         use Expr::{Into, Location, Tuple};
-        match self {
-            Into(tuple) => match &**tuple {
+
+        match self.term.as_ref() {
+            Into(tuple) => match tuple.term.as_ref() {
                 Tuple(pair) => {
                     if pair.len() != 2 {
                         return None;
                     }
-                    if !matches!(&*pair[1], Location(_)) {
+                    if !matches!(pair[1].term.as_ref(), Location(_)) {
                         return None;
                     }
-                    Some((*pair[0].clone(), *pair[1].clone()))
+                    Some((pair[0].clone(), pair[1].clone()))
                 }
                 _ => None,
             },
@@ -719,21 +848,25 @@ impl Expr {
         }
     }
 
-    fn replace_stream_loc(&self, loc: u64) -> Option<Expr> {
+    fn replace_stream_loc(&self, loc: u64) -> Option<SpExpr> {
+        let span = self.span;
         use Expr::{Into, Location, Tuple};
-        match self {
-            Into(tuple) => match &**tuple {
+        match self.term.as_ref() {
+            Into(tuple) => match tuple.term.as_ref() {
                 Tuple(pair) => {
                     if pair.len() != 2 {
                         return None;
                     }
-                    if !matches!(&*pair[1], Location(_)) {
+                    if !matches!(pair[1].term.as_ref(), Location(_)) {
                         return None;
                     }
-                    Some(Into(Box::new(Tuple(vec![
-                        pair[0].clone(),
-                        Box::new(Location(loc)),
-                    ]))))
+                    Some(SpExpr::new(
+                        Into(SpExpr::new(
+                            Tuple(vec![pair[0].clone(), SpExpr::new(Location(loc), span)]),
+                            span,
+                        )),
+                        span,
+                    ))
                 }
                 _ => None,
             },
@@ -741,40 +874,50 @@ impl Expr {
         }
     }
 
-    fn step_value(&self) -> Expr {
+    fn step_value(&self) -> SpExpr {
+        let span = self.span;
+
         use Expr::*;
-        match self {
+        match self.term.as_ref() {
             Bool(_) | Int(_) | Float(_) | String(_) | Unit | Var(..) | Location(_) | Fn(..)
             | Fix(..) => self.clone(),
-            Stable(v) => Stable(Box::new(v.step_value())),
-            Into(v) => match *v.clone() {
+            Stable(v) => SpExpr::new(Stable(v.step_value()), span),
+            Into(v) => match v.term.as_ref() {
                 Tuple(pair) => {
                     if pair.len() == 2 {
-                        if let Location(loc) = *pair[1] {
-                            Adv(Box::new(Location(loc)))
+                        if let Location(loc) = *pair[1].term {
+                            SpExpr::new(Adv(SpExpr::new(Location(loc), span)), span)
                         } else {
-                            Into(Box::new(v.step_value()))
+                            SpExpr::new(Into(v.step_value()), span)
                         }
                     } else {
-                        Into(Box::new(v.step_value()))
+                        SpExpr::new(Into(v.step_value()), span)
                     }
                 }
-                _ => Into(Box::new(v.step_value())),
+                _ => SpExpr::new(Into(v.step_value()), span),
             },
-            List(list) => List(list.iter().map(|v| Box::new(v.step_value())).collect()),
-            Tuple(tuple) => Tuple(tuple.iter().map(|v| Box::new(v.step_value())).collect()),
-            Struct(path, name, fields) => Struct(
-                path.clone(),
-                name.clone(),
-                fields
-                    .iter()
-                    .map(|(f, v)| (f.clone(), Box::new(v.step_value())))
-                    .collect(),
+            List(list) => SpExpr::new(List(list.iter().map(|v| v.step_value()).collect()), span),
+            Tuple(tuple) => {
+                SpExpr::new(Tuple(tuple.iter().map(|v| v.step_value()).collect()), span)
+            }
+            Struct(path, name, fields) => SpExpr::new(
+                Struct(
+                    path.clone(),
+                    name.clone(),
+                    fields
+                        .iter()
+                        .map(|(f, v)| (f.clone(), v.step_value()))
+                        .collect(),
+                ),
+                span,
             ),
-            Variant(path, name, v) => Variant(
-                path.clone(),
-                name.clone(),
-                v.clone().map(|v| Box::new(v.step_value())),
+            Variant(path, name, v) => SpExpr::new(
+                Variant(
+                    path.clone(),
+                    name.clone(),
+                    v.clone().map(|v| v.step_value()),
+                ),
+                span,
             ),
             _ => self.clone(),
         }

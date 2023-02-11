@@ -1,11 +1,13 @@
 use std::collections::{HashMap, VecDeque};
 
 use super::{create_path, insert_dec, traverse_path, Type, TypeContext, TypeError};
+use crate::errors::SpError;
 use crate::export::{ExportEnums, ExportFns, ExportStructs};
 use crate::exprs::{
-    BOpcode, Expr, InvalidExprError, InvalidPatternError, LetBinding, UOpcode, VarContext,
+    BOpcode, Expr, InvalidExprError, InvalidPatternError, LetBinding, SpExpr, UOpcode, VarContext,
 };
 use crate::parser::ast::{PExpr, Pattern, Program};
+use crate::parser::span::Spanned;
 use daggy::Dag;
 
 use anyhow::Result;
@@ -76,7 +78,7 @@ impl ProgramChecker {
         program: &Program,
         path: Vec<String>,
         exports: Option<(ExportFns, ExportStructs, ExportEnums)>,
-    ) -> Result<()> {
+    ) -> Result<(), SpError> {
         self.current_path = path.clone();
 
         // Add exports to declarations
@@ -116,6 +118,7 @@ impl ProgramChecker {
         // Expression cannot reference value declared below it
         //   => Cyclic declarations are disallowed
         for expr in program {
+            let (expr, span) = (expr.term.clone(), expr.span);
             match expr.as_ref() {
                 // Type Aliases
                 PExpr::TypeDef(t_id, params, t) => {
@@ -123,13 +126,14 @@ impl ProgramChecker {
                     let t = Type::from_typedef(
                         t_id.clone(),
                         params.clone(),
-                        *t.clone(),
+                        t.clone(),
                         &self.type_decs,
                         &path,
                     )?;
 
                     // Check that the type is well formed
-                    t.well_formed(TypeContext::new())?;
+                    t.well_formed(TypeContext::new())
+                        .map_err(|e| SpError::new(e, span))?;
 
                     // Add it to the type declarations
                     insert_dec(&mut self.type_decs, t_id.clone(), t, &path);
@@ -143,7 +147,8 @@ impl ProgramChecker {
                     )?;
 
                     // Check the enum is well formed
-                    t.well_formed(TypeContext::new())?;
+                    t.well_formed(TypeContext::new())
+                        .map_err(|e| SpError::new(e, span))?;
 
                     // Add enum to the type declarations
                     insert_dec(&mut self.type_decs, id.clone(), t, &path);
@@ -157,20 +162,23 @@ impl ProgramChecker {
                     )?;
 
                     // Check the struct is well formed
-                    t.well_formed(TypeContext::new())?;
+                    t.well_formed(TypeContext::new())
+                        .map_err(|e| SpError::new(e, span))?;
 
                     // Add struct to the type declarations
                     insert_dec(&mut self.type_decs, id.clone(), t, &path);
                 }
                 PExpr::Let(pat, expr) => {
-                    let mut e = Expr::from_pexpr(*expr.clone())?;
+                    let mut e = SpExpr::from_pexpr(expr.clone())?;
 
                     let mut ctx = VarContext::new();
 
                     // If e is recursive within one time step
-                    let ret_type = match pat {
+                    let ret_type = match pat.term.as_ref() {
                         Pattern::Var(var, _) => {
-                            if matches!(e, Expr::Fn(..)) && e.is_static_recursive(&var) {
+                            if matches!(e.term.as_ref(), Expr::Fn(..))
+                                && e.is_static_recursive(&var)
+                            {
                                 // Add a recursive variable into the context
                                 let t = Type::Function(
                                     Box::new(Type::GenericVar(self.fresh_type_var(), false)),
@@ -192,13 +200,19 @@ impl ProgramChecker {
                             // Recursive variables are translated to fix points to ensure guarded recursion...
                             let (is_rec, rec_e) = e.clone().substitute(
                                 &var,
-                                &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(
-                                    Vec::new(),
-                                    fix_var.clone(),
-                                ))))),
+                                &SpExpr::new(
+                                    Expr::Adv(SpExpr::new(
+                                        Expr::Unbox(SpExpr::new(
+                                            Expr::Var(Vec::new(), fix_var.clone()),
+                                            expr.span,
+                                        )),
+                                        expr.span,
+                                    )),
+                                    expr.span,
+                                ),
                             );
                             e = if is_rec {
-                                Expr::Fix(fix_var, Box::new(rec_e))
+                                SpExpr::new(Expr::Fix(fix_var, rec_e), expr.span)
                             } else {
                                 e
                             };
@@ -219,12 +233,12 @@ impl ProgramChecker {
                     if let Some(rec_t) = ret_type {
                         constraints.push_back((t, rec_t));
                     }
-                    let mut subs = unify(constraints)?;
+                    let mut subs = unify(constraints).map_err(|e| SpError::new(e, span))?;
 
                     self.substitutions.append(&mut subs);
 
                     // Unify the substitutions
-                    self.unify_subs()?;
+                    self.unify_subs().map_err(|e| SpError::new(e, span))?;
 
                     for (var, t) in vars {
                         // Apply the substitutions
@@ -240,7 +254,8 @@ impl ProgramChecker {
                         };
 
                         // Make sure the resulting type is well formed
-                        t.well_formed(TypeContext::new())?;
+                        t.well_formed(TypeContext::new())
+                            .map_err(|e| SpError::new(e, span))?;
                         println!("{:?}::{}: {}", path, var, t);
 
                         // Add it to the map of value declarations
@@ -252,39 +267,51 @@ impl ProgramChecker {
                     self.insert_checked_expr(LetBinding::Let(pat.clone(), e), &path);
                 }
                 PExpr::LetAndWith(pat1, e1, pat2, e2, e3) => {
-                    let (x, y) = match (pat1, pat2) {
+                    let (x, y) = match (pat1.term.as_ref(), pat2.term.as_ref()) {
                         (Pattern::Var(x, _), Pattern::Var(y, _)) => (x, y),
                         _ => {
-                            return Err(TypeError::InvalidMutuallyRecursiveDefinition(
-                                Expr::from_pexpr(*e1.clone())?,
-                            )
-                            .into())
+                            return Err(SpError::new(
+                                TypeError::InvalidMutuallyRecursiveDefinition(
+                                    *SpExpr::from_pexpr(e1.clone())?.term,
+                                )
+                                .into(),
+                                span,
+                            ))
                         }
                     };
 
                     // Γ ⊢ 𝑒₃ ∶ 𝑡₂
-                    let mut e3 = Expr::from_pexpr(*e3.clone())?;
+                    let mut e3 = SpExpr::from_pexpr(e3.clone())?;
                     e3 = e3.single_tick(0);
 
                     let mut t2 = self.infer(&e3, VarContext::new())?;
-                    self.unify_subs()?;
+                    self.unify_subs().map_err(|e| SpError::new(e, e3.span))?;
                     t2 = t2.apply_subs(&self.substitutions);
 
                     // Γ, y∶ Str<𝑡₂> ⊢ 𝑒₁ ∶ Str<𝑡₁>
-                    let mut e1 = Expr::from_pexpr(*e1.clone())?;
+                    let mut e1 = SpExpr::from_pexpr(e1.clone())?;
 
                     let fix_var = format!("rec_{}", x);
                     let (is_rec, rec_e) = e1.clone().substitute(
                         &x,
-                        &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(
-                            Vec::new(),
-                            fix_var.clone(),
-                        ))))),
+                        &SpExpr::new(
+                            Expr::Adv(SpExpr::new(
+                                Expr::Unbox(SpExpr::new(
+                                    Expr::Var(Vec::new(), fix_var.clone()),
+                                    e1.span,
+                                )),
+                                e1.span,
+                            )),
+                            e1.span,
+                        ),
                     );
                     e1 = if is_rec {
-                        Expr::Fix(fix_var, Box::new(rec_e))
+                        SpExpr::new(Expr::Fix(fix_var, rec_e), e1.span)
                     } else {
-                        return Err(TypeError::InvalidMutuallyRecursiveDefinition(e1).into());
+                        return Err(SpError::new(
+                            TypeError::InvalidMutuallyRecursiveDefinition(*e1.term).into(),
+                            e1.span,
+                        ));
                     };
                     e1 = e1.single_tick(0);
                     insert_dec(
@@ -301,46 +328,67 @@ impl ProgramChecker {
                     );
 
                     let mut t1 = self.infer(&e1, VarContext::new())?;
-                    self.unify_subs()?;
+                    self.unify_subs().map_err(|e| SpError::new(e, e1.span))?;
                     t1 = t1.apply_subs(&self.substitutions);
-                    t1.well_formed(TypeContext::new())?;
+                    t1.well_formed(TypeContext::new())
+                        .map_err(|e| SpError::new(e, e1.span))?;
+
                     match t1.clone() {
                         Type::Fix(_, tup) => match *tup {
                             Type::Tuple(ts) => {
                                 if !matches!(*ts[1], Type::FixVar(_)) {
-                                    return Err(
-                                        TypeError::InvalidMutuallyRecursiveDefinition(e1).into()
-                                    );
+                                    return Err(SpError::new(
+                                        TypeError::InvalidMutuallyRecursiveDefinition(*e1.term)
+                                            .into(),
+                                        e1.span,
+                                    ));
                                 }
                             }
                             _ => {
-                                return Err(TypeError::InvalidMutuallyRecursiveDefinition(e1).into())
+                                return Err(SpError::new(
+                                    TypeError::InvalidMutuallyRecursiveDefinition(*e1.term).into(),
+                                    e1.span,
+                                ))
                             }
                         },
-                        _ => return Err(TypeError::InvalidMutuallyRecursiveDefinition(e1).into()),
+                        _ => {
+                            return Err(SpError::new(
+                                TypeError::InvalidMutuallyRecursiveDefinition(*e1.term).into(),
+                                e1.span,
+                            ))
+                        }
                     }
                     println!("{:?}::{}: {}", path, x, t1);
                     insert_dec(&mut self.value_decs, x.clone(), t1, &path);
 
                     // Γ, x∶ Str<𝑡₁> ⊢ 𝑒₂ ∶ Str<𝑡₂>
-                    let mut e2 = Expr::from_pexpr(*e2.clone())?;
+                    let mut e2 = SpExpr::from_pexpr(e2.clone())?;
                     let fix_var = format!("rec_{}", y);
                     let (is_rec, rec_e) = e2.clone().substitute(
                         &y,
-                        &Expr::Adv(Box::new(Expr::Unbox(Box::new(Expr::Var(
-                            Vec::new(),
-                            fix_var.clone(),
-                        ))))),
+                        &SpExpr::new(
+                            Expr::Adv(SpExpr::new(
+                                Expr::Unbox(SpExpr::new(
+                                    Expr::Var(Vec::new(), fix_var.clone()),
+                                    e2.span,
+                                )),
+                                e2.span,
+                            )),
+                            e2.span,
+                        ),
                     );
                     e2 = if is_rec {
-                        Expr::Fix(fix_var, Box::new(rec_e))
+                        SpExpr::new(Expr::Fix(fix_var, rec_e), e2.span)
                     } else {
-                        return Err(TypeError::InvalidMutuallyRecursiveDefinition(e2).into());
+                        return Err(SpError::new(
+                            TypeError::InvalidMutuallyRecursiveDefinition(*e2.term).into(),
+                            e2.span,
+                        ));
                     };
 
                     e2 = e2.single_tick(0);
                     let mut s_t2 = self.infer(&e2, VarContext::new())?;
-                    self.unify_subs()?;
+                    self.unify_subs().map_err(|e| SpError::new(e, e2.span))?;
                     s_t2 = s_t2.apply_subs(&self.substitutions);
 
                     let mut subs = unify(VecDeque::from([(
@@ -352,9 +400,11 @@ impl ProgramChecker {
                                 Box::new(Type::FixVar(format!("_f{}", y))),
                             ])),
                         ),
-                    )]))?;
+                    )]))
+                    .map_err(|e| SpError::new(e, e2.span))?;
                     self.substitutions.append(&mut subs);
-                    s_t2.well_formed(TypeContext::new())?;
+                    s_t2.well_formed(TypeContext::new())
+                        .map_err(|e| SpError::new(e, e2.span))?;
 
                     println!("{:?}::{}: {}", path, y, s_t2);
                     insert_dec(&mut self.value_decs, y.clone(), s_t2, &path);
@@ -371,8 +421,10 @@ impl ProgramChecker {
                     let use_path: &Vec<String> = &use_path[0..use_path.len() - 1].into();
                     if last_elem == "*" {
                         // Copy all elements in path to root node
-                        let types = traverse_path(&mut self.type_decs, &use_path)?;
-                        let values = traverse_path(&mut self.value_decs, &use_path)?;
+                        let types = traverse_path(&mut self.type_decs, &use_path)
+                            .map_err(|e| SpError::new(e, span))?;
+                        let values = traverse_path(&mut self.value_decs, &use_path)
+                            .map_err(|e| SpError::new(e, span))?;
                         if !values.is_empty() {
                             self.insert_checked_expr(
                                 LetBinding::Use(use_path.clone(), last_elem.clone()),
@@ -396,7 +448,8 @@ impl ProgramChecker {
                             );
                             &mut self.value_decs
                         };
-                        let node = traverse_path(dag, &use_path)?;
+                        let node =
+                            traverse_path(dag, &use_path).map_err(|e| SpError::new(e, span))?;
                         insert_dec(
                             dag,
                             last_elem.clone(),
@@ -405,7 +458,12 @@ impl ProgramChecker {
                         );
                     }
                 }
-                _ => return Err(InvalidExprError::InvalidTopLevelExpr(expr.head_string()).into()),
+                _ => {
+                    return Err(SpError::new(
+                        InvalidExprError::InvalidTopLevelExpr(expr.head_string()).into(),
+                        span,
+                    ))
+                }
             }
         }
 
@@ -413,9 +471,10 @@ impl ProgramChecker {
     }
 
     // Type Inference for a let expression according to Rattus λ rules
-    pub fn infer(&mut self, e: &Expr, mut ctx: VarContext) -> Result<Type> {
+    pub fn infer(&mut self, e: &SpExpr, mut ctx: VarContext) -> Result<Type, SpError> {
+        let (e, span) = (e.term.clone(), e.span);
         use Expr::*;
-        match e {
+        match e.as_ref() {
             Bool(_) => Ok(Type::Bool),
             Int(_) => Ok(Type::Int),
             Float(_) => Ok(Type::Float),
@@ -424,24 +483,29 @@ impl ProgramChecker {
             BinOp(e1, op, e2) => {
                 let t1 = self.infer(e1, ctx.clone())?;
                 let t2 = self.infer(e2, ctx.clone())?;
-                let t3 = self.infer_binop(t1.clone(), op.clone(), t2.clone())?;
+                let t3 = self
+                    .infer_binop(t1.clone(), op.clone(), t2.clone())
+                    .map_err(|e| SpError::new(e, span))?;
 
                 let mut subs = match op {
                     // Unify head of list with list type
                     BOpcode::Cons => unify(VecDeque::from([
                         (t2.clone(), Type::List(Box::new(t1.clone()))),
                         (t2.clone(), t3.clone()),
-                    ]))?,
+                    ]))
+                    .map_err(|e| SpError::new(e, span))?,
                     // For comparison operators the return type is always bool
                     BOpcode::Eq | BOpcode::Lt | BOpcode::Gt => {
-                        unify(VecDeque::from([(t1.clone(), t2.clone())]))?
+                        unify(VecDeque::from([(t1.clone(), t2.clone())]))
+                            .map_err(|e| SpError::new(e, span))?
                     }
                     // Unify operands and result types
                     _ => unify(VecDeque::from([
                         (t1.clone(), t3.clone()),
                         (t2.clone(), t3.clone()),
                         (t1.clone(), t2.clone()),
-                    ]))?,
+                    ]))
+                    .map_err(|e| SpError::new(e, span))?,
                 };
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
@@ -454,12 +518,16 @@ impl ProgramChecker {
                     Type::Int => Ok(Type::Int),
                     Type::Float => Ok(Type::Float),
                     Type::GenericVar(..) => Ok(t),
-                    _ => Err(TypeError::ImproperType(Type::Int, t).into()),
+                    _ => Err(SpError::new(
+                        TypeError::ImproperType(Type::Int, t).into(),
+                        e.span,
+                    )),
                 }
             }
             UnOp(UOpcode::Not, e) => {
                 let t = self.infer(e, ctx.clone())?;
-                let mut subs = unify(VecDeque::from([(t.clone(), Type::Bool)]))?;
+                let mut subs = unify(VecDeque::from([(t.clone(), Type::Bool)]))
+                    .map_err(|err| SpError::new(err, e.span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
@@ -467,7 +535,7 @@ impl ProgramChecker {
             }
             Delay(e) => {
                 let mut ctx = ctx.clone();
-                ctx = ctx.one_tick()?;
+                ctx = ctx.one_tick().map_err(|e| SpError::new(e, span))?;
                 ctx.push_tick();
 
                 let t = self.infer(e, ctx)?;
@@ -475,13 +543,13 @@ impl ProgramChecker {
                 Ok(Type::Delay(Box::new(t)))
             }
             Stable(e) => {
-                let ctx = ctx.stable()?;
+                let ctx = ctx.stable().map_err(|e| SpError::new(e, span))?;
                 let t = self.infer(e, ctx)?;
 
                 Ok(Type::Stable(Box::new(t)))
             }
             Adv(e) => {
-                let mut ctx = ctx.pre_tick()?;
+                let mut ctx = ctx.pre_tick().map_err(|e| SpError::new(e, span))?;
 
                 let t = self.infer(e, ctx.clone())?;
                 let t_ret = Type::GenericVar(self.fresh_type_var(), false);
@@ -489,7 +557,8 @@ impl ProgramChecker {
                 let mut subs = unify(VecDeque::from([(
                     t.clone(),
                     Type::Delay(Box::new(t_ret.clone())),
-                )]))?;
+                )]))
+                .map_err(|err| SpError::new(err, e.span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
@@ -502,7 +571,8 @@ impl ProgramChecker {
                 let mut subs = unify(VecDeque::from([(
                     Type::Stable(Box::new(t_ret.clone())),
                     t.clone(),
-                )]))?;
+                )]))
+                .map_err(|err| SpError::new(err, e.span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
@@ -517,18 +587,22 @@ impl ProgramChecker {
                 let mut subs = unify(VecDeque::from([(
                     t.clone(),
                     Type::Fix(fix_var.clone(), Box::new(a.clone())),
-                )]))?;
+                )]))
+                .map_err(|err| SpError::new(err, e.span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
                 match t {
                     Type::Fix(_, t_) => Ok(t_.sub_delay_fix(&fix_var)),
                     Type::GenericVar(..) => Ok(a),
-                    _ => Err(TypeError::ImproperType(
-                        Type::Fix("α".to_string(), Box::new(Type::Unit)),
-                        t,
-                    )
-                    .into()),
+                    _ => Err(SpError::new(
+                        TypeError::ImproperType(
+                            Type::Fix("α".to_string(), Box::new(Type::Unit)),
+                            t,
+                        )
+                        .into(),
+                        span,
+                    )),
                 }
             }
             Into(e) => {
@@ -548,7 +622,7 @@ impl ProgramChecker {
                 for t in &types {
                     constraints.push_back((t.clone(), t_ret.clone()));
                 }
-                let mut subs = unify(constraints)?;
+                let mut subs = unify(constraints).map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
@@ -573,7 +647,10 @@ impl ProgramChecker {
                     path
                 };
 
-                let t_struct = match traverse_path(&self.type_decs, path)?.get(id) {
+                let t_struct = match traverse_path(&self.type_decs, path)
+                    .map_err(|e| SpError::new(e, span))?
+                    .get(id)
+                {
                     Some(t) => match t {
                         // Instantiate generic variables
                         Type::Generic(scheme, t) => {
@@ -587,13 +664,21 @@ impl ProgramChecker {
                         }
                         t => t.clone(),
                     },
-                    None => return Err(TypeError::UserTypeNotFound(id.clone()).into()),
+                    None => {
+                        return Err(SpError::new(
+                            TypeError::UserTypeNotFound(id.clone()).into(),
+                            span,
+                        ))
+                    }
                 };
 
                 match &t_struct {
                     Type::Struct(map) => {
                         if map.len() != fields.len() {
-                            return Err(TypeError::StructFieldsDoNotMatch(id.clone()).into());
+                            return Err(SpError::new(
+                                TypeError::StructFieldsDoNotMatch(id.clone()).into(),
+                                span,
+                            ));
                         }
                         // Unify struct expression's fields with those of the declared struct
                         let mut constraints = VecDeque::new();
@@ -601,22 +686,22 @@ impl ProgramChecker {
                             let t_ = match map.get(f) {
                                 Some(t) => *t.clone(),
                                 None => {
-                                    return Err(TypeError::StructFieldDoesNotExist(
-                                        id.clone(),
-                                        f.clone(),
-                                    )
-                                    .into())
+                                    return Err(SpError::new(
+                                        TypeError::StructFieldDoesNotExist(id.clone(), f.clone())
+                                            .into(),
+                                        span,
+                                    ))
                                 }
                             };
                             constraints.push_back((t, t_));
                         }
-                        let mut subs = unify(constraints)?;
+                        let mut subs = unify(constraints).map_err(|e| SpError::new(e, span))?;
                         self.substitutions.append(&mut subs);
                         ctx.apply_subs(&self.substitutions);
 
                         Ok(t_struct.clone())
                     }
-                    _ => Err(TypeError::NotAStruct(id.clone()).into()),
+                    _ => Err(SpError::new(TypeError::NotAStruct(id.clone()).into(), span)),
                 }
             }
             Variant(path, id, o) => {
@@ -633,7 +718,10 @@ impl ProgramChecker {
                     path
                 };
 
-                let t_enum = match traverse_path(&self.type_decs, &path)?.get(enum_name) {
+                let t_enum = match traverse_path(&self.type_decs, &path)
+                    .map_err(|e| SpError::new(e, span))?
+                    .get(enum_name)
+                {
                     Some(enm) => match enm {
                         Type::Generic(scheme, t) => {
                             let mut t_ = *t.clone();
@@ -646,7 +734,12 @@ impl ProgramChecker {
                         }
                         t => t.clone(),
                     },
-                    None => return Err(TypeError::UserTypeNotFound(enum_name.clone()).into()),
+                    None => {
+                        return Err(SpError::new(
+                            TypeError::UserTypeNotFound(enum_name.clone()).into(),
+                            span,
+                        ))
+                    }
                 };
 
                 // Unify variant type with the declared enum's type
@@ -654,21 +747,28 @@ impl ProgramChecker {
                     Type::Enum(map) => match (t, map.get(id).unwrap()) {
                         (None, None) => Ok(t_enum),
                         (Some(t1), Some(t2)) => {
-                            let mut subs = unify(VecDeque::from([(t1.clone(), *t2.clone())]))?;
+                            let mut subs = unify(VecDeque::from([(t1.clone(), *t2.clone())]))
+                                .map_err(|e| SpError::new(e, span))?;
                             self.substitutions.append(&mut subs);
                             ctx.apply_subs(&self.substitutions);
 
                             Ok(t_enum.clone())
                         }
-                        _ => Err(TypeError::VariantFieldsDoNotMatch(id.clone()).into()),
+                        _ => Err(SpError::new(
+                            TypeError::VariantFieldsDoNotMatch(id.clone()).into(),
+                            span,
+                        )),
                     },
-                    _ => Err(TypeError::NotAnEnum(id.clone()).into()),
+                    _ => Err(SpError::new(
+                        TypeError::VariantFieldsDoNotMatch(id.clone()).into(),
+                        span,
+                    )),
                 }
             }
             Fn(pat, e) => {
                 let (t_pat, vars) = self.check_pattern(pat.clone())?;
                 let mut ctx = ctx.clone();
-                ctx = ctx.one_tick()?;
+                ctx = ctx.one_tick().map_err(|e| SpError::new(e, span))?;
                 for (var, t_var) in vars {
                     ctx.push_var(var.clone(), t_var.clone());
                 }
@@ -683,7 +783,7 @@ impl ProgramChecker {
                 Ok(Type::Function(Box::new(t_pat), Box::new(t_fn_ret)))
             }
             Fix(alpha, e) => {
-                let mut ctx = ctx.clone().stable()?;
+                let mut ctx = ctx.clone().stable().map_err(|e| SpError::new(e, span))?;
                 let t_ret = Type::GenericVar(self.fresh_type_var(), false);
                 ctx.push_var(
                     alpha.clone(),
@@ -691,7 +791,8 @@ impl ProgramChecker {
                 );
 
                 let t = self.infer(e, ctx.clone())?;
-                let mut subs = unify(VecDeque::from([(t_ret.clone(), t.clone())]))?;
+                let mut subs = unify(VecDeque::from([(t_ret.clone(), t.clone())]))
+                    .map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
@@ -705,7 +806,8 @@ impl ProgramChecker {
                 let mut subs = unify(VecDeque::from([
                     (t1.clone(), Type::Bool),
                     (t2.clone(), t3.clone()),
-                ]))?;
+                ]))
+                .map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
@@ -714,7 +816,8 @@ impl ProgramChecker {
             Seq(e1, e2) => {
                 let t = self.infer(&e1, ctx.clone())?;
 
-                let mut subs = unify(VecDeque::from([(t.clone(), Type::Unit)]))?;
+                let mut subs = unify(VecDeque::from([(t.clone(), Type::Unit)]))
+                    .map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
@@ -728,7 +831,8 @@ impl ProgramChecker {
                 let mut subs = unify(VecDeque::from([(
                     t1.clone(),
                     Type::Function(Box::new(t2.clone()), Box::new(t3.clone())),
-                )]))?;
+                )]))
+                .map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
@@ -740,7 +844,8 @@ impl ProgramChecker {
                 let map = HashMap::from([(f.clone(), Box::new(field_type.clone()))]);
 
                 // Struct unification only requires a subset of fields to match
-                let mut subs = unify(VecDeque::from([(t.clone(), Type::Struct(map))]))?;
+                let mut subs = unify(VecDeque::from([(t.clone(), Type::Struct(map))]))
+                    .map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
 
@@ -766,7 +871,7 @@ impl ProgramChecker {
                     constraints.push_back((t_e_p.clone(), t_ret.clone()));
                 }
 
-                let mut subs = unify(constraints)?;
+                let mut subs = unify(constraints).map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&subs);
 
@@ -776,7 +881,7 @@ impl ProgramChecker {
                 Ok((t, true)) => {
                     // Instantiate generic variables of ∀ types
                     let (t_, constraints) = t.instantiate();
-                    let mut subs = unify(constraints)?;
+                    let mut subs = unify(constraints).map_err(|e| SpError::new(e, span))?;
                     self.substitutions.append(&mut subs);
                     ctx.apply_subs(&subs);
 
@@ -786,12 +891,15 @@ impl ProgramChecker {
                 Ok((t, false)) => {
                     let (t, mut constraints) = t.instantiate();
                     let (t_, mut constraints_) = t.stablify(&Vec::new());
-                    if !t_.is_stable()? {
-                        return Err(TypeError::InvalidVariableAccess(var.clone()).into());
+                    if !t_.is_stable().map_err(|e| SpError::new(e, span))? {
+                        return Err(SpError::new(
+                            TypeError::InvalidVariableAccess(var.clone()).into(),
+                            span,
+                        ));
                     }
                     constraints.append(&mut constraints_);
 
-                    let mut subs = unify(constraints)?;
+                    let mut subs = unify(constraints).map_err(|e| SpError::new(e, span))?;
                     self.substitutions.append(&mut subs);
                     ctx.apply_subs(&subs);
 
@@ -804,7 +912,10 @@ impl ProgramChecker {
                     } else {
                         path
                     };
-                    match traverse_path(&mut self.value_decs, path)?.get(var) {
+                    match traverse_path(&mut self.value_decs, path)
+                        .map_err(|e| SpError::new(e, span))?
+                        .get(var)
+                    {
                         Some(t) => match t {
                             // Instantiate generic variables
                             Type::Generic(scheme, t) => {
@@ -819,16 +930,17 @@ impl ProgramChecker {
                             }
                             t => Ok(t.clone()),
                         },
-                        None => Err(e),
+                        None => Err(SpError::new(e, span)),
                     }
                 }
             },
             LetIn(pat, e1, e2) => {
                 let mut ctx1 = ctx.clone();
                 // If e is recursive within one time step
-                let t_e_ = match pat {
+                let t_e_ = match pat.term.as_ref() {
                     Pattern::Var(var, _) => {
-                        if matches!(*e1.clone(), Expr::Fn(..)) && e1.is_static_recursive(&var) {
+                        if matches!(e1.term.as_ref(), Expr::Fn(..)) && e1.is_static_recursive(&var)
+                        {
                             // Add a recursive variable into the context
                             let t = Type::Function(
                                 Box::new(Type::GenericVar(self.fresh_type_var(), false)),
@@ -851,10 +963,10 @@ impl ProgramChecker {
                 if let Some(rec_t) = t_e_ {
                     constraints.push_back((t_e.clone(), rec_t));
                 }
-                let mut subs = unify(constraints)?;
+                let mut subs = unify(constraints).map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
 
-                self.unify_subs()?;
+                self.unify_subs().map_err(|e| SpError::new(e, span))?;
 
                 let mut ctx = ctx.clone();
                 for (let_var, t_var) in vars {
@@ -881,7 +993,7 @@ impl ProgramChecker {
 
                 Ok(self.infer(e2, ctx)?)
             }
-            Location(_) => Err(InvalidExprError::IllegalLocation.into()),
+            Location(_) => Err(SpError::new(InvalidExprError::IllegalLocation.into(), span)),
         }
     }
 
@@ -989,9 +1101,13 @@ impl ProgramChecker {
     }
 
     // Returns the pattern's type and a mapping of variables declared in the pattern to their type
-    pub fn check_pattern(&mut self, p: Pattern) -> Result<(Type, HashMap<String, Type>)> {
+    pub fn check_pattern(
+        &mut self,
+        p: Spanned<Pattern>,
+    ) -> Result<(Type, HashMap<String, Type>), SpError> {
+        let (p, span) = (p.term, p.span);
         use Pattern::*;
-        match p {
+        match p.as_ref() {
             Underscore => Ok((
                 Type::GenericVar(self.fresh_type_var(), false),
                 HashMap::new(),
@@ -1006,18 +1122,21 @@ impl ProgramChecker {
                 let mut types = Vec::new();
                 // Check each sub_pattern
                 for p in v {
-                    let (t, p_vars) = self.check_pattern(*p.clone())?;
+                    let (t, p_vars) = self.check_pattern(p.clone())?;
                     types.push(Box::new(t));
                     for (var, t_var) in p_vars {
                         // Check that the same variable name does not appear twice in the same pattern
                         match vars.insert(var.clone(), t_var) {
                             None => (),
                             Some(_) => {
-                                return Err(InvalidPatternError::SimultaneousPatternBinding(
-                                    var.clone(),
-                                    *p.clone(),
-                                )
-                                .into())
+                                return Err(SpError::new(
+                                    InvalidPatternError::SimultaneousPatternBinding(
+                                        var.clone(),
+                                        *p.term.clone(),
+                                    )
+                                    .into(),
+                                    span,
+                                ))
                             }
                         }
                     }
@@ -1028,7 +1147,7 @@ impl ProgramChecker {
                 let mut vars = HashMap::new();
                 let mut t_list = None;
                 for p in v {
-                    let (t, p_vars) = self.check_pattern(*p.clone())?;
+                    let (t, p_vars) = self.check_pattern(p.clone())?;
                     // Check all sub patterns correspond to the same type
                     t_list = match t_list {
                         None => Some(t),
@@ -1036,7 +1155,10 @@ impl ProgramChecker {
                             if t == t_ {
                                 Some(t_)
                             } else {
-                                return Err(InvalidPatternError::InvalidListPattern.into());
+                                return Err(SpError::new(
+                                    InvalidPatternError::InvalidListPattern.into(),
+                                    span,
+                                ));
                             }
                         }
                     };
@@ -1046,11 +1168,14 @@ impl ProgramChecker {
                         match vars.insert(var.clone(), t_var) {
                             None => (),
                             Some(_) => {
-                                return Err(InvalidPatternError::SimultaneousPatternBinding(
-                                    var.clone(),
-                                    *p.clone(),
-                                )
-                                .into())
+                                return Err(SpError::new(
+                                    InvalidPatternError::SimultaneousPatternBinding(
+                                        var.clone(),
+                                        *p.term.clone(),
+                                    )
+                                    .into(),
+                                    span,
+                                ))
                             }
                         }
                     }
@@ -1068,7 +1193,7 @@ impl ProgramChecker {
             Variant(path, c, o) => {
                 let (t, vars) = match o {
                     Some(p) => {
-                        let (t_, p_vars) = self.check_pattern(*p.clone())?;
+                        let (t_, p_vars) = self.check_pattern(p.clone())?;
                         (Some(t_), p_vars)
                     }
                     None => (None, HashMap::new()),
@@ -1081,7 +1206,10 @@ impl ProgramChecker {
                 } else {
                     path
                 };
-                let t_enum = match traverse_path(&mut self.type_decs, path)?.get(enum_name) {
+                let t_enum = match traverse_path(&mut self.type_decs, path)
+                    .map_err(|e| SpError::new(e, span))?
+                    .get(enum_name)
+                {
                     Some(enm) => match enm {
                         // Instantiate generic variables
                         Type::Generic(scheme, t) => {
@@ -1095,22 +1223,31 @@ impl ProgramChecker {
                         }
                         t => t.clone(),
                     },
-                    None => return Err(TypeError::UserTypeNotFound(enum_name.clone()).into()),
+                    None => {
+                        return Err(SpError::new(
+                            TypeError::UserTypeNotFound(enum_name.clone()).into(),
+                            span,
+                        ))
+                    }
                 };
 
                 match &t_enum {
                     // Unify enum variant type and pattern type
-                    Type::Enum(map) => match (t, map.get(&c).unwrap()) {
+                    Type::Enum(map) => match (t, map.get(c).unwrap()) {
                         (None, None) => Ok((t_enum, vars)),
                         (Some(t1), Some(t2)) => {
-                            let mut subs = unify(VecDeque::from([(t1.clone(), *t2.clone())]))?;
+                            let mut subs = unify(VecDeque::from([(t1.clone(), *t2.clone())]))
+                                .map_err(|e| SpError::new(e, span))?;
                             self.substitutions.append(&mut subs);
 
                             Ok((t_enum.clone(), vars))
                         }
-                        _ => Err(TypeError::VariantFieldsDoNotMatch(c.clone()).into()),
+                        _ => Err(SpError::new(
+                            TypeError::VariantFieldsDoNotMatch(c.clone()).into(),
+                            span,
+                        )),
                     },
-                    _ => Err(TypeError::NotAnEnum(c.clone()).into()),
+                    _ => Err(SpError::new(TypeError::NotAnEnum(c.clone()).into(), span)),
                 }
             }
             Struct(path, id, v) => {
@@ -1126,7 +1263,7 @@ impl ProgramChecker {
                             let t = Type::GenericVar(self.fresh_type_var(), false);
                             (t.clone(), HashMap::from([(f.clone(), t)]))
                         }
-                        Some(p) => self.check_pattern(*p.clone())?,
+                        Some(p) => self.check_pattern(p.clone())?,
                     };
 
                     fields.push((f, t));
@@ -1134,11 +1271,14 @@ impl ProgramChecker {
                         match vars.insert(var.clone(), t_var) {
                             None => (),
                             Some(_) => {
-                                return Err(InvalidPatternError::SimultaneousPatternBinding(
-                                    var.clone(),
-                                    Struct(path, id, v),
-                                )
-                                .into())
+                                return Err(SpError::new(
+                                    InvalidPatternError::SimultaneousPatternBinding(
+                                        var.clone(),
+                                        Struct(path.clone(), id.clone(), v.clone()),
+                                    )
+                                    .into(),
+                                    span,
+                                ))
                             }
                         }
                     }
@@ -1149,7 +1289,10 @@ impl ProgramChecker {
                 } else {
                     &path
                 };
-                let t_struct = match traverse_path(&self.type_decs, path)?.get(&id) {
+                let t_struct = match traverse_path(&self.type_decs, path)
+                    .map_err(|e| SpError::new(e, span))?
+                    .get(id)
+                {
                     Some(t) => match t {
                         // Instantiate generic variables
                         Type::Generic(scheme, t) => {
@@ -1164,7 +1307,12 @@ impl ProgramChecker {
                         t => t.clone(),
                     },
 
-                    None => return Err(TypeError::UserTypeNotFound(id.clone()).into()),
+                    None => {
+                        return Err(SpError::new(
+                            TypeError::UserTypeNotFound(id.clone()).into(),
+                            span,
+                        ))
+                    }
                 };
 
                 // Unify pattern types and struct's definition field types
@@ -1175,35 +1323,38 @@ impl ProgramChecker {
                             let t_ = match map.get(&f) {
                                 Some(t) => *t.clone(),
                                 None => {
-                                    return Err(TypeError::StructFieldDoesNotExist(
-                                        id.clone(),
-                                        f.clone(),
-                                    )
-                                    .into())
+                                    return Err(SpError::new(
+                                        TypeError::StructFieldDoesNotExist(id.clone(), f.clone())
+                                            .into(),
+                                        span,
+                                    ))
                                 }
                             };
                             constraints.push_back((t, t_));
                         }
-                        let mut subs = unify(constraints)?;
+                        let mut subs = unify(constraints).map_err(|e| SpError::new(e, span))?;
                         self.substitutions.append(&mut subs);
 
                         Ok((t_struct.clone(), vars))
                     }
-                    _ => Err(TypeError::NotAStruct(id.clone()).into()),
+                    _ => Err(SpError::new(TypeError::NotAStruct(id.clone()).into(), span)),
                 }
             }
             Cons(p1, p2) => {
-                let (t1, mut vars1) = self.check_pattern(*p1.clone())?;
-                let (t2, vars2) = self.check_pattern(*p2.clone())?;
+                let (t1, mut vars1) = self.check_pattern(p1.clone())?;
+                let (t2, vars2) = self.check_pattern(p2.clone())?;
                 for (var, t_var) in vars2 {
                     match vars1.insert(var.clone(), t_var) {
                         None => (),
                         Some(_) => {
-                            return Err(InvalidPatternError::SimultaneousPatternBinding(
-                                var.clone(),
-                                Cons(p1.clone(), p2.clone()),
-                            )
-                            .into())
+                            return Err(SpError::new(
+                                InvalidPatternError::SimultaneousPatternBinding(
+                                    var.clone(),
+                                    Cons(p1.clone(), p2.clone()),
+                                )
+                                .into(),
+                                span,
+                            ))
                         }
                     }
                 }
@@ -1216,30 +1367,34 @@ impl ProgramChecker {
                         if t1 == *t2 {
                             Type::List(Box::new(t1))
                         } else {
-                            return Err(TypeError::ImproperType(
-                                Type::List(Box::new(t1)),
-                                Type::List(t2),
-                            )
-                            .into());
+                            return Err(SpError::new(
+                                TypeError::ImproperType(Type::List(Box::new(t1)), Type::List(t2))
+                                    .into(),
+                                span,
+                            ));
                         }
                     }
                     (t, Type::GenericVar(..)) => Type::List(Box::new(t)),
                     (t1, t2) => {
-                        return Err(TypeError::ImproperType(Type::List(Box::new(t1)), t2).into())
+                        return Err(SpError::new(
+                            TypeError::ImproperType(Type::List(Box::new(t1)), t2).into(),
+                            span,
+                        ))
                     }
                 };
 
                 let mut subs = unify(VecDeque::from([
                     (t2.clone(), Type::List(Box::new(t1.clone()))),
                     (t2.clone(), t_ret.clone()),
-                ]))?;
+                ]))
+                .map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
 
                 Ok((t_ret, vars1))
             }
             Stream(x, xs_p) => {
-                let (t, mut vars) = self.check_pattern(*x.clone())?;
-                match &*xs_p {
+                let (t, mut vars) = self.check_pattern(x.clone())?;
+                match xs_p.term.as_ref() {
                     Var(xs, _) => {
                         let fix_var = self.fresh_type_var();
                         let t_ret = Type::Fix(
@@ -1252,42 +1407,52 @@ impl ProgramChecker {
                         match vars.insert(xs.clone(), Type::Delay(Box::new(t_ret.clone()))) {
                             None => (),
                             Some(_) => {
-                                return Err(InvalidPatternError::SimultaneousPatternBinding(
-                                    xs.clone(),
-                                    Stream(x, xs_p),
-                                )
-                                .into())
+                                return Err(SpError::new(
+                                    InvalidPatternError::SimultaneousPatternBinding(
+                                        xs.clone(),
+                                        Stream(x.clone(), xs_p.clone()),
+                                    )
+                                    .into(),
+                                    span,
+                                ))
                             }
                         }
                         Ok((t_ret, vars))
                     }
-                    _ => Err(InvalidPatternError::InvalidStreamPattern.into()),
+                    _ => Err(SpError::new(
+                        InvalidPatternError::InvalidStreamPattern.into(),
+                        span,
+                    )),
                 }
             }
             Or(p1, p2) => {
-                let (t1, mut vars1) = self.check_pattern(*p1.clone())?;
-                let (t2, vars2) = self.check_pattern(*p2.clone())?;
+                let (t1, mut vars1) = self.check_pattern(p1.clone())?;
+                let (t2, vars2) = self.check_pattern(p2.clone())?;
                 for (var, t_var) in vars2 {
                     match vars1.insert(var.clone(), t_var) {
                         None => (),
                         Some(_) => {
-                            return Err(InvalidPatternError::SimultaneousPatternBinding(
-                                var.clone(),
-                                Cons(p1.clone(), p2.clone()),
-                            )
-                            .into())
+                            return Err(SpError::new(
+                                InvalidPatternError::SimultaneousPatternBinding(
+                                    var.clone(),
+                                    Cons(p1.clone(), p2.clone()),
+                                )
+                                .into(),
+                                span,
+                            ))
                         }
                     }
                 }
 
-                let mut subs = unify(VecDeque::from([(t1.clone(), t2.clone())]))?;
+                let mut subs = unify(VecDeque::from([(t1.clone(), t2.clone())]))
+                    .map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
 
                 Ok((t2, vars1))
             }
             Var(var, stability) => {
-                let t = Type::GenericVar(self.fresh_type_var(), stability);
-                Ok((t.clone(), HashMap::from([(var, t)])))
+                let t = Type::GenericVar(self.fresh_type_var(), *stability);
+                Ok((t.clone(), HashMap::from([(var.clone(), t)])))
             }
         }
     }

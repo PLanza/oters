@@ -10,7 +10,7 @@ build = "build.rs"
 oters_macro = { path = "../oters_macro/" }
 lalrpop-util = { version = "^0.19", features = ["lexer"] }
 regex = "1"
-anyhow = "1.0.*"
+anyhow = "1.0.68"
 thiserror = "1.0"
 lazy_static = "1.4.*"
 macroquad = "0.3.25"

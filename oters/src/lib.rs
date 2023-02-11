@@ -3,6 +3,7 @@
 use anyhow::Result;
 use types::check::ProgramChecker;
 
+pub mod errors;
 pub mod export;
 pub mod exprs;
 pub mod interpret;
@@ -17,20 +18,31 @@ use crate::std::*;
 oters::export::export_list!();
 
 pub fn load_std_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExportFns> {
-    let std_lib = parser::parse_source(include_str!("std.otrs").to_string())?;
-    checker.type_check_program(
-        &std_lib,
-        vec!["std".to_string()],
-        Some((
-            EXPORT_FNS.clone(),
-            EXPORT_STRUCTS.clone(),
-            EXPORT_ENUMS.clone(),
-        )),
-    )?;
-    let stream = parser::parse_source(include_str!("std/stream.otrs").to_string())?;
-    checker.type_check_program(&stream, vec!["std".to_string(), "stream".to_string()], None)?;
-    let event = parser::parse_source(include_str!("std/event.otrs").to_string())?;
-    checker.type_check_program(&event, vec!["std".to_string(), "event".to_string()], None)?;
+    let std_src = include_str!("std.otrs").to_string();
+    let std_lib = parser::parse_source(std_src.clone()).map_err(|e| e.to_anyhow(&std_src))?;
+    checker
+        .type_check_program(
+            &std_lib,
+            vec!["std".to_string()],
+            Some((
+                EXPORT_FNS.clone(),
+                EXPORT_STRUCTS.clone(),
+                EXPORT_ENUMS.clone(),
+            )),
+        )
+        .map_err(|e| e.to_anyhow(&std_src))?;
+
+    let stream_src = include_str!("std/stream.otrs").to_string();
+    let stream = parser::parse_source(stream_src.clone()).map_err(|e| e.to_anyhow(&stream_src))?;
+    checker
+        .type_check_program(&stream, vec!["std".to_string(), "stream".to_string()], None)
+        .map_err(|e| e.to_anyhow(&std_src))?;
+
+    let event_src = include_str!("std/event.otrs").to_string();
+    let event = parser::parse_source(event_src.clone()).map_err(|e| e.to_anyhow(&event_src))?;
+    checker
+        .type_check_program(&event, vec!["std".to_string(), "event".to_string()], None)
+        .map_err(|e| e.to_anyhow(&std_src))?;
 
     let path_export_fns: oters::export::PathExportFns = EXPORT_FNS
         .iter()

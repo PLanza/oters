@@ -3,13 +3,13 @@ mod errors;
 mod tests;
 mod utils;
 
-use crate::parser::ast::TypeExpr;
+use crate::parser::span::SpTypeExpr;
+use crate::{errors::SpError, parser::ast::TypeExpr};
 pub use errors::TypeError;
 pub use utils::*;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use anyhow::Result;
 use daggy::{Dag, NodeIndex};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -51,12 +51,13 @@ impl TypeContext {
 impl Type {
     // Converts TExpr to Type
     pub fn from_texpr(
-        t: TypeExpr,
+        t: SpTypeExpr,
         t_context: TypeContext, // Holds generic type variables
         t_decs: &Dag<HashMap<String, Type>, String>,
-    ) -> Result<Type> {
+    ) -> Result<Type, SpError> {
         use Type::*;
         use TypeExpr::*;
+        let (t, span) = (*t.term, t.span);
         match t {
             TEUnit => Ok(Unit),
             TEInt => Ok(Int),
@@ -67,14 +68,14 @@ impl Type {
                 let mut types = Vec::new();
                 for t_expr in v {
                     types.push(Box::new(Type::from_texpr(
-                        *t_expr,
+                        t_expr,
                         t_context.clone(),
                         t_decs,
                     )?));
                 }
                 Ok(Tuple(types))
             }
-            TEList(t) => Ok(List(Box::new(Type::from_texpr(*t, t_context, t_decs)?))),
+            TEList(t) => Ok(List(Box::new(Type::from_texpr(t, t_context, t_decs)?))),
             // All generic arguments and user declared types are "dereferenced"
             TEUser(path, id, v) => {
                 for s in &t_context.vars {
@@ -85,10 +86,10 @@ impl Type {
                 }
 
                 // If it's a delcared type copy its definition
-                let map = traverse_path(&t_decs, &path)?;
+                let map = traverse_path(&t_decs, &path).map_err(|e| SpError::new(e, span))?;
                 let mut t = match map.get(&id) {
                     Some(t) => t.clone(),
-                    None => return Err(TypeError::UserTypeNotFound(id).into()),
+                    None => return Err(SpError::new(TypeError::UserTypeNotFound(id).into(), span)),
                 };
 
                 // Add generic type parameters
@@ -98,25 +99,27 @@ impl Type {
                             for (i, t_expr) in v.iter().enumerate() {
                                 t = t_.sub_generic(
                                     &args[i],
-                                    &Type::from_texpr(*t_expr.clone(), t_context.clone(), t_decs)?,
+                                    &Type::from_texpr(t_expr.clone(), t_context.clone(), t_decs)?,
                                 )
                             }
                             if v.len() < args.len() {
                                 t = Generic(args[v.len()..].to_vec(), Box::new(t))
                             }
                         }
-                        _ => return Err(TypeError::ImproperTypeArguments.into()),
+                        _ => {
+                            return Err(SpError::new(TypeError::ImproperTypeArguments.into(), span))
+                        }
                     }
                 }
 
                 Ok(t)
             }
             TEFunction(t1, t2) => Ok(Function(
-                Box::new(Type::from_texpr(*t1, t_context.clone(), t_decs)?),
-                Box::new(Type::from_texpr(*t2, t_context.clone(), t_decs)?),
+                Box::new(Type::from_texpr(t1, t_context.clone(), t_decs)?),
+                Box::new(Type::from_texpr(t2, t_context.clone(), t_decs)?),
             )),
-            TEDelay(t) => Ok(Delay(Box::new(Type::from_texpr(*t, t_context, t_decs)?))),
-            TEStable(t) => Ok(Stable(Box::new(Type::from_texpr(*t, t_context, t_decs)?))),
+            TEDelay(t) => Ok(Delay(Box::new(Type::from_texpr(t, t_context, t_decs)?))),
+            TEStable(t) => Ok(Stable(Box::new(Type::from_texpr(t, t_context, t_decs)?))),
         }
     }
 
@@ -124,10 +127,10 @@ impl Type {
     pub fn from_typedef(
         id: String,
         params: Vec<String>,
-        t: TypeExpr,
+        t: SpTypeExpr,
         t_decs: &Dag<HashMap<String, Type>, String>,
         path: &Vec<String>,
-    ) -> Result<Type> {
+    ) -> Result<Type, SpError> {
         // Add type being defined in the declarations for recursive types
         let mut t_decs = t_decs.clone();
         let current_map = traverse_path(&t_decs, path).unwrap_or(HashMap::new());
@@ -166,9 +169,9 @@ impl Type {
     pub fn from_structdef(
         id: String,
         params: Vec<String>,
-        fields: Vec<(String, Box<TypeExpr>)>,
+        fields: Vec<(String, SpTypeExpr)>,
         t_decs: &Dag<HashMap<String, Type>, String>,
-    ) -> Result<Type> {
+    ) -> Result<Type, SpError> {
         let mut t_decs = t_decs.clone();
         insert_dec(
             &mut t_decs,
@@ -185,7 +188,7 @@ impl Type {
         for (s, t) in fields {
             field_map.insert(
                 s,
-                Box::new(Type::from_texpr(*t, t_context.clone(), &t_decs)?),
+                Box::new(Type::from_texpr(t, t_context.clone(), &t_decs)?),
             );
         }
 
@@ -201,9 +204,9 @@ impl Type {
     pub fn from_enumdef(
         id: String,
         params: Vec<String>,
-        variants: Vec<(String, Option<Box<TypeExpr>>)>,
+        variants: Vec<(String, Option<SpTypeExpr>)>,
         t_decs: &Dag<HashMap<String, Type>, String>,
-    ) -> Result<Type> {
+    ) -> Result<Type, SpError> {
         let mut t_decs = t_decs.clone();
         insert_dec(
             &mut t_decs,
@@ -221,7 +224,7 @@ impl Type {
             let t = match o {
                 None => None,
                 Some(t_expr) => Some(Box::new(Type::from_texpr(
-                    *t_expr,
+                    t_expr,
                     t_context.clone(),
                     &t_decs,
                 )?)),
@@ -449,7 +452,7 @@ impl Type {
     }
 
     // Is the type well formed, i.e. are all generic variables bound
-    pub fn well_formed(&self, t_context: TypeContext) -> Result<()> {
+    pub fn well_formed(&self, t_context: TypeContext) -> anyhow::Result<()> {
         use Type::*;
         match self {
             Unit | Int | Float | String | Bool => Ok(()), // All primitive types are well formed
@@ -514,7 +517,7 @@ impl Type {
         }
     }
 
-    pub fn is_stable(&self) -> Result<bool> {
+    pub fn is_stable(&self) -> anyhow::Result<bool> {
         use self::Type::*;
         match self {
             Unit | Int | Float | String | Bool => Ok(true), // All primitive types are Stable

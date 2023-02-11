@@ -11,30 +11,30 @@ impl Display for Expr {
             Float(fl) => write!(f, "{}", fl),
             String(s) => write!(f, "{}", s),
             Unit => write!(f, "()"),
-            BinOp(e1, op, e2) => write!(f, "({} {} {})", e1, op, e2),
-            UnOp(op, e) => write!(f, "{}({})", op, e),
-            Delay(e) => write!(f, "@({})", e),
-            Stable(e) => write!(f, "#({})", e),
-            Adv(e) => write!(f, "!@({})", e),
-            Unbox(e) => write!(f, "!#({})", e),
-            Out(e) => write!(f, "out({})", e),
-            Into(e) => write!(f, "into({})", e),
+            BinOp(e1, op, e2) => write!(f, "({} {} {})", e1.term, op, e2.term),
+            UnOp(op, e) => write!(f, "{}({})", op, e.term),
+            Delay(e) => write!(f, "@({})", e.term),
+            Stable(e) => write!(f, "#({})", e.term),
+            Adv(e) => write!(f, "!@({})", e.term),
+            Unbox(e) => write!(f, "!#({})", e.term),
+            Out(e) => write!(f, "out({})", e.term),
+            Into(e) => write!(f, "into({})", e.term),
             List(v) => {
                 let mut str = "[".to_string();
                 for i in 0..v.len() - 1 {
-                    str.push_str(&format!("{}, ", v[i]));
+                    str.push_str(&format!("{}, ", v[i].term));
                 }
 
-                str.push_str(&format!("{}]", v[v.len() - 1]));
+                str.push_str(&format!("{}]", v[v.len() - 1].term));
                 write!(f, "{}", str)
             }
             Tuple(v) => {
                 let mut str = "(".to_string();
                 for i in 0..v.len() - 1 {
-                    str.push_str(&format!("{}, ", v[i]));
+                    str.push_str(&format!("{}, ", v[i].term));
                 }
 
-                str.push_str(&format!("{})", v[v.len() - 1]));
+                str.push_str(&format!("{})", v[v.len() - 1].term));
                 write!(f, "{}", str)
             }
             Struct(path, id, fields) => {
@@ -46,7 +46,7 @@ impl Display for Expr {
                 str.push_str(" {");
 
                 for i in 0..fields.len() {
-                    str.push_str(&format!("{}: {}, ", fields[i].0, fields[i].1));
+                    str.push_str(&format!("{}: {}, ", fields[i].0, fields[i].1.term));
                 }
 
                 str.push('}');
@@ -59,20 +59,20 @@ impl Display for Expr {
                 }
                 match o {
                     None => write!(f, "{}{}", path_str, constr),
-                    Some(e) => write!(f, "{}{}({})", path_str, constr, e),
+                    Some(e) => write!(f, "{}{}({})", path_str, constr, e.term),
                 }
             }
-            Fn(pat, e) => write!(f, "fn {} -> (\n{}\n)", pat, e),
-            Fix(var, e) => write!(f, "fix {}.({})", var, e),
-            If(e1, e2, e3) => write!(f, "if {} then\n{}\nelse\n{}", e1, e2, e3),
-            Seq(e1, e2) => write!(f, "{}; \n{}", e1, e2),
-            App(e1, e2) => write!(f, "{} {}", e1, e2),
-            ProjStruct(e, field) => write!(f, "{}.{}", e, field),
+            Fn(pat, e) => write!(f, "fn {} -> (\n{}\n)", pat.term, e.term),
+            Fix(var, e) => write!(f, "fix {}.({})", var, e.term),
+            If(e1, e2, e3) => write!(f, "if {} then\n{}\nelse\n{}", e1.term, e2.term, e3.term),
+            Seq(e1, e2) => write!(f, "{}; \n{}", e1.term, e2.term),
+            App(e1, e2) => write!(f, "{} {}", e1.term, e2.term),
+            ProjStruct(e, field) => write!(f, "{}.{}", e.term, field),
             Match(e, v) => {
-                let mut str = format!("match {} with {{\n", e);
+                let mut str = format!("match {} with {{\n", e.term);
 
                 for i in 0..v.len() {
-                    str.push_str(&format!("{} => {},\n", v[i].0, v[i].1));
+                    str.push_str(&format!("{} => {},\n", v[i].0.term, v[i].1.term));
                 }
 
                 str.push('}');
@@ -86,7 +86,7 @@ impl Display for Expr {
                 str.push_str(x);
                 write!(f, "{}", str)
             }
-            LetIn(pat, e1, e2) => write!(f, "let {} = {} in\n{}", pat, e1, e2),
+            LetIn(pat, e1, e2) => write!(f, "let {} = {} in\n{}", pat.term, e1.term, e2.term),
             Location(i) => write!(f, "loc {}", i),
         }
     }
@@ -138,19 +138,19 @@ impl Display for Pattern {
 
                 let mut str = "[".to_string();
                 for i in 0..v.len() - 1 {
-                    str.push_str(&format!("{}, ", v[i]));
+                    str.push_str(&format!("{}, ", v[i].term));
                 }
 
-                str.push_str(&format!("{}]", v[v.len() - 1]));
+                str.push_str(&format!("{}]", v[v.len() - 1].term));
                 write!(f, "{}", str)
             }
             Tuple(v) => {
                 let mut str = "(".to_string();
                 for i in 0..v.len() - 1 {
-                    str.push_str(&format!("{}, ", v[i]));
+                    str.push_str(&format!("{}, ", v[i].term));
                 }
 
-                str.push_str(&format!("{})", v[v.len() - 1]));
+                str.push_str(&format!("{})", v[v.len() - 1].term));
                 write!(f, "{}", str)
             }
             Struct(path, id, fields) => {
@@ -164,7 +164,7 @@ impl Display for Pattern {
                 for i in 0..fields.len() {
                     match &fields[1].1 {
                         None => str.push_str(&format!("{}, ", fields[i].0)),
-                        Some(p) => str.push_str(&format!("{}: {}, ", fields[i].0, p)),
+                        Some(p) => str.push_str(&format!("{}: {}, ", fields[i].0, p.term)),
                     }
                 }
 
@@ -178,12 +178,12 @@ impl Display for Pattern {
                 }
                 match o {
                     None => write!(f, "{}{}", path_str, constr),
-                    Some(e) => write!(f, "{}{}({})", path_str, constr, e),
+                    Some(e) => write!(f, "{}{}({})", path_str, constr, e.term),
                 }
             }
-            Cons(p1, p2) => write!(f, "{} :: {}", p1, p2),
-            Stream(p1, p2) => write!(f, "{} << {}", p1, p2),
-            Or(p1, p2) => write!(f, "{} || {}", p1, p2),
+            Cons(p1, p2) => write!(f, "{} :: {}", p1.term, p2.term),
+            Stream(p1, p2) => write!(f, "{} << {}", p1.term, p2.term),
+            Or(p1, p2) => write!(f, "{} || {}", p1.term, p2.term),
             Var(x, b) => {
                 if *b {
                     write!(f, "#{}", x)

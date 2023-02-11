@@ -1,7 +1,8 @@
-pub type Program = Vec<Box<PExpr>>;
+pub type Program = Vec<SpPExpr>;
 
 type GenericParams = Vec<(bool, String)>; // Each parameter is a pair of the parameter name and a boolean marking whether the parameter is stable or not
 
+use super::span::*;
 use std::collections::VecDeque;
 
 // The parsed expressions of the grammar, need to translated into syntax::Exprs
@@ -12,24 +13,24 @@ pub enum PExpr {
     Float(f64),
     String(String),
     Unit,
-    BinOp(Box<PExpr>, Opcode, Box<PExpr>),
-    UnOp(Opcode, Box<PExpr>),
-    List(VecDeque<Box<PExpr>>),
-    StructExpr(Vec<String>, String, Vec<(String, Box<PExpr>)>),
-    Tuple(Vec<Box<PExpr>>),
-    Fn(Vec<Pattern>, Box<PExpr>),
-    If(Box<PExpr>, Box<PExpr>, Box<PExpr>),
-    Block(Vec<Box<PExpr>>),
-    App(Box<PExpr>, Box<PExpr>),
-    ProjStruct(Box<PExpr>, String),
-    Variant(Vec<String>, String, Option<Box<PExpr>>), // Variant's type, name, and contents
-    Match(Box<PExpr>, Vec<(Box<Pattern>, Box<PExpr>)>),
+    BinOp(SpPExpr, Opcode, SpPExpr),
+    UnOp(Opcode, SpPExpr),
+    List(VecDeque<SpPExpr>),
+    StructExpr(Vec<String>, String, Vec<(String, SpPExpr)>),
+    Tuple(Vec<SpPExpr>),
+    Fn(Vec<SpPattern>, SpPExpr),
+    If(SpPExpr, SpPExpr, SpPExpr),
+    Block(Vec<SpPExpr>),
+    App(SpPExpr, SpPExpr),
+    ProjStruct(SpPExpr, String),
+    Variant(Vec<String>, String, Option<SpPExpr>), // Variant's type, name, and contents
+    Match(SpPExpr, Vec<(SpPattern, SpPExpr)>),
     Var(Vec<String>, String),
-    TypeDef(String, Vec<String>, Box<TypeExpr>), // Type Alias with Generic Parameters and defined type
-    StructDef(String, Vec<String>, Vec<(String, Box<TypeExpr>)>), // Struct with generic parameters
-    EnumDef(String, Vec<String>, Vec<(String, Option<Box<TypeExpr>>)>), // Enum with generic parameters
-    Let(Pattern, Box<PExpr>),
-    LetAndWith(Pattern, Box<PExpr>, Pattern, Box<PExpr>, Box<PExpr>),
+    TypeDef(String, Vec<String>, SpTypeExpr), // Type Alias with Generic Parameters and defined type
+    StructDef(String, Vec<String>, Vec<(String, SpTypeExpr)>), // Struct with generic parameters
+    EnumDef(String, Vec<String>, Vec<(String, Option<SpTypeExpr>)>), // Enum with generic parameters
+    Let(SpPattern, SpPExpr),
+    LetAndWith(SpPattern, SpPExpr, SpPattern, SpPExpr, SpPExpr),
     Use(Vec<String>, bool), // Bool indicates whether it's a value or type being imported
 }
 
@@ -65,12 +66,12 @@ pub enum TypeExpr {
     TEFloat,
     TEString,
     TEBool,
-    TETuple(Vec<Box<TypeExpr>>),
-    TEList(Box<TypeExpr>),
-    TEUser(Vec<String>, String, Vec<Box<TypeExpr>>), // Structs, Enums, Generics, and Type Aliases with their generic arguments
-    TEFunction(Box<TypeExpr>, Box<TypeExpr>),
-    TEDelay(Box<TypeExpr>),  // From Patrick Bahr's Rattus
-    TEStable(Box<TypeExpr>), // From Patrick Bahr's Rattus
+    TETuple(Vec<SpTypeExpr>),
+    TEList(SpTypeExpr),
+    TEUser(Vec<String>, String, Vec<SpTypeExpr>), // Structs, Enums, Generics, and Type Aliases with their generic arguments
+    TEFunction(SpTypeExpr, SpTypeExpr),
+    TEDelay(SpTypeExpr),  // From Patrick Bahr's Rattus
+    TEStable(SpTypeExpr), // From Patrick Bahr's Rattus
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -81,12 +82,12 @@ pub enum Pattern {
     Float(f64),
     String(String),
     Unit,
-    Tuple(Vec<Box<Pattern>>),
-    List(Vec<Box<Pattern>>),
-    Variant(Vec<String>, String, Option<Box<Pattern>>),
-    Struct(Vec<String>, String, Vec<(String, Option<Box<Pattern>>)>),
-    Cons(Box<Pattern>, Box<Pattern>),
-    Stream(Box<Pattern>, Box<Pattern>),
-    Or(Box<Pattern>, Box<Pattern>),
+    Tuple(Vec<SpPattern>),
+    List(Vec<SpPattern>),
+    Variant(Vec<String>, String, Option<SpPattern>),
+    Struct(Vec<String>, String, Vec<(String, Option<SpPattern>)>),
+    Cons(SpPattern, SpPattern),
+    Stream(SpPattern, SpPattern),
+    Or(SpPattern, SpPattern),
     Var(String, bool),
 }
