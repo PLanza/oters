@@ -171,7 +171,7 @@ fn reject_well_formed() {
     let program = r" struct MyStruct<A> { t: (int, (), float, string, bool), l: [T] }";
     let test_code = crate::parser::parse_source(program.to_string()).unwrap();
     println!("{:?}", test_code);
-    match *test_code[0].clone() {
+    match *test_code[0].term.clone() {
         crate::parser::ast::PExpr::StructDef(id, params, fields) => {
             let mut type_decs = daggy::Dag::new();
             type_decs.add_node(HashMap::new());
@@ -179,7 +179,10 @@ fn reject_well_formed() {
             let t =
                 super::Type::from_structdef(id.clone(), params.clone(), fields.clone(), &type_decs);
 
-            assert_eq!(t.err().unwrap().to_string(), "Type T has not been declared");
+            assert_eq!(
+                t.err().unwrap().term.to_string(),
+                "Type T has not been declared"
+            );
         }
         _ => (),
     }
@@ -197,7 +200,7 @@ let reject = fn _ -> {
     let mut checker = super::check::ProgramChecker::new();
     let e = checker.type_check_program(&test_code, Vec::new(), None);
     assert_eq!(
-        e.err().unwrap().to_string(),
+        e.err().unwrap().term.to_string(),
         "The variable f, cannot be accessed in the current context"
     );
 }
@@ -213,7 +216,7 @@ let reject = fn _ -> {
     let mut checker = super::check::ProgramChecker::new();
     let e = checker.type_check_program(&test_code, Vec::new(), None);
     assert_eq!(
-        e.err().unwrap().to_string(),
+        e.err().unwrap().term.to_string(),
         "Adv expressions must always be inside Delay expressions"
     );
 }
@@ -229,7 +232,7 @@ let reject = fn _ -> {
     let mut checker = super::check::ProgramChecker::new();
     let e = checker.type_check_program(&test_code, Vec::new(), None);
     assert_eq!(
-        e.err().unwrap().to_string(),
+        e.err().unwrap().term.to_string(),
         "Expected #__t1, got int instead"
     );
 }

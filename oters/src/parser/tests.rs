@@ -1,35 +1,45 @@
 #[allow(unused_imports)]
 use super::oters;
+use super::span::{SpPExpr, SpPattern, SpTypeExpr, Spanned};
 
 #[allow(unused_imports)]
 use std::boxed::Box;
 
+impl<T> Spanned<T> {
+    pub(crate) fn unspanned(t: T) -> Self {
+        super::span::Spanned {
+            span: (0, 0),
+            term: Box::new(t),
+        }
+    }
+}
+
 #[cfg(test)]
-fn values() -> Vec<(String, Box<super::ast::PExpr>)> {
+fn values() -> Vec<(String, SpPExpr)> {
     use super::ast::PExpr::*;
     vec![
-        ("true".to_string(), Box::new(Bool(true))),
-        ("false".to_string(), Box::new(Bool(false))),
-        ("1".to_string(), Box::new(Int(1))),
-        ("-10".to_string(), Box::new(Int(-10))),
-        ("1.0".to_string(), Box::new(Float(1.0))),
-        ("-1.0".to_string(), Box::new(Float(-1.0))),
+        ("true".to_string(), SpPExpr::unspanned(Bool(true))),
+        ("false".to_string(), SpPExpr::unspanned(Bool(false))),
+        ("1".to_string(), SpPExpr::unspanned(Int(1))),
+        ("-10".to_string(), SpPExpr::unspanned(Int(-10))),
+        ("1.0".to_string(), SpPExpr::unspanned(Float(1.0))),
+        ("-1.0".to_string(), SpPExpr::unspanned(Float(-1.0))),
         (
             r#""Hello""#.to_string(),
-            Box::new(String("Hello".to_string())),
+            SpPExpr::unspanned(String("Hello".to_string())),
         ),
         (
             r#""He said \"Hi\"""#.to_string(),
-            Box::new(String("He said \\\"Hi\\\"".to_string())),
+            SpPExpr::unspanned(String("He said \\\"Hi\\\"".to_string())),
         ),
-        ("()".to_string(), Box::new(Unit)),
+        ("()".to_string(), SpPExpr::unspanned(Unit)),
         (
             "var".to_string(),
-            Box::new(Var(Vec::new(), "var".to_string())),
+            SpPExpr::unspanned(Var(Vec::new(), "var".to_string())),
         ),
         (
             "( Option::None )".to_string(),
-            Box::new(Variant(
+            SpPExpr::unspanned(Variant(
                 vec!["Option".to_string()],
                 "None".to_string(),
                 None,
@@ -44,12 +54,12 @@ fn test_values() {
 
     for v in values() {
         let result = parser.parse(&v.0);
-        assert_eq!(result.unwrap(), v.1);
+        assert_eq!(result.unwrap(), *v.1.term);
     }
 }
 
 #[cfg(test)]
-fn unops() -> Vec<(String, Box<super::ast::PExpr>)> {
+fn unops() -> Vec<(String, SpPExpr)> {
     use super::ast::Opcode::*;
     let unops = vec![
         ("~".to_string(), Neg),
@@ -69,7 +79,7 @@ fn unops() -> Vec<(String, Box<super::ast::PExpr>)> {
             use super::ast::PExpr::UnOp;
             let code = format!("{}{}", op.0, v.0);
 
-            let expr = std::boxed::Box::new(UnOp(op.1, v.1));
+            let expr = SpPExpr::unspanned(UnOp(op.1, v.1));
 
             unop_exprs.push((code, expr));
         }
@@ -82,14 +92,14 @@ fn unops() -> Vec<(String, Box<super::ast::PExpr>)> {
 fn test_unops() {
     let parser = super::oters::ExprParser::new();
 
-    for expr in binops() {
+    for expr in unops() {
         let result = parser.parse(&expr.0);
-        assert_eq!(result.unwrap(), expr.1);
+        assert_eq!(result.unwrap(), *expr.1.term);
     }
 }
 
 #[cfg(test)]
-fn binops() -> Vec<(String, Box<super::ast::PExpr>)> {
+fn binops() -> Vec<(String, SpPExpr)> {
     use super::ast::Opcode::*;
     let binops = vec![
         (" + ".to_string(), Add),
@@ -113,7 +123,7 @@ fn binops() -> Vec<(String, Box<super::ast::PExpr>)> {
                 use super::ast::PExpr::BinOp;
                 let code = format!("{}{}{}", v1.0, op.0, v2.0);
 
-                let expr = std::boxed::Box::new(BinOp(v1.1.clone(), op.1, v2.1));
+                let expr = SpPExpr::unspanned(BinOp(v1.1.clone(), op.1, v2.1));
 
                 binop_exprs.push((code, expr));
             }
@@ -129,12 +139,12 @@ fn test_binops() {
 
     for expr in binops() {
         let result = parser.parse(&expr.0);
-        assert_eq!(result.unwrap(), expr.1);
+        assert_eq!(result.unwrap(), *expr.1.term);
     }
 }
 
 #[cfg(test)]
-fn struct_val() -> (String, Box<super::ast::PExpr>) {
+fn struct_val() -> (String, SpPExpr) {
     use super::ast::PExpr::StructExpr;
 
     let mut code = "MyStruct { ".to_string();
@@ -153,7 +163,7 @@ fn struct_val() -> (String, Box<super::ast::PExpr>) {
 
     (
         code,
-        Box::new(StructExpr(Vec::new(), "MyStruct".to_string(), struct_vec)),
+        SpPExpr::unspanned(StructExpr(Vec::new(), "MyStruct".to_string(), struct_vec)),
     )
 }
 
@@ -164,11 +174,11 @@ fn test_struct_val() {
     let struct_val = struct_val();
 
     let result = parser.parse(&struct_val.0);
-    assert_eq!(result.unwrap(), struct_val.1);
+    assert_eq!(result.unwrap(), *struct_val.1.term);
 }
 
 #[cfg(test)]
-fn tuple() -> (String, Box<super::ast::PExpr>) {
+fn tuple() -> (String, SpPExpr) {
     use super::ast::PExpr::Tuple;
 
     let mut code = "(".to_string();
@@ -182,7 +192,7 @@ fn tuple() -> (String, Box<super::ast::PExpr>) {
 
     code.push_str(")");
 
-    (code, Box::new(Tuple(tuple_vec)))
+    (code, SpPExpr::unspanned(Tuple(tuple_vec)))
 }
 
 #[test]
@@ -192,11 +202,11 @@ fn test_tuple() {
     let tuple = tuple();
 
     let result = parser.parse(&tuple.0);
-    assert_eq!(result.unwrap(), tuple.1);
+    assert_eq!(result.unwrap(), *tuple.1.term);
 }
 
 #[cfg(test)]
-fn list() -> (String, Box<super::ast::PExpr>) {
+fn list() -> (String, SpPExpr) {
     use std::collections::VecDeque;
 
     use super::ast::PExpr::List;
@@ -212,7 +222,7 @@ fn list() -> (String, Box<super::ast::PExpr>) {
 
     code.push_str("]");
 
-    (code, Box::new(List(list_vec)))
+    (code, SpPExpr::unspanned(List(list_vec)))
 }
 
 #[test]
@@ -222,28 +232,28 @@ fn test_list() {
     let list = list();
 
     let result = parser.parse(&list.0);
-    assert_eq!(result.unwrap(), list.1);
+    assert_eq!(result.unwrap(), *list.1.term);
 }
 
 #[cfg(test)]
-fn primitive_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
+fn primitive_types() -> Vec<(String, SpTypeExpr)> {
     use super::ast::TypeExpr::{TEBool, TEFloat, TEInt, TEString, TEUnit, TEUser};
     vec![
-        ("bool".to_string(), Box::new(TEBool)),
-        ("int".to_string(), Box::new(TEInt)),
-        ("float".to_string(), Box::new(TEFloat)),
-        ("string".to_string(), Box::new(TEString)),
-        ("()".to_string(), Box::new(TEUnit)),
+        ("bool".to_string(), SpTypeExpr::unspanned(TEBool)),
+        ("int".to_string(), SpTypeExpr::unspanned(TEInt)),
+        ("float".to_string(), SpTypeExpr::unspanned(TEFloat)),
+        ("string".to_string(), SpTypeExpr::unspanned(TEString)),
+        ("()".to_string(), SpTypeExpr::unspanned(TEUnit)),
         (
             "T".to_string(),
-            Box::new(TEUser(Vec::new(), "T".to_string(), Vec::with_capacity(0))),
+            SpTypeExpr::unspanned(TEUser(Vec::new(), "T".to_string(), Vec::with_capacity(0))),
         ),
     ]
 }
 
 #[test]
 fn test_primitive_types() {
-    let parser = super::oters::TypeParser::new();
+    let parser = super::oters::SpTypeParser::new();
 
     for t in primitive_types() {
         let result = parser.parse(&t.0);
@@ -252,11 +262,11 @@ fn test_primitive_types() {
 }
 
 #[cfg(test)]
-fn list_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
+fn list_types() -> Vec<(String, SpTypeExpr)> {
     use super::ast::TypeExpr::TEList;
     let mut list_types = Vec::new();
     for t in primitive_types() {
-        list_types.push((format!("[{}]", t.0), Box::new(TEList(t.1))));
+        list_types.push((format!("[{}]", t.0), SpTypeExpr::unspanned(TEList(t.1))));
     }
 
     list_types
@@ -264,7 +274,7 @@ fn list_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
 
 #[test]
 fn test_list_types() {
-    let parser = super::oters::TypeParser::new();
+    let parser = super::oters::SpTypeParser::new();
 
     for t in list_types() {
         let result = parser.parse(&t.0);
@@ -273,22 +283,22 @@ fn test_list_types() {
 }
 
 #[cfg(test)]
-fn prefix_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
+fn prefix_types() -> Vec<(String, SpTypeExpr)> {
     use super::ast::TypeExpr::{TEDelay, TEStable};
     let mut types = Vec::new();
     for t in primitive_types() {
         types.push((
             format!("@{}", t.0),
-            std::boxed::Box::new(TEDelay(t.1.clone())),
+            SpTypeExpr::unspanned(TEDelay(t.1.clone())),
         ));
-        types.push((format!("#{}", t.0), std::boxed::Box::new(TEStable(t.1))));
+        types.push((format!("#{}", t.0), SpTypeExpr::unspanned(TEStable(t.1))));
     }
 
     types
 }
 #[test]
 fn test_prefix_types() {
-    let parser = super::oters::TypeParser::new();
+    let parser = super::oters::SpTypeParser::new();
 
     for t in prefix_types() {
         let result = parser.parse(&t.0);
@@ -297,7 +307,7 @@ fn test_prefix_types() {
 }
 
 #[cfg(test)]
-fn function_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
+fn function_types() -> Vec<(String, SpTypeExpr)> {
     use super::ast::TypeExpr::TEFunction;
     let mut function_types = Vec::new();
 
@@ -309,7 +319,7 @@ fn function_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
         for t2 in types.iter() {
             let code = format!("{} -> {}", t1.0, t2.0);
 
-            let expr = std::boxed::Box::new(TEFunction(t1.1.clone(), t2.1.clone()));
+            let expr = SpTypeExpr::unspanned(TEFunction(t1.1.clone(), t2.1.clone()));
 
             function_types.push((code, expr));
         }
@@ -320,7 +330,7 @@ fn function_types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
 
 #[test]
 fn test_function_types() {
-    let parser = super::oters::TypeParser::new();
+    let parser = super::oters::SpTypeParser::new();
 
     for t in function_types() {
         let result = parser.parse(&t.0);
@@ -329,7 +339,7 @@ fn test_function_types() {
 }
 
 #[cfg(test)]
-fn user_type() -> (String, Box<super::ast::TypeExpr>) {
+fn user_type() -> (String, SpTypeExpr) {
     use super::ast::TypeExpr::TEUser;
 
     let mut types = primitive_types();
@@ -352,13 +362,13 @@ fn user_type() -> (String, Box<super::ast::TypeExpr>) {
 
     (
         code,
-        Box::new(TEUser(Vec::new(), "MyType".to_string(), generics_vec)),
+        SpTypeExpr::unspanned(TEUser(Vec::new(), "MyType".to_string(), generics_vec)),
     )
 }
 
 #[test]
 fn test_user_type() {
-    let parser = super::oters::TypeParser::new();
+    let parser = super::oters::SpTypeParser::new();
 
     let user_type = user_type();
 
@@ -367,7 +377,7 @@ fn test_user_type() {
 }
 
 #[cfg(test)]
-fn types() -> Vec<(String, Box<super::ast::TypeExpr>)> {
+fn types() -> Vec<(String, SpTypeExpr)> {
     let mut types = primitive_types();
     types.append(&mut prefix_types());
     types.append(&mut list_types());
@@ -391,7 +401,7 @@ fn test_type_alias() {
         let result = parser.parse(&code);
         assert_eq!(
             result.unwrap(),
-            Box::new(TypeDef("MyAlias".to_string(), params.clone(), t.1.clone()))
+            TypeDef("MyAlias".to_string(), params.clone(), t.1.clone())
         );
     }
 }
@@ -417,7 +427,7 @@ fn test_struct_def() {
     let result = parser.parse(&code);
     assert_eq!(
         result.unwrap(),
-        Box::new(StructDef("MyStruct".to_string(), params.clone(), fields))
+        StructDef("MyStruct".to_string(), params.clone(), fields)
     );
 }
 
@@ -447,12 +457,12 @@ fn test_enum_def() {
     let result = parser.parse(&code);
     assert_eq!(
         result.unwrap(),
-        Box::new(EnumDef("MyEnum".to_string(), params.clone(), fields))
+        EnumDef("MyEnum".to_string(), params.clone(), fields)
     );
 }
 
 #[cfg(test)]
-fn ifs() -> Vec<(String, Box<super::ast::PExpr>)> {
+fn ifs() -> Vec<(String, SpPExpr)> {
     use super::ast::PExpr::If;
 
     let mut exprs = binops();
@@ -471,7 +481,7 @@ fn ifs() -> Vec<(String, Box<super::ast::PExpr>)> {
         );
         if_vecs.push((
             code.to_string(),
-            Box::new(If(
+            SpPExpr::unspanned(If(
                 exprs[i].1.clone(),
                 exprs[i + 1].1.clone(),
                 exprs[i + 2].1.clone(),
@@ -490,12 +500,12 @@ fn test_if_exprs() {
 
     for v in ifs() {
         let result = parser.parse(&v.0);
-        assert_eq!(result.unwrap(), v.1);
+        assert_eq!(result.unwrap(), *v.1.term);
     }
 }
 
 #[cfg(test)]
-fn block_expr() -> (String, Box<super::ast::PExpr>) {
+fn block_expr() -> (String, SpPExpr) {
     use super::ast::PExpr::Block;
 
     let mut exprs = binops();
@@ -517,7 +527,7 @@ fn block_expr() -> (String, Box<super::ast::PExpr>) {
     code.pop();
     code.push('}');
 
-    (code, Box::new(Block(expr_vec)))
+    (code, SpPExpr::unspanned(Block(expr_vec)))
 }
 
 #[test]
@@ -527,11 +537,11 @@ fn test_block_expr() {
     let block_expr = block_expr();
 
     let result = parser.parse(&block_expr.0);
-    assert_eq!(result.unwrap(), block_expr.1);
+    assert_eq!(result.unwrap(), *block_expr.1.term);
 }
 
 #[cfg(test)]
-fn functions() -> Vec<(String, Box<super::ast::PExpr>)> {
+fn functions() -> Vec<(String, SpPExpr)> {
     use super::ast::PExpr::Fn;
     use super::ast::Pattern::{Stream, Var};
 
@@ -547,13 +557,13 @@ fn functions() -> Vec<(String, Box<super::ast::PExpr>)> {
 
         fn_vecs.push((
             code.to_string(),
-            Box::new(Fn(
+            SpPExpr::unspanned(Fn(
                 vec![
-                    Stream(
-                        Box::new(Var("x".to_string(), false)),
-                        Box::new(Var("xs".to_string(), false)),
-                    ),
-                    Var("y".to_string(), true),
+                    SpPattern::unspanned(Stream(
+                        SpPattern::unspanned(Var("x".to_string(), false)),
+                        SpPattern::unspanned(Var("xs".to_string(), false)),
+                    )),
+                    SpPattern::unspanned(Var("y".to_string(), true)),
                 ],
                 e.1.clone(),
             )),
@@ -569,12 +579,12 @@ fn test_fn_exprs() {
 
     for v in functions() {
         let result = parser.parse(&v.0);
-        assert_eq!(result.unwrap(), v.1);
+        assert_eq!(result.unwrap(), *v.1.term);
     }
 }
 
 #[cfg(test)]
-fn variant_exprs() -> Vec<(String, Box<super::ast::PExpr>)> {
+fn variant_exprs() -> Vec<(String, SpPExpr)> {
     use super::ast::PExpr::Variant;
 
     let mut exprs = binops();
@@ -587,7 +597,7 @@ fn variant_exprs() -> Vec<(String, Box<super::ast::PExpr>)> {
 
         variants_vec.push((
             code.to_string(),
-            Box::new(Variant(
+            SpPExpr::unspanned(Variant(
                 vec!["MyEnum".to_string()],
                 "Constr".to_string(),
                 Some(e.1.clone()),
@@ -597,7 +607,7 @@ fn variant_exprs() -> Vec<(String, Box<super::ast::PExpr>)> {
 
     variants_vec.push((
         "MyEnum::Constr".to_string(),
-        Box::new(Variant(
+        SpPExpr::unspanned(Variant(
             vec!["MyEnum".to_string()],
             "Constr".to_string(),
             None,
@@ -613,6 +623,6 @@ fn test_variant_exprs() {
 
     for v in variant_exprs() {
         let result = parser.parse(&v.0);
-        assert_eq!(result.unwrap(), v.1);
+        assert_eq!(result.unwrap(), *v.1.term);
     }
 }

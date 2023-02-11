@@ -14,18 +14,21 @@ fn print_int(i: i64) {
 export_list!();
 
 fn main() -> Result<()> {
-    let program = parser::parse_file("oters/examples/ex2.otrs".to_string())?;
+    let source = std::fs::read_to_string(std::path::Path::new("oters/examples/ex2.otrs"))?;
+    let program = parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let mut checker = ProgramChecker::new();
 
-    checker.type_check_program(
-        &program,
-        vec!["ex2".to_string()],
-        Some((
-            EXPORT_FNS.clone(),
-            EXPORT_STRUCTS.clone(),
-            EXPORT_ENUMS.clone(),
-        )),
-    )?;
+    checker
+        .type_check_program(
+            &program,
+            vec!["ex2".to_string()],
+            Some((
+                EXPORT_FNS.clone(),
+                EXPORT_STRUCTS.clone(),
+                EXPORT_ENUMS.clone(),
+            )),
+        )
+        .map_err(|e| e.to_anyhow(&source))?;
 
     let mut interpreter = Interpreter::new(
         checker.checked_exprs,
@@ -35,8 +38,9 @@ fn main() -> Result<()> {
             .map(|(name, val)| ((vec!["ex2".to_string()], name), val))
             .collect(),
         vec!["ex2".to_string()],
-    )?;
+    )
+    .map_err(|e| e.to_anyhow(&source))?;
     loop {
-        interpreter.eval_step()?;
+        interpreter.eval_step().map_err(|e| e.to_anyhow(&source))?;
     }
 }

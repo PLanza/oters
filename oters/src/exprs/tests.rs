@@ -1,7 +1,9 @@
-use crate::{parser::ast::Pattern, types::Type};
+use crate::{
+    parser::{ast::Pattern, span::SpPattern},
+    types::Type,
+};
 
-use super::Expr;
-
+use super::{Expr, SpExpr};
 // Single tick translation
 #[test]
 fn test_single_tick_translation() {
@@ -22,22 +24,22 @@ let test = fn x -> @(!@(@(x + 2)))
     assert_eq!(
         bindings[0],
         LetBinding::Let(
-            Pattern::Var("test".to_string(), false),
-            Fn(
-                Pattern::Var("x".to_string(), false),
-                Box::new(LetIn(
-                    Pattern::Var("_d0".to_string(), false),
-                    Box::new(Delay(Box::new(BinOp(
-                        Box::new(Var(Vec::new(), "x".to_string())),
+            SpPattern::unspanned(Pattern::Var("test".to_string(), false)),
+            SpExpr::unspanned(Fn(
+                SpPattern::unspanned(Pattern::Var("x".to_string(), false)),
+                SpExpr::unspanned(LetIn(
+                    SpPattern::unspanned(Pattern::Var("_d0".to_string(), false)),
+                    SpExpr::unspanned(Delay(SpExpr::unspanned(BinOp(
+                        SpExpr::unspanned(Var(Vec::new(), "x".to_string())),
                         super::BOpcode::Add,
-                        Box::new(Int(2))
+                        SpExpr::unspanned(Int(2))
                     )))),
-                    Box::new(Delay(Box::new(Adv(Box::new(Var(
+                    SpExpr::unspanned(Delay(SpExpr::unspanned(Adv(SpExpr::unspanned(Var(
                         Vec::new(),
                         "_d0".to_string()
                     ))))))
                 ))
-            )
+            ))
         )
     );
 }
@@ -47,37 +49,37 @@ let test = fn x -> @(!@(@(x + 2)))
 fn test_pattern_var_capturing() {
     // [Option::Some x, MyStruct { field: y, z, ..}] | (_, a:b) << c
     use crate::parser::ast::Pattern::*;
-    let pat = Or(
-        Box::new(List(vec![
-            Box::new(Variant(
+    let pat = SpPattern::unspanned(Or(
+        SpPattern::unspanned(List(vec![
+            SpPattern::unspanned(Variant(
                 vec!["Option".to_string()],
                 "Some".to_string(),
-                Some(Box::new(Var("x".to_string(), false))),
+                Some(SpPattern::unspanned(Var("x".to_string(), false))),
             )),
-            Box::new(Struct(
+            SpPattern::unspanned(Struct(
                 Vec::new(),
                 "MyStruct".to_string(),
                 vec![
                     (
                         "field".to_string(),
-                        Some(Box::new(Var("y".to_string(), false))),
+                        Some(SpPattern::unspanned(Var("y".to_string(), false))),
                     ),
                     ("z".to_string(), None),
                     ("..".to_string(), None),
                 ],
             )),
         ])),
-        Box::new(Stream(
-            Box::new(Tuple(vec![
-                Box::new(Underscore),
-                Box::new(Cons(
-                    Box::new(Var("a".to_string(), false)),
-                    Box::new(Var("b".to_string(), false)),
+        SpPattern::unspanned(Stream(
+            SpPattern::unspanned(Tuple(vec![
+                SpPattern::unspanned(Underscore),
+                SpPattern::unspanned(Cons(
+                    SpPattern::unspanned(Var("a".to_string(), false)),
+                    SpPattern::unspanned(Var("b".to_string(), false)),
                 )),
             ])),
-            Box::new(Var("c".to_string(), false)),
+            SpPattern::unspanned(Var("c".to_string(), false)),
         )),
-    );
+    ));
 
     let vars = vec!["x", "y", "z", "a", "b", "c"];
     for var in vars.clone() {
@@ -107,24 +109,30 @@ let const = fn #x -> x << @(const x)
     assert_eq!(
         bindings[0],
         LetBinding::Let(
-            Pattern::Var("const".to_string(), false),
-            Fix(
+            SpPattern::unspanned(Pattern::Var("const".to_string(), false)),
+            SpExpr::unspanned(Fix(
                 "rec_const".to_string(),
-                Box::new(Fn(
-                    Pattern::Var("x".to_string(), true),
-                    Box::new(Into(Box::new(Tuple(vec![
-                        Box::new(Var(Vec::new(), "x".to_string())),
-                        Box::new(LetIn(
-                            Pattern::Var("_d0".to_string(), false),
-                            Box::new(Unbox(Box::new(Var(Vec::new(), "rec_const".to_string())))),
-                            Box::new(Delay(Box::new(App(
-                                Box::new(Adv(Box::new(Var(Vec::new(), "_d0".to_string())))),
-                                Box::new(Var(Vec::new(), "x".to_string()))
+                SpExpr::unspanned(Fn(
+                    SpPattern::unspanned(Pattern::Var("x".to_string(), true)),
+                    SpExpr::unspanned(Into(SpExpr::unspanned(Tuple(vec![
+                        SpExpr::unspanned(Var(Vec::new(), "x".to_string())),
+                        SpExpr::unspanned(LetIn(
+                            SpPattern::unspanned(Pattern::Var("_d0".to_string(), false)),
+                            SpExpr::unspanned(Unbox(SpExpr::unspanned(Var(
+                                Vec::new(),
+                                "rec_const".to_string()
+                            )))),
+                            SpExpr::unspanned(Delay(SpExpr::unspanned(App(
+                                SpExpr::unspanned(Adv(SpExpr::unspanned(Var(
+                                    Vec::new(),
+                                    "_d0".to_string()
+                                )))),
+                                SpExpr::unspanned(Var(Vec::new(), "x".to_string()))
                             ))))
                         )),
                     ]))))
                 ))
-            )
+            ))
         )
     );
 }
@@ -139,12 +147,12 @@ let contains = fn v xs ->
     }
 ";
     let test_code = crate::parser::parse_source(program.to_string()).unwrap();
-    match *test_code[0].clone() {
+    match *test_code[0].term.clone() {
         crate::parser::ast::PExpr::Let(pat, expr) => {
-            let e = Expr::from_pexpr(*expr.clone()).unwrap();
+            let e = SpExpr::from_pexpr(expr.clone()).unwrap();
 
             // If e is recursive within one time step
-            match pat {
+            match *pat.term {
                 Pattern::Var(var, _) => {
                     assert!(e.is_static_recursive(&var));
                 }
@@ -161,12 +169,12 @@ fn reject_static_recursive() {
 let map = fn f (a << as) -> !#f a << @(map f !@as)
 ";
     let test_code = crate::parser::parse_source(program.to_string()).unwrap();
-    match *test_code[0].clone() {
+    match *test_code[0].term.clone() {
         crate::parser::ast::PExpr::Let(pat, expr) => {
-            let e = Expr::from_pexpr(*expr.clone()).unwrap();
+            let e = SpExpr::from_pexpr(expr.clone()).unwrap();
 
             // If e is recursive within one time step
-            match pat {
+            match *pat.term {
                 Pattern::Var(var, _) => {
                     assert!(!e.is_static_recursive(&var));
                 }

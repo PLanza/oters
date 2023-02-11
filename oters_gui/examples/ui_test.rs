@@ -1,5 +1,4 @@
 extern crate oters_gui;
-use std::collections::HashMap;
 
 fn main() {
     let config = oters_gui::WindowConfig {

@@ -122,7 +122,7 @@ TypeTerm: TypeExpr = {
   "(" <FunctionType> ")",
 };
 
-SpType: SpTypeExpr = Span<FunctionType>;
+pub SpType: SpTypeExpr = Span<FunctionType>;
 
 // -------------------- Operators --------------------
 // Grouped by Precedence
@@ -399,7 +399,7 @@ MatchExpr: PExpr = {
   "match" <e: SpExpr> "with" "{" <v: Comma<MatchItem>> "}" => PExpr::Match(e, v)
 };
 
-Expr: PExpr = {
+pub Expr: PExpr = {
   OrExpr,
   BlockExpr,
   IfExpr,
@@ -458,7 +458,7 @@ UseExpr: PExpr = {
   },
 }
 
-Item: PExpr = {
+pub Item: PExpr = {
   LetExpr,
   TypeExpr,
   EnumExpr,
