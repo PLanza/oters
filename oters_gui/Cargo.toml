@@ -12,7 +12,7 @@ documentation = "https://planza.github.io/Oters"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-oters_lang = { path = "../oters_lang/"}
+oters_lang = { path = "../oters_lang/", version = "0.1.0" }
 anyhow = "1.0.69"
 lazy_static = "1.4.0"
 macroquad = "0.3.25"

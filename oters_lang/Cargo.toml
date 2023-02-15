@@ -12,7 +12,7 @@ documentation = "https://planza.github.io/Oters"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-oters_macro = { path = "../oters_macro/" }
+oters_macro = { path = "../oters_macro/", version = "0.1.0" }
 lalrpop-util = { version = "^0.19", features = ["lexer"] }
 regex = "1"
 anyhow = "1.0.68"
