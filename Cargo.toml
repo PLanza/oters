@@ -1,7 +1,7 @@
 [package]
 name = "oters"
 authors = ["Pablo Lanza Serrano"]
-version = "0.1.1"
+version = "0.1.2"
 description = "A Functional Reacitve Programming Language for writing GUI applications"
 license = "MIT"
 keywords = ["GUI", "DSL", "UI", "language"]
@@ -16,9 +16,9 @@ name = "oters"
 path = "src/lib.rs"
 
 [dependencies]
-oters_lang = { path = "./oters_lang", version = "0.1.0" }
-oters_gui = { path = "./oters_gui", version = "0.1.1" }
-oters_macro = { path = "./oters_macro", version = "0.1.0" }
+oters_lang = { path = "./oters_lang", version = "0.1.2" }
+oters_gui = { path = "./oters_gui", version = "0.1.2" }
+oters_macro = { path = "./oters_macro", version = "0.1.2" }
 
 [[example]]
 name = "demo"
