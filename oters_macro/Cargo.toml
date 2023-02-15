@@ -2,6 +2,12 @@
 name = "oters_macro"
 version = "0.1.0"
 edition = "2021"
+authors = ["Pablo Lanza Serrano"]
+description = "Macro definitions for the oters programming language"
+license = "MIT"
+repository = "https://github.com/PLanza/oters/oters_macro"
+documentation = "https://planza.github.io/Oters"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]

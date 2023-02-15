@@ -3,6 +3,11 @@ name = "oters_lang"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
+authors = ["Pablo Lanza Serrano"]
+description = "Language definitions and interpreter for the oters programming language"
+license = "MIT"
+repository = "https://github.com/PLanza/oters/oters_lang"
+documentation = "https://planza.github.io/Oters"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

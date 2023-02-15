@@ -16,6 +16,6 @@ name = "oters"
 path = "src/lib.rs"
 
 [dependencies]
-oters_lang = { path = "oters_lang", version = "0.1.0" }
-oters_gui = { path = "oters_gui", version = "0.1.0" }
-oters_macro = { path = "oters_macro", version = "0.1.0" }
+oters_lang = { path = "./oters_lang", version = "0.1.0" }
+oters_gui = { path = "./oters_gui", version = "0.1.0" }
+oters_macro = { path = "./oters_macro", version = "0.1.0" }
