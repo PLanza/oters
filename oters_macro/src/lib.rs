@@ -377,7 +377,7 @@ pub fn run(args: TokenStream) -> TokenStream {
 
     let (functions, structs, enums) = get_exports();
     let out = quote! {
-        oters_gui::run(#files, #config, (#functions, #structs, #enums));
+        oters::run(#files, #config, (#functions, #structs, #enums));
     };
 
     out.into()

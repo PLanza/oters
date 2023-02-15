@@ -1,6 +1,6 @@
 [package]
 name = "oters_macro"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 authors = ["Pablo Lanza Serrano"]
 description = "Macro definitions for the oters programming language"
