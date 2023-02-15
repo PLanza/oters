@@ -1,6 +1,15 @@
 [package]
 name = "oters"
+authors = ["Pablo Lanza Serrano"]
 version = "0.1.0"
+description = "A Functional Reacitve Programming Language for writing GUI applications"
+license = "MIT"
+keywords = ["GUI", "DSL", "UI", "language"]
+categories = ["compilers", "gui"]
+repository = "https://github.com/PLanza/oters"
+readme = "README.md"
+documentation = "https://planza.github.io/Oters"
+
 
 [lib]
 name = "oters"
