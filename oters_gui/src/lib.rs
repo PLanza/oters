@@ -2,10 +2,11 @@ use std::fs::read_to_string;
 use std::path::Path;
 
 use anyhow::Result;
-use oters_lang::export::{export_list, ExportEnums, ExportFns, ExportStructs, PathExportFns};
-use oters_lang::parser::ast::PExpr;
-use oters_lang::parser::span::Spanned;
-use oters_lang::types::check::ProgramChecker;
+use oters_lang as oters;
+use oters::export::{export_list, ExportEnums, ExportFns, ExportStructs, PathExportFns};
+use oters::parser::ast::PExpr;
+use oters::parser::span::Spanned;
+use oters::types::check::ProgramChecker;
 pub mod color;
 pub mod image;
 pub mod input;

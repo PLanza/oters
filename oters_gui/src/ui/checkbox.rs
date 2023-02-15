@@ -1,6 +1,8 @@
+use oters_lang as oters;
+
 use macroquad::math::vec2;
 use macroquad::ui;
-use oters_lang::export::export_oters;
+use oters::export::export_oters;
 
 use super::{UIInstance, UIType, FRAMES};
 

@@ -1,3 +1,4 @@
+use oters_lang as oters;
 use oters_lang::export::export_oters;
 
 use macroquad::prelude::*;

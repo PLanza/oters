@@ -1,4 +1,4 @@
-use crate as oters_lang;
+use crate as oters;
 use crate::export::export_oters;
 
 #[export_oters]

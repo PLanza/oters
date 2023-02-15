@@ -1,5 +1,6 @@
 extern crate oters_gui;
 
+use oters_lang as oters;
 use oters_lang::export::{export_list, export_oters};
 
 #[export_oters]

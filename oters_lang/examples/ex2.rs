@@ -1,4 +1,5 @@
 extern crate oters_lang;
+use oters_lang as oters;
 
 use anyhow::Result;
 use oters_lang::export::{export_list, export_oters};

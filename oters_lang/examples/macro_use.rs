@@ -1,4 +1,5 @@
 extern crate oters_lang;
+use oters_lang as oters;
 extern crate oters_macro;
 
 use oters_lang::export::Value;

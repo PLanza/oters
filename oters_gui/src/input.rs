@@ -1,4 +1,6 @@
-use oters_lang::export::export_oters;
+use oters_lang as oters;
+
+use oters::export::export_oters;
 
 #[export_oters]
 pub fn is_key_pressed(key: String) -> bool {

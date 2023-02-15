@@ -134,12 +134,12 @@ impl ValueType {
 
         use ValueType::*;
         match self {
-            Unit | Bool | Int | Float | String => quote!(oters_lang::export::Value::#head(v) => v),
+            Unit | Bool | Int | Float | String => quote!(oters::Value::#head(v) => v),
             List(ty) => {
                 let inner_ty = ty.to_tokens();
                 let inner_arm = ty.to_match_arm();
                 quote! {
-                    oters_lang::export::Value::#head(vs) => {
+                    oters::Value::#head(vs) => {
                         let vec: Vec<#inner_ty> = vs
                             .into_iter()
                             .map(|v| match *v {
@@ -156,7 +156,7 @@ impl ValueType {
 
                 let tys_arms = tys.into_iter().map(|t| t.to_match_arm());
                 quote! {
-                    oters_lang::export::Value::#head(vs) => (#(match *vs[#indices].clone() {
+                    oters::Value::#head(vs) => (#(match *vs[#indices].clone() {
                         #tys_arms,
                         _ => unreachable!()
                     }),*)
@@ -177,7 +177,7 @@ impl ValueType {
                             field_arms.push(val.to_match_arm());
                         }
                         quote! {
-                            oters_lang::export::Value::Struct(_, map) => #name {
+                            oters::Value::Struct(_, map) => #name {
                                 #(#field_idents: match *map.get(#field_strs).unwrap().clone() {
                                     #field_arms,
                                     _ => unreachable!()
@@ -210,7 +210,7 @@ impl ValueType {
                                         let val_arms = vals.into_iter().map(|v_t| v_t.to_match_arm());
                                         quote! {
                                             #variant => match *val.unwrap() {
-                                                oters_lang::export::Value::Tuple(vals) => #name::#variant_ident(#(
+                                                oters::Value::Tuple(vals) => #name::#variant_ident(#(
                                                         match *vals[#indices].clone() {
                                                             #val_arms,
                                                             _ => unreachable!(),
@@ -233,7 +233,7 @@ impl ValueType {
                             });
                         }
                         quote! {
-                            oters_lang::export::Value::Variant(name, val) => match name.as_str() {
+                            oters::Value::Variant(name, val) => match name.as_str() {
                                 #(#variant_arms)*
                                 _ => unreachable!()
                             }
@@ -251,7 +251,7 @@ impl ValueType {
     }
 
     pub(crate) fn to_type(&self) -> proc_macro2::TokenStream {
-        let path = quote!(oters_lang::types::Type);
+        let path = quote!(oters::Type);
         use ValueType::*;
         match self {
             Unit => quote!(#path::Unit),

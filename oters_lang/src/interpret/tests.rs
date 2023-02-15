@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 
 use super::Interpreter;
-use crate as oters_lang;
+use crate as oters;
 use crate::parser;
 use crate::ProgramChecker;
 

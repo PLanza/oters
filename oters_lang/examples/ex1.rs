@@ -1,4 +1,5 @@
 extern crate oters_lang;
+use oters_lang as oters;
 
 use std::fs::read_to_string;
 

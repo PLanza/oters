@@ -102,14 +102,14 @@ fn export_fn(item: syn::ItemFn) -> TokenStream {
     let mut stmts = fn_body.stmts;
     // Convert the return statement to a Value
     let return_stmt = if stmts.len() == 0 {
-        quote!(oters_lang::export::Value::Unit)
+        quote!(oters::Value::Unit)
     } else {
         match stmts[stmts.len() - 1].clone() {
             syn::Stmt::Expr(e) => {
                 stmts.pop();
                 to_val(quote!(#e), return_val)
             }
-            _ => quote!(oters_lang::export::Value::Unit),
+            _ => quote!(oters::Value::Unit),
         }
     };
 
@@ -117,7 +117,7 @@ fn export_fn(item: syn::ItemFn) -> TokenStream {
 
     // Form the exportable function
     let exportable = quote! (
-        pub fn #fn_name(args: Vec<oters_lang::export::Value>) -> oters_lang::export::Value {
+        pub fn #fn_name(args: Vec<oters::Value>) -> oters::Value {
             #(let #arg_names = match args[#indices].clone() {
                 #match_arms,
                 _ => unreachable!(),
@@ -228,7 +228,7 @@ fn export_enum(item: syn::ItemEnum) -> TokenStream {
 
 use proc_macro2::TokenStream as TokenStream2;
 fn get_exports() -> (TokenStream2, TokenStream2, TokenStream2) {
-    let path = quote!(oters_lang::types::Type);
+    let path = quote!(oters::Type);
 
     let fns_map = EXPORT_FNS.lock().unwrap().clone();
 
@@ -325,7 +325,7 @@ fn get_exports() -> (TokenStream2, TokenStream2, TokenStream2) {
     let function_tokens = quote! {
         ::std::collections::HashMap::from([#(
                 (#fn_names.to_string(),
-                    (#fn_pointers as fn(Vec<oters_lang::export::Value>) -> oters_lang::export::Value,
+                    (#fn_pointers as fn(Vec<oters::Value>) -> oters::Value,
                         #arg_types,
                         #ret_types)
                 )
@@ -346,9 +346,9 @@ pub fn export_list(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let out = quote! {
         use lazy_static::lazy_static;
         lazy_static! {
-            pub static ref EXPORT_FNS: oters_lang::export::ExportFns = #functions;
-            pub static ref EXPORT_STRUCTS: Vec<(String, ::std::collections::HashMap<String, Box<oters_lang::types::Type>>)> = #structs;
-            pub static ref EXPORT_ENUMS: Vec<(String, ::std::collections::HashMap<String, Option<Box<oters_lang::types::Type>>>)> = #enums;
+            pub static ref EXPORT_FNS: oters::ExportFns = #functions;
+            pub static ref EXPORT_STRUCTS: Vec<(String, ::std::collections::HashMap<String, Box<oters::Type>>)> = #structs;
+            pub static ref EXPORT_ENUMS: Vec<(String, ::std::collections::HashMap<String, Option<Box<oters::Type>>>)> = #enums;
         }
     };
 
@@ -388,11 +388,11 @@ fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::To
     match &return_val {
         ValueType::List(inner) => {
             let inner_val = to_val(quote!(v), *inner.clone());
-            quote!(oters_lang::export::Value::#ret_ty(
+            quote!(oters::Value::#ret_ty(
                 #e
                 .into_iter()
                 .map(|v| std::boxed::Box::new(#inner_val))
-                .collect::<Vec<std::boxed::Box<oters_lang::export::Value>>>()
+                .collect::<Vec<std::boxed::Box<oters::Value>>>()
             ))
         }
         ValueType::Tuple(inners) => {
@@ -401,14 +401,14 @@ fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::To
             for (index, inner_ty) in indices.into_iter().zip(inners) {
                 inner_vals.push(to_val(quote!(#e.#index), *inner_ty.clone()))
             }
-            quote!(oters_lang::export::Value::#ret_ty(
+            quote!(oters::Value::#ret_ty(
                 vec![#(std::boxed::Box::new(#inner_vals)),*]
             ))
         }
         ValueType::Unit => {
             quote! {{
                 #e;
-                oters_lang::export::Value::Unit
+                oters::Value::Unit
             }}
         }
         ValueType::Struct(name) => {
@@ -423,7 +423,7 @@ fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::To
 
             quote! {{
                 let __struct = #e;
-                oters_lang::export::Value::#ret_ty(
+                oters::Value::#ret_ty(
                     #name.to_string(),
                     ::std::collections::HashMap::from([#((#fields.to_string(), std::boxed::Box::new(#field_vals))),*])
                 )
@@ -435,10 +435,10 @@ fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::To
             for (variant, opt) in map {
                 let variant_ident = Ident::new(&variant, Span::call_site().into());
                 variant_arms.push(match opt {
-                    None => quote!(#variant_ident => oters_lang::export::Value::#ret_ty(#variant.to_string(), None)),
+                    None => quote!(#variant_ident => oters::Value::#ret_ty(#variant.to_string(), None)),
                     Some(val_ty) => {
                         let val = to_val(quote!(__val), val_ty);
-                        quote!(#variant_ident(__val) => oters_lang::export::Value::#ret_ty(#variant.to_string(), Some(std::boxed::Box::new(#val))))
+                        quote!(#variant_ident(__val) => oters::Value::#ret_ty(#variant.to_string(), Some(std::boxed::Box::new(#val))))
                     }
                 });
             }
@@ -449,6 +449,6 @@ fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::To
                 }
             }}
         }
-        _ => quote!(oters_lang::export::Value::#ret_ty(#e)),
+        _ => quote!(oters::Value::#ret_ty(#e)),
     }
 }

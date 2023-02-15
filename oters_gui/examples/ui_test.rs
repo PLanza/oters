@@ -1,4 +1,5 @@
 extern crate oters_gui;
+use oters_lang as oters;
 
 fn main() {
     let config = oters_gui::WindowConfig {
