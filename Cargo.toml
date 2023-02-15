@@ -1,6 +1,12 @@
-[workspace]
-members = [
-  "oters",
-  "oters_macro",
-  "oters_gui"
-]
+[package]
+name = "oters"
+version = "0.1.0"
+
+[lib]
+name = "oters"
+path = "src/lib.rs"
+
+[dependencies]
+oters_lang = { path = "oters_lang" }
+oters_gui = { path = "oters_gui" }
+oters_macro = { path = "oters_macro" }

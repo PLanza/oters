@@ -4,11 +4,6 @@ use macroquad::prelude::*;
 use macroquad::ui::root_ui;
 
 #[export_oters]
-fn text(text: String, pos: (i64, i64), font_size: i64) {
-    draw_text(&text, pos.0 as f32, pos.1 as f32, font_size as f32, BLACK)
-}
-
-#[export_oters]
 fn button(pos: (i64, i64), label: String) -> bool {
     root_ui().button(
         Some(Vec2 {
@@ -17,11 +12,6 @@ fn button(pos: (i64, i64), label: String) -> bool {
         }),
         label,
     )
-}
-
-#[export_oters]
-fn time_since_start() -> f64 {
-    get_time()
 }
 
 #[export_oters]

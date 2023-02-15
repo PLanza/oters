@@ -1,4 +1,4 @@
-use oters::export::export_oters;
+use oters_lang::export::export_oters;
 
 use lazy_static::lazy_static;
 use macroquad::text::Font;

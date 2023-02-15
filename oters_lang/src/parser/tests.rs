@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::oters;
+#[allow(unused_imports)]
 use super::span::{SpPExpr, SpPattern, SpTypeExpr, Spanned};
 
 #[allow(unused_imports)]

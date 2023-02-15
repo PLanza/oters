@@ -1,4 +1,4 @@
-use crate as oters;
+use crate as oters_lang;
 use crate::export::export_oters;
 
 #[export_oters]
@@ -19,6 +19,11 @@ pub fn print_string(s: String) {
 #[export_oters]
 pub fn print_bool(b: bool) {
     print!("{b}")
+}
+
+#[export_oters]
+pub fn int_to_string(i: i64) -> String {
+    format!("{i}").to_string()
 }
 
 #[export_oters]

@@ -36,7 +36,7 @@ let state = {
   aux (State::Reset)
 }
 
-let secs_since_start = fn _ -> floor (time_since_start ()) 
+let secs_since_start = fn _ -> floor (gui::time::time_since_start ()) 
 
 let stopwatch = {
   let aux = fn prev_state click_time base_time -> {
@@ -58,5 +58,10 @@ let seconds = (head stopwatch % 60) << @seconds
 let minutes = (head seconds / 60 % 3600) << @minutes
 let hours = (head seconds / 3600) << @hours
 
-let time_label = text ((time_to_string ((head hours), (head minutes), (head seconds))), (200, 250), 72) << @time_label
+let time_label = gui::text::draw_text (
+    (time_to_string ((head hours), (head minutes), (head seconds))), 
+    (200, 250), 
+    72, 
+    gui::Color {r: 0, g: 0, b: 0, a: 255 }
+  ) << @time_label
 

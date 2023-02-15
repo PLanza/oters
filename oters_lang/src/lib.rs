@@ -13,11 +13,11 @@ pub mod types;
 
 pub use oters_macro::run;
 
-use crate as oters;
+use crate as oters_lang;
 use crate::std::*;
-oters::export::export_list!();
+oters_lang::export::export_list!();
 
-pub fn load_std_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExportFns> {
+pub fn load_std_lib(checker: &mut ProgramChecker) -> Result<oters_lang::export::PathExportFns> {
     let std_src = include_str!("std.otrs").to_string();
     let std_lib = parser::parse_source(std_src.clone()).map_err(|e| e.to_anyhow(&std_src))?;
     checker
@@ -44,7 +44,7 @@ pub fn load_std_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathE
         .type_check_program(&event, vec!["std".to_string(), "event".to_string()], None)
         .map_err(|e| e.to_anyhow(&std_src))?;
 
-    let path_export_fns: oters::export::PathExportFns = EXPORT_FNS
+    let path_export_fns: oters_lang::export::PathExportFns = EXPORT_FNS
         .iter()
         .map(|(name, vals)| ((vec!["std".to_string()], name.clone()), vals.clone()))
         .collect();

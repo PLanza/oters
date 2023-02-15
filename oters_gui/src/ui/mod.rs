@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use oters::export::export_oters;
+use oters_lang::export::export_oters;
 
 use lazy_static::lazy_static;
 
@@ -82,4 +82,3 @@ pub use label::*;
 pub use separator::*;
 pub use textbox::*;
 pub use vgroup::*;
-

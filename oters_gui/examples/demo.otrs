@@ -1,0 +1,38 @@
+use std::stream::const
+use std::stream::head
+use gui::widget::*
+use gui::color::*
+use gui::shape::*
+
+let ui = gui::frame ((100,50), (250, 100))
+
+let (btn_id, btn_stream) = button ui (100, 50) (const "Click me!")
+
+let counter = {
+  let aux = fn n -> {
+    let delta = if head btn_stream then 1 else 0;
+    (n + delta) << @(aux (n + delta))
+  };
+  aux 0
+}
+let counter_string = std::int_to_string (head counter) << @counter_string
+
+let (lab_id, lab_stream) = label ui (100, 50) counter_string 
+
+let (grp_id, grp_stream) = hgroup 
+  ui 
+  (250,100) 
+  (const [btn_id, lab_id]) 
+  (Alignment::Top)
+
+let _ = gui::attach_root (ui, grp_id)
+
+let circle_color = 
+  (if head counter % 3 == 0 then 
+    red
+  else if head counter %3 == 1 then
+    green
+  else 
+    blue) << @circle_color
+
+let circle = (draw_shape (Shape::Circle((200,200), 30, head circle_color))) << @circle

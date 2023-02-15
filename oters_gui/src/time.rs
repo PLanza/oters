@@ -1,6 +1,6 @@
 use chrono::Timelike;
 use macroquad::prelude::*;
-use oters::export::export_oters;
+use oters_lang::export::export_oters;
 
 #[export_oters]
 pub fn fps() -> i64 {

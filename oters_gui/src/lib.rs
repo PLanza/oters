@@ -2,10 +2,10 @@ use std::fs::read_to_string;
 use std::path::Path;
 
 use anyhow::Result;
-use oters::export::{export_list, ExportEnums, ExportFns, ExportStructs, PathExportFns};
-use oters::parser::ast::PExpr;
-use oters::parser::span::Spanned;
-use oters::types::check::ProgramChecker;
+use oters_lang::export::{export_list, ExportEnums, ExportFns, ExportStructs, PathExportFns};
+use oters_lang::parser::ast::PExpr;
+use oters_lang::parser::span::Spanned;
+use oters_lang::types::check::ProgramChecker;
 pub mod color;
 pub mod image;
 pub mod input;
@@ -43,7 +43,7 @@ pub async fn run_loop(
     let mut checker = ProgramChecker::new();
 
     // Load std and gui libraries
-    let std_imports = oters::load_std_lib(&mut checker)?;
+    let std_imports = oters_lang::load_std_lib(&mut checker)?;
     let gui_imports = load_gui_lib(&mut checker)?;
 
     // Link user programs
@@ -61,7 +61,7 @@ pub async fn run_loop(
     for (file, stem) in files.iter().zip(&file_stems) {
         source = read_to_string(std::path::Path::new(file)).unwrap();
         let user_program =
-            oters::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
+            oters_lang::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
         let exports = if first {
             first = false;
             Some(exports.clone())
@@ -84,7 +84,7 @@ pub async fn run_loop(
             .map(|(name, val)| ((vec![file_stems[0].clone()], name), val))
             .collect::<PathExportFns>(),
     );
-    let mut interpreter = oters::interpret::Interpreter::new(exprs, export_fns, file_stems)
+    let mut interpreter = oters_lang::interpret::Interpreter::new(exprs, export_fns, file_stems)
         .map_err(|e| e.to_anyhow(&source))?;
 
     loop {
@@ -151,21 +151,24 @@ fn load_gui_file(
     pefs: &mut PathExportFns,
     code: Vec<Spanned<PExpr>>,
     path: Vec<String>,
-    exports: (ExportFns, ExportStructs, ExportEnums),
+    exports: Option<(ExportFns, ExportStructs, ExportEnums)>,
 ) -> Result<()> {
     checker
-        .type_check_program(&code, path.clone(), Some(exports.clone()))
+        .type_check_program(&code, path.clone(), exports.clone())
         .map_err(|e| e.to_anyhow(&source))?;
-    pefs.extend(
-        exports
-            .0
-            .iter()
-            .map(|(name, vals)| ((path.clone(), name.clone()), vals.clone())),
-    );
+    if exports.is_some() {
+        pefs.extend(
+            exports
+                .unwrap()
+                .0
+                .iter()
+                .map(|(name, vals)| ((path.clone(), name.clone()), vals.clone())),
+        );
+    }
     Ok(())
 }
 
-fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExportFns> {
+fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters_lang::export::PathExportFns> {
     // Plus Struct Color
     let gui = vec!["frame", "attach_root"];
     let gui_widget = vec![
@@ -227,7 +230,8 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
     let mut path_export_fns: PathExportFns = HashMap::new();
 
     let source = include_str!("gui.otrs").to_string();
-    let code = oters::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
+    let code =
+        oters_lang::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let exports = get_exports(gui, vec!["Color"], Vec::new());
     load_gui_file(
         &source,
@@ -235,11 +239,24 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         &mut path_export_fns,
         code,
         vec!["gui".to_string()],
-        exports,
+        Some(exports),
+    )?;
+
+    let source = include_str!("gui/color.otrs").to_string();
+    let code =
+        oters_lang::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
+    load_gui_file(
+        &source,
+        checker,
+        &mut path_export_fns,
+        code,
+        vec!["gui".to_string(), "color".to_string()],
+        None,
     )?;
 
     let source = include_str!("gui/widget.otrs").to_string();
-    let code = oters::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
+    let code =
+        oters_lang::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let exports = get_exports(gui_widget, Vec::new(), vec!["Alignment"]);
     load_gui_file(
         &source,
@@ -247,11 +264,12 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         &mut path_export_fns,
         code,
         vec!["gui".to_string(), "widget".to_string()],
-        exports,
+        Some(exports),
     )?;
 
     let source = include_str!("gui/time.otrs").to_string();
-    let code = oters::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
+    let code =
+        oters_lang::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let exports = get_exports(gui_time, Vec::new(), Vec::new());
     load_gui_file(
         &source,
@@ -259,11 +277,12 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         &mut path_export_fns,
         code,
         vec!["gui".to_string(), "time".to_string()],
-        exports,
+        Some(exports),
     )?;
 
     let source = include_str!("gui/image.otrs").to_string();
-    let code = oters::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
+    let code =
+        oters_lang::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let exports = get_exports(gui_image, vec!["Image"], Vec::new());
     load_gui_file(
         &source,
@@ -271,11 +290,12 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         &mut path_export_fns,
         code,
         vec!["gui".to_string(), "image".to_string()],
-        exports,
+        Some(exports),
     )?;
 
     let source = include_str!("gui/input.otrs").to_string();
-    let code = oters::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
+    let code =
+        oters_lang::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let exports = get_exports(gui_input, Vec::new(), vec!["MouseButton"]);
     load_gui_file(
         &source,
@@ -283,11 +303,12 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         &mut path_export_fns,
         code,
         vec!["gui".to_string(), "input".to_string()],
-        exports,
+        Some(exports),
     )?;
 
     let source = include_str!("gui/shape.otrs").to_string();
-    let code = oters::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
+    let code =
+        oters_lang::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let exports = get_exports(gui_shape, Vec::new(), vec!["Shape"]);
     load_gui_file(
         &source,
@@ -295,11 +316,12 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         &mut path_export_fns,
         code,
         vec!["gui".to_string(), "shape".to_string()],
-        exports,
+        Some(exports),
     )?;
 
     let source = include_str!("gui/window.otrs").to_string();
-    let code = oters::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
+    let code =
+        oters_lang::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let exports = get_exports(gui_window, Vec::new(), Vec::new());
     load_gui_file(
         &source,
@@ -307,11 +329,12 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         &mut path_export_fns,
         code,
         vec!["gui".to_string(), "window".to_string()],
-        exports,
+        Some(exports),
     )?;
 
     let source = include_str!("gui/text.otrs").to_string();
-    let code = oters::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
+    let code =
+        oters_lang::parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let exports = get_exports(gui_text, Vec::new(), Vec::new());
     load_gui_file(
         &source,
@@ -319,7 +342,7 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters::export::PathExpor
         &mut path_export_fns,
         code,
         vec!["gui".to_string(), "text".to_string()],
-        exports,
+        Some(exports),
     )?;
 
     Ok(path_export_fns)

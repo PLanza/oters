@@ -256,7 +256,6 @@ impl ProgramChecker {
                         // Make sure the resulting type is well formed
                         t.well_formed(TypeContext::new())
                             .map_err(|e| SpError::new(e, span))?;
-                        println!("{:?}::{}: {}", path, var, t);
 
                         // Add it to the map of value declarations
                         insert_dec(&mut self.value_decs, var, t, &path)
@@ -287,6 +286,7 @@ impl ProgramChecker {
                     let mut t2 = self.infer(&e3, VarContext::new())?;
                     self.unify_subs().map_err(|e| SpError::new(e, e3.span))?;
                     t2 = t2.apply_subs(&self.substitutions);
+                    println!("{t2}");
 
                     // Γ, y∶ Str<𝑡₂> ⊢ 𝑒₁ ∶ Str<𝑡₁>
                     let mut e1 = SpExpr::from_pexpr(e1.clone())?;
@@ -305,6 +305,7 @@ impl ProgramChecker {
                             e1.span,
                         ),
                     );
+                    println!("{is_rec}");
                     e1 = if is_rec {
                         SpExpr::new(Expr::Fix(fix_var, rec_e), e1.span)
                     } else {
@@ -358,7 +359,6 @@ impl ProgramChecker {
                             ))
                         }
                     }
-                    println!("{:?}::{}: {}", path, x, t1);
                     insert_dec(&mut self.value_decs, x.clone(), t1, &path);
 
                     // Γ, x∶ Str<𝑡₁> ⊢ 𝑒₂ ∶ Str<𝑡₂>
@@ -406,7 +406,6 @@ impl ProgramChecker {
                     s_t2.well_formed(TypeContext::new())
                         .map_err(|e| SpError::new(e, e2.span))?;
 
-                    println!("{:?}::{}: {}", path, y, s_t2);
                     insert_dec(&mut self.value_decs, y.clone(), s_t2, &path);
 
                     self.substitutions = Vec::new();
@@ -450,12 +449,17 @@ impl ProgramChecker {
                         };
                         let node =
                             traverse_path(dag, &use_path).map_err(|e| SpError::new(e, span))?;
-                        insert_dec(
-                            dag,
-                            last_elem.clone(),
-                            node.get(last_elem).unwrap().clone(),
-                            &path,
-                        );
+
+                        let use_type = match node.get(last_elem).cloned() {
+                            None => {
+                                return Err(SpError::new(
+                                    InvalidExprError::UseDoesNotExist.into(),
+                                    span,
+                                ))
+                            }
+                            Some(t) => t,
+                        };
+                        insert_dec(dag, last_elem.clone(), use_type, &path);
                     }
                 }
                 _ => {

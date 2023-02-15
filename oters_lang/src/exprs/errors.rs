@@ -23,6 +23,8 @@ pub enum InvalidExprError {
     IllegalLocation,
     #[error("Cannot import {0}")]
     IllegalUse(Expr),
+    #[error("Import does not exist")]
+    UseDoesNotExist,
 }
 
 #[derive(Error, Debug)]

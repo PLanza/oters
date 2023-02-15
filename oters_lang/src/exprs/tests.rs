@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use crate::{
     parser::{ast::Pattern, span::SpPattern},
     types::Type,
