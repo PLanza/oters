@@ -17,10 +17,10 @@ lalrpop-util = { version = "^0.19", features = ["lexer"] }
 regex = "1"
 anyhow = "1.0.68"
 thiserror = "1.0"
-lazy_static = "1.4.*"
+lazy_static = "1.4.0"
 macroquad = "0.3.25"
-daggy = "0.8.*"
-chrono = "0.4.*"
+daggy = "0.8.0"
+chrono = "0.4.23"
 
 [build-dependencies]
 lalrpop = "^0.19"

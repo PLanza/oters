@@ -13,9 +13,9 @@ documentation = "https://planza.github.io/Oters"
 
 [dependencies]
 oters_lang = { path = "../oters_lang/"}
-anyhow = "1.0.*"
-lazy_static = "1.4.*"
+anyhow = "1.0.69"
+lazy_static = "1.4.0"
 macroquad = "0.3.25"
-chrono = "0.4.*"
-futures = "0.3"
+chrono = "0.4.23"
+futures = "0.3.26"
 

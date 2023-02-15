@@ -14,8 +14,7 @@ documentation = "https://planza.github.io/Oters"
 proc-macro = true
 
 [dependencies]
-quote = "*"
-syn = { version = "*", features = ["extra-traits", "full", "derive"] }
-proc-macro2 = "*"
-
-lazy_static = "1.4.*"
+quote = "1.0.23"
+syn = { version = "1.0.107", features = ["extra-traits", "full", "derive"] }
+proc-macro2 = "1.0.51"
+lazy_static = "1.4.0"
