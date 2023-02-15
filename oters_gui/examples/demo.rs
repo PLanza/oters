@@ -8,5 +8,5 @@ fn main() {
         fullscreen: false,
         icon: None,
     };
-    oters::run!(vec!["./oters_gui/examples/demo.otrs".to_string()], config,);
+    oters_lang::run!(vec!["./oters_gui/examples/demo.otrs".to_string()], config,);
 }

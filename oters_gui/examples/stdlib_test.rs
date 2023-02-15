@@ -1,7 +1,5 @@
-extern crate oters;
 extern crate oters_gui;
-
-use std::collections::HashMap;
+extern crate oters_lang;
 
 fn main() {
     let config = oters_gui::WindowConfig {
@@ -11,7 +9,7 @@ fn main() {
         fullscreen: false,
         icon: None,
     };
-    oters::run!(
+    oters_lang::run!(
         vec!["./oters_gui/examples/stdlib_test.otrs".to_string()],
         config,
     );

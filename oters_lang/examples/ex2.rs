@@ -1,10 +1,10 @@
-extern crate oters;
+extern crate oters_lang;
 
 use anyhow::Result;
-use oters::export::{export_list, export_oters};
-use oters::interpret::Interpreter;
-use oters::parser;
-use oters::types::check::ProgramChecker;
+use oters_lang::export::{export_list, export_oters};
+use oters_lang::interpret::Interpreter;
+use oters_lang::parser;
+use oters_lang::types::check::ProgramChecker;
 
 #[export_oters]
 fn print_int(i: i64) {

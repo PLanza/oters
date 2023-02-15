@@ -1,8 +1,8 @@
-extern crate oters;
+extern crate oters_lang;
 extern crate oters_macro;
 
-use oters::export::Value;
-use oters::export::{export_list, export_oters};
+use oters_lang::export::Value;
+use oters_lang::export::{export_list, export_oters};
 use std::collections::HashMap;
 
 #[export_oters]

@@ -8,7 +8,7 @@ fn main() {
         fullscreen: false,
         icon: None,
     };
-    oters::run!(
+    oters_lang::run!(
         vec!["./oters_gui/examples/ui_test.otrs".to_string()],
         config
     );

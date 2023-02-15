@@ -1,6 +1,6 @@
 extern crate oters_gui;
 
-use oters::export::{export_list, export_oters};
+use oters_lang::export::{export_list, export_oters};
 
 #[export_oters]
 fn print_int_tuple(tup: (i64, i64)) {
@@ -22,7 +22,7 @@ fn main() {
         fullscreen: false,
         icon: None,
     };
-    oters::run!(
+    oters_lang::run!(
         vec!["./oters_gui/examples/lib_test.otrs".to_string()],
         config,
     );

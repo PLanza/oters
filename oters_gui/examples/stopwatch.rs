@@ -1,4 +1,4 @@
-use oters::export::export_oters;
+use oters_lang::export::export_oters;
 
 use macroquad::prelude::*;
 use macroquad::ui::root_ui;
@@ -32,7 +32,7 @@ fn main() {
         fullscreen: false,
         icon: None,
     };
-    oters::run!(
+    oters_lang::run!(
         vec!["./oters_gui/examples/stopwatch.otrs".to_string()],
         config,
     );
