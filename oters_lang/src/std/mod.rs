@@ -3,27 +3,42 @@ use crate::export::export_oters;
 
 #[export_oters]
 pub fn print_int(i: i64) {
-    print!("{i}")
+    println!("{i}")
 }
 
 #[export_oters]
 pub fn print_float(f: f64) {
-    print!("{f}")
+    println!("{f}")
 }
 
 #[export_oters]
 pub fn print_string(s: String) {
-    print!("{s}")
+    println!("{s}")
 }
 
 #[export_oters]
 pub fn print_bool(b: bool) {
-    print!("{b}")
+    println!("HI{b}")
 }
 
 #[export_oters]
 pub fn int_to_string(i: i64) -> String {
-    format!("{i}").to_string()
+    i.to_string()
+}
+
+#[export_oters]
+pub fn float_to_string(f: i64) -> String {
+    f.to_string()
+}
+
+#[export_oters]
+pub fn int_to_float(i: i64) -> f64 {
+    i as f64
+}
+
+#[export_oters]
+pub fn float_to_int(f: f64) -> i64 {
+    f as i64
 }
 
 #[export_oters]

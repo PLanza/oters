@@ -128,16 +128,16 @@ pub fn rotate_img(image: Image, rotation: f64) -> Image {
 }
 
 #[export_oters]
-pub fn flip_x_img(image: Image, flip: bool) -> Image {
+pub fn flip_x_img(image: Image) -> Image {
     let mut image = image;
-    image.flip_x = flip;
+    image.flip_x = !image.flip_x;
     image
 }
 
 #[export_oters]
-pub fn flip_y_img(image: Image, flip: bool) -> Image {
+pub fn flip_y_img(image: Image) -> Image {
     let mut image = image;
-    image.flip_y = flip;
+    image.flip_y = !image.flip_y;
     image
 }
 

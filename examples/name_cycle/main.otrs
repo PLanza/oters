@@ -1,0 +1,50 @@
+use std::stream::const
+use std::stream::head
+use gui::widget::*
+
+let get_nth = fn list n -> 
+  match (list, n) with {
+    (x:xs, 0) => x,
+    (x:xs, n) => get_nth xs (n - 1),
+  }
+
+let on_5_seconds = {
+  let aux = fn prev -> {
+    let second = gui::time::timestamp_millis () / 5000;
+    if !(second == prev) then 
+      true << @(aux second)
+    else 
+      false << @(aux prev)
+  };
+  aux 0
+}
+
+use data::usernames
+
+let ui = gui::frame ((100,50), (250, 100))
+
+let (up_id, up_stream) = button ui (100, 50) (const "UP")
+let (down_id, down_stream) = button ui (100, 50) (const "DOWN")
+
+let index = {
+  let aux = fn curr -> {
+    let delta = if head on_5_seconds || head up_stream then 
+      1
+    else if head down_stream then
+      -1
+    else 
+      0
+   ;
+   curr << @(aux ((curr + delta) % 10))
+  };
+  aux 0
+}
+
+let (lab_id, lab_stream) = label ui (100, 100) (std::stream::map #(get_nth usernames) index)
+let (grp_id, grp_stream) = hgroup 
+  ui 
+  (300,150) 
+  (const [lab_id, up_id, down_id]) 
+  (Alignment::Top)
+
+let _ = gui::attach_root (ui, grp_id)

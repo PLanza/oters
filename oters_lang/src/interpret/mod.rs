@@ -59,7 +59,14 @@ impl Interpreter {
         bindings: Dag<Vec<LetBinding>, String>,
         files: Vec<String>,
     ) -> Result<(), SpError> {
-        let (mut std, mut gui, mut user_code) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut std, mut gui, mut user_code) = (
+            Vec::new(),
+            Vec::new(),
+            files
+                .iter()
+                .map(|_| (Vec::new(), Vec::new()))
+                .collect::<Vec<(Vec<String>, Vec<LetBinding>)>>(),
+        );
         for edge in bindings.edges(0.into()) {
             if edge.weight() == "std" {
                 std = flatten(&bindings, &vec!["std".to_string()], edge.target());
@@ -67,13 +74,10 @@ impl Interpreter {
                 gui = flatten(&bindings, &vec!["gui".to_string()], edge.target());
             } else {
                 // Insert user code files in order of dependency
-                user_code.insert(
-                    files.iter().enumerate().fold(0, |ret, (i, s)| {
-                        let ret = if s == edge.weight() { i } else { ret };
-                        ret
-                    }),
-                    (vec![edge.weight().clone()], bindings[edge.target()].clone()),
-                )
+                user_code[files.iter().enumerate().fold(0, |ret, (i, s)| {
+                    let ret = if s == edge.weight() { i } else { ret };
+                    ret
+                })] = (vec![edge.weight().clone()], bindings[edge.target()].clone());
             }
         }
         for (path, bindings) in std {
@@ -510,7 +514,7 @@ impl Interpreter {
             (Float(v1), Add, Float(v2)) => Ok((Float(v1 + v2), __s)),
             (Int(v1), Sub, Int(v2)) => Ok((Int(v1 - v2), __s)),
             (Float(v1), Sub, Float(v2)) => Ok((Float(v1 - v2), __s)),
-            (Int(v1), Mod, Int(v2)) => Ok((Int(v1 % v2), __s)),
+            (Int(v1), Mod, Int(v2)) => Ok((Int((v1 + v2) % v2), __s)),
 
             (v, Cons, List(mut list)) => {
                 list.push_front(SpExpr::new(v, e1.span));

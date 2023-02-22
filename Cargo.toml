@@ -23,3 +23,11 @@ oters_macro = { path = "./oters_macro", version = "0.1.4" }
 [[example]]
 name = "demo"
 path = "examples/demo/main.rs"
+
+[[example]]
+name = "name_cycle"
+path = "examples/name_cycle/main.rs"
+
+[[example]]
+name = "ui_test"
+path = "examples/ui_test/main.rs"
