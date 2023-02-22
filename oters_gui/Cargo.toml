@@ -1,6 +1,6 @@
 [package]
 name = "oters_gui"
-version = "0.1.3"
+version = "0.1.5"
 edition = "2021"
 authors = ["Pablo Lanza Serrano"]
 description = "Graphical library definitions for the oters programming language"
