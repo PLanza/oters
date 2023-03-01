@@ -29,7 +29,7 @@ pub struct VarContext {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LetBinding {
     Let(Spanned<Pattern>, SpExpr),
-    LetAndWith(String, SpExpr, String, SpExpr, SpExpr),
+    LetAndWith(Spanned<Pattern>, SpExpr, String, SpExpr, SpExpr),
     Use(Vec<String>, String),
 }
 

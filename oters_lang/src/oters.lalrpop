@@ -438,7 +438,7 @@ EnumExpr: PExpr = {
     PExpr::EnumDef(i, p, v),
 }
 
-LetWithAnd: PExpr = {
+LetAndWith: PExpr = {
     "let" <p1: Span<LetPattern>> "=" <e1: SpExpr> "and" <p2: Span<LetPattern>> "=" <e2: SpExpr> "with" <e3: SpExpr> =>
         PExpr::LetAndWith(p1, e1, p2, e2, e3),
 };
@@ -463,7 +463,7 @@ pub Item: PExpr = {
   TypeExpr,
   EnumExpr,
   StructExpr,
-  LetWithAnd,
+  LetAndWith,
   UseExpr,
 }
 

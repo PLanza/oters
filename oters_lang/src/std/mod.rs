@@ -18,7 +18,7 @@ pub fn print_string(s: String) {
 
 #[export_oters]
 pub fn print_bool(b: bool) {
-    println!("HI{b}")
+    println!("{b}")
 }
 
 #[export_oters]

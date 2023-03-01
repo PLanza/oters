@@ -20,10 +20,11 @@ use anyhow::Result;
 pub struct Interpreter {
     allocator: Allocator,
     globals: HashMap<(Vec<String>, String), SpExpr>,
-    eval_order: Vec<(Vec<String>, String)>,
+    eval_order: Vec<(Vec<String>, String, u64)>,
     imports: PathExportFns,
     store: Store,
-    mut_rec_streams: HashMap<(Vec<String>, String), SpExpr>,
+    mut_rec_streams: HashSet<(Vec<String>, String)>,
+    mut_rec_prevs: HashMap<u64, SpExpr>,
     current_path: Vec<String>,
 }
 
@@ -46,7 +47,8 @@ impl Interpreter {
             eval_order: Vec::new(),
             imports,
             store: Store::new(),
-            mut_rec_streams: HashMap::new(),
+            mut_rec_streams: HashSet::new(),
+            mut_rec_prevs: HashMap::new(),
             current_path: Vec::new(),
         };
         interp.init(bindings, files)?;
@@ -114,13 +116,15 @@ impl Interpreter {
                     }
 
                     for (var, e) in bound_vars {
-                        self.globals.insert((path.clone(), var.clone()), e);
-                        self.eval_order.push((path.clone(), var));
+                        if let Some(loc) = e.is_stream() {
+                            self.eval_order.push((path.clone(), var.clone(), loc));
+                        }
+                        self.globals.insert((path.clone(), var), e);
                     }
                     self.store = s;
                 }
 
-                LetBinding::LetAndWith(x, e1, y, e2, e3) => {
+                LetBinding::LetAndWith(pat1, e1, y, e2, e3) => {
                     let (v, mut s) = self.eval(e3.clone(), self.store.clone())?;
 
                     let loc_2 = self.allocator.alloc();
@@ -132,17 +136,28 @@ impl Interpreter {
                         e2.span,
                     );
                     s.extend(loc_2, y_str.clone());
+                    self.eval_order.push((path.clone(), y.clone(), loc_2));
                     self.globals
                         .insert((path.clone(), y.clone()), y_str.clone());
 
                     let (v1, s) = self.eval(e1.clone(), s)?;
-                    self.eval_order.push((path.clone(), x.clone()));
-                    self.globals.insert((path.clone(), x), v1);
+                    let (res, bound_v1s) = Self::match_pattern(&v1, &pat1)?;
+                    if !res {
+                        return Err(SpError::new(
+                            PatternMatchError(*pat1.term, *e1.term).into(),
+                            (pat1.span.0, e1.span.1),
+                        ));
+                    }
+                    for (var, e) in bound_v1s {
+                        if let Some(loc) = e.is_stream() {
+                            self.eval_order.push((path.clone(), var.clone(), loc));
+                            self.mut_rec_streams.insert((path.clone(), var.clone()));
+                        }
+                        self.globals.insert((path.clone(), var), e);
+                    }
 
                     let (v2, s) = self.eval(e2.clone(), s)?;
-                    self.eval_order.push((path.clone(), y.clone()));
                     self.globals.insert((path.clone(), y.clone()), v2.clone());
-                    self.mut_rec_streams.insert((path.clone(), y), v2);
 
                     self.store = s;
                 }
@@ -183,19 +198,24 @@ impl Interpreter {
     pub fn eval_step(&mut self) -> Result<(), SpError> {
         self.step();
 
-        for (path, var) in self.eval_order.clone() {
-            // println!("{}: {}", stream, self.stream_outs.get(&stream).unwrap());
-            // println!("{}: {}", var, self.globals.get(&var).unwrap());
-            // println!("{:?}\n", self.store.now.keys());
+        for (path, var, loc) in self.eval_order.clone() {
             self.current_path = path.clone();
             let e = self
                 .globals
                 .get(&(path.clone(), var.clone()))
                 .unwrap()
                 .clone();
+            if self.mut_rec_prevs.contains_key(&loc) {
+                self.mut_rec_prevs.remove(&loc);
+            }
 
             let (e, s) = self.eval(e, self.store.clone())?;
+            let (e, temp_loc) = e.replace_stream_loc(loc).unwrap();
+            let store_val = s.later.get(&temp_loc).cloned().unwrap();
+
             self.store = s;
+            self.store.now.insert(loc, e.clone());
+            self.store.later.insert(loc, store_val);
 
             self.globals.insert((path, var), e);
         }
@@ -239,8 +259,17 @@ impl Interpreter {
                 let (_e, _s_n) = self.eval(e.clone(), s_n)?;
 
                 match _e.term.as_ref() {
-                    Location(l) => match _s_n.now.get(&l) {
-                        None => Err(SpError::new(UnboundLocationError(e_term).into(), span)),
+                    Location(l) => match self.mut_rec_prevs.get(l).cloned() {
+                        None => match _s_n.now.get(&l) {
+                            Some(term) => self.eval(
+                                term.clone(),
+                                Store {
+                                    now: _s_n.now,
+                                    later: s.later,
+                                },
+                            ),
+                            None => Err(SpError::new(UnboundLocationError(e_term).into(), span)),
+                        },
                         Some(term) => self.eval(
                             term.clone(),
                             Store {
@@ -428,13 +457,7 @@ impl Interpreter {
                 };
                 match self.globals.get(&(path.clone(), x.clone())) {
                     None => Err(SpError::new(UnboundVariableError(x).into(), span)),
-                    Some(v) => {
-                        if let Some(stream) = self.mut_rec_streams.get(&(path, x)) {
-                            Ok((stream.clone(), s))
-                        } else {
-                            Ok((v.clone(), s))
-                        }
-                    }
+                    Some(v) => Ok((v.clone(), s)),
                 }
             }
             LetIn(pat, e1, e2) => {
@@ -541,19 +564,31 @@ impl Interpreter {
 
     // Step an expression e, forward
     pub fn step(&mut self) {
-        for (var, stream) in self.mut_rec_streams.iter_mut() {
-            *stream = self.globals.get(var).unwrap().clone();
+        for (path, var, loc) in &self.eval_order {
+            let expr = self.globals.get(&(path.clone(), var.clone())).unwrap();
+            if self.mut_rec_streams.contains(&(path.clone(), var.clone())) {
+                self.mut_rec_prevs.insert(*loc, expr.clone());
+            }
+
+            let (expr, temp_loc) = expr.replace_stream_loc(*loc).unwrap();
+            let store_val = self.store.later.get(&temp_loc).cloned().unwrap();
+            self.store.later.insert(*loc, store_val);
+
+            let span = expr.span;
+            let stepped_expr =
+                SpExpr::new(Expr::Adv(SpExpr::new(Expr::Location(*loc), span)), span);
+            self.globals
+                .insert((path.clone(), var.clone()), stepped_expr);
         }
 
-        let globals = self.globals.clone();
-        for (var, expr) in globals {
-            self.globals.insert(var, expr.step_value());
-        }
         self.update_store();
     }
 
     pub fn update_store(&mut self) {
-        let to_dealloc: HashSet<u64> = self.store.now.keys().cloned().collect();
+        let mut to_dealloc: HashSet<u64> = self.store.now.keys().cloned().collect();
+        for (_, _, loc) in &self.eval_order {
+            to_dealloc.remove(loc);
+        }
         self.store.now = self.store.later.clone();
         self.store.later = HashMap::new();
 
@@ -832,7 +867,7 @@ impl Store {
 
 impl SpExpr {
     // Return head and tail of stream if the expression is a stream
-    fn is_stream(&self) -> Option<(SpExpr, SpExpr)> {
+    fn is_stream(&self) -> Option<u64> {
         use Expr::{Into, Location, Tuple};
 
         match self.term.as_ref() {
@@ -841,10 +876,11 @@ impl SpExpr {
                     if pair.len() != 2 {
                         return None;
                     }
-                    if !matches!(pair[1].term.as_ref(), Location(_)) {
-                        return None;
+                    if let Location(loc) = pair[1].term.as_ref() {
+                        Some(*loc)
+                    } else {
+                        None
                     }
-                    Some((pair[0].clone(), pair[1].clone()))
                 }
                 _ => None,
             },
@@ -852,7 +888,7 @@ impl SpExpr {
         }
     }
 
-    fn replace_stream_loc(&self, loc: u64) -> Option<SpExpr> {
+    fn replace_stream_loc(&self, loc: u64) -> Option<(SpExpr, u64)> {
         let span = self.span;
         use Expr::{Into, Location, Tuple};
         match self.term.as_ref() {
@@ -861,16 +897,20 @@ impl SpExpr {
                     if pair.len() != 2 {
                         return None;
                     }
-                    if !matches!(pair[1].term.as_ref(), Location(_)) {
+                    if let Location(l) = pair[1].term.as_ref() {
+                        Some((
+                            SpExpr::new(
+                                Into(SpExpr::new(
+                                    Tuple(vec![pair[0].clone(), SpExpr::new(Location(loc), span)]),
+                                    span,
+                                )),
+                                span,
+                            ),
+                            *l,
+                        ))
+                    } else {
                         return None;
                     }
-                    Some(SpExpr::new(
-                        Into(SpExpr::new(
-                            Tuple(vec![pair[0].clone(), SpExpr::new(Location(loc), span)]),
-                            span,
-                        )),
-                        span,
-                    ))
                 }
                 _ => None,
             },

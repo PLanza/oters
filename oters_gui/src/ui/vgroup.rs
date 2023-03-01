@@ -32,11 +32,10 @@ pub fn draw_vgroup(frame_id: i64, grp_id: i64, elems: Vec<i64>) {
             if !visible {
                 return oters_lang::export::Value::Unit;
             }
-            let g_pos = (g_pos.0 + frame.pos.0, g_pos.1 + frame.pos.1);
             match align {
-                Alignment::Left => draw_left(g_pos, *g_size, frame, elems),
-                Alignment::Right => draw_right(g_pos, *g_size, frame, elems),
-                _ => draw_left(g_pos, *g_size, frame, elems),
+                Alignment::Left => draw_left(*g_pos, *g_size, frame, elems),
+                Alignment::Right => draw_right(*g_pos, *g_size, frame, elems),
+                _ => draw_left(*g_pos, *g_size, frame, elems),
             }
         }
         _ => panic!("Expected a vgroup"),

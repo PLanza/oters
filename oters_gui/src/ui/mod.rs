@@ -66,6 +66,7 @@ pub fn attach_root(frame_id: i64, elem_id: i64) {
     frame.root = elem_id;
     let elem = &mut frame.elems[elem_id as usize];
     elem.visible = true;
+    elem.pos = frame.pos;
 }
 
 pub mod button;

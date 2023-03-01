@@ -266,12 +266,12 @@ impl ProgramChecker {
                     self.insert_checked_expr(LetBinding::Let(pat.clone(), e), &path);
                 }
                 PExpr::LetAndWith(pat1, e1, pat2, e2, e3) => {
-                    let (x, y) = match (pat1.term.as_ref(), pat2.term.as_ref()) {
-                        (Pattern::Var(x, _), Pattern::Var(y, _)) => (x, y),
+                    let y = match pat2.term.as_ref() {
+                        Pattern::Var(y, _) => y,
                         _ => {
                             return Err(SpError::new(
                                 TypeError::InvalidMutuallyRecursiveDefinition(
-                                    *SpExpr::from_pexpr(e1.clone())?.term,
+                                    *SpExpr::from_pexpr(e2.clone())?.term,
                                 )
                                 .into(),
                                 span,
@@ -286,34 +286,31 @@ impl ProgramChecker {
                     let mut t2 = self.infer(&e3, VarContext::new())?;
                     self.unify_subs().map_err(|e| SpError::new(e, e3.span))?;
                     t2 = t2.apply_subs(&self.substitutions);
-                    println!("{t2}");
 
-                    // Γ, y∶ Str<𝑡₂> ⊢ 𝑒₁ ∶ Str<𝑡₁>
+                    // Γ, y∶ Str<𝑡₂> ⊢ 𝑒₁ ∶ 𝑡₁
                     let mut e1 = SpExpr::from_pexpr(e1.clone())?;
 
-                    let fix_var = format!("rec_{}", x);
-                    let (is_rec, rec_e) = e1.clone().substitute(
-                        &x,
-                        &SpExpr::new(
-                            Expr::Adv(SpExpr::new(
-                                Expr::Unbox(SpExpr::new(
-                                    Expr::Var(Vec::new(), fix_var.clone()),
+                    for var in pat1.vars() {
+                        let fix_var = format!("rec_{}", var);
+                        let (is_rec, rec_e) = e1.clone().substitute(
+                            &var,
+                            &SpExpr::new(
+                                Expr::Adv(SpExpr::new(
+                                    Expr::Unbox(SpExpr::new(
+                                        Expr::Var(Vec::new(), fix_var.clone()),
+                                        e1.span,
+                                    )),
                                     e1.span,
                                 )),
                                 e1.span,
-                            )),
-                            e1.span,
-                        ),
-                    );
-                    println!("{is_rec}");
-                    e1 = if is_rec {
-                        SpExpr::new(Expr::Fix(fix_var, rec_e), e1.span)
-                    } else {
-                        return Err(SpError::new(
-                            TypeError::InvalidMutuallyRecursiveDefinition(*e1.term).into(),
-                            e1.span,
-                        ));
-                    };
+                            ),
+                        );
+                        e1 = if is_rec {
+                            SpExpr::new(Expr::Fix(fix_var, rec_e), e1.span)
+                        } else {
+                            e1
+                        };
+                    }
                     e1 = e1.single_tick(0);
                     insert_dec(
                         &mut self.value_decs,
@@ -328,40 +325,33 @@ impl ProgramChecker {
                         &path,
                     );
 
-                    let mut t1 = self.infer(&e1, VarContext::new())?;
+                    let t1 = self.infer(&e1, VarContext::new())?;
+                    let (t_pat1, vars) = self.check_pattern(pat1.clone())?;
+
+                    let mut subs = unify(VecDeque::from([(t1.clone(), t_pat1)]))
+                        .map_err(|e| SpError::new(e, span))?;
+                    self.substitutions.append(&mut subs);
                     self.unify_subs().map_err(|e| SpError::new(e, e1.span))?;
-                    t1 = t1.apply_subs(&self.substitutions);
-                    t1.well_formed(TypeContext::new())
-                        .map_err(|e| SpError::new(e, e1.span))?;
 
-                    match t1.clone() {
-                        Type::Fix(_, tup) => match *tup {
-                            Type::Tuple(ts) => {
-                                if !matches!(*ts[1], Type::FixVar(_)) {
-                                    return Err(SpError::new(
-                                        TypeError::InvalidMutuallyRecursiveDefinition(*e1.term)
-                                            .into(),
-                                        e1.span,
-                                    ));
-                                }
-                            }
-                            _ => {
-                                return Err(SpError::new(
-                                    TypeError::InvalidMutuallyRecursiveDefinition(*e1.term).into(),
-                                    e1.span,
-                                ))
-                            }
-                        },
-                        _ => {
-                            return Err(SpError::new(
-                                TypeError::InvalidMutuallyRecursiveDefinition(*e1.term).into(),
-                                e1.span,
-                            ))
-                        }
+                    for (var, t) in vars {
+                        let mut t = t.apply_subs(&self.substitutions);
+
+                        // Convert free variables to generics
+                        let free_vars = t.get_free_vars();
+
+                        t = if !free_vars.is_empty() {
+                            Type::Generic(free_vars.into_iter().collect(), Box::new(t))
+                        } else {
+                            t
+                        };
+
+                        t.well_formed(TypeContext::new())
+                            .map_err(|e| SpError::new(e, e1.span))?;
+
+                        insert_dec(&mut self.value_decs, var, t, &path);
                     }
-                    insert_dec(&mut self.value_decs, x.clone(), t1, &path);
 
-                    // Γ, x∶ Str<𝑡₁> ⊢ 𝑒₂ ∶ Str<𝑡₂>
+                    // Γ, x∶ 𝑡₁ ⊢ 𝑒₂ ∶ Str<𝑡₂>
                     let mut e2 = SpExpr::from_pexpr(e2.clone())?;
                     let fix_var = format!("rec_{}", y);
                     let (is_rec, rec_e) = e2.clone().substitute(
@@ -380,10 +370,7 @@ impl ProgramChecker {
                     e2 = if is_rec {
                         SpExpr::new(Expr::Fix(fix_var, rec_e), e2.span)
                     } else {
-                        return Err(SpError::new(
-                            TypeError::InvalidMutuallyRecursiveDefinition(*e2.term).into(),
-                            e2.span,
-                        ));
+                        e2
                     };
 
                     e2 = e2.single_tick(0);
@@ -411,7 +398,7 @@ impl ProgramChecker {
                     self.substitutions = Vec::new();
 
                     self.insert_checked_expr(
-                        LetBinding::LetAndWith(x.clone(), e1, y.clone(), e2, e3),
+                        LetBinding::LetAndWith(pat1.clone(), e1, y.clone(), e2, e3),
                         &path,
                     );
                 }

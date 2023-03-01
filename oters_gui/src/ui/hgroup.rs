@@ -33,11 +33,10 @@ pub fn draw_hgroup(frame_id: i64, grp_id: i64, elems: Vec<i64>) {
             if !visible {
                 return oters_lang::export::Value::Unit;
             }
-            let g_pos = (g_pos.0 + frame.pos.0, g_pos.1 + frame.pos.1);
             match align {
-                Alignment::Top => draw_top(g_pos, *g_size, frame, elems),
-                Alignment::Bottom => draw_bottom(g_pos, *g_size, frame, elems),
-                _ => draw_top(g_pos, *g_size, frame, elems),
+                Alignment::Top => draw_top(*g_pos, *g_size, frame, elems),
+                Alignment::Bottom => draw_bottom(*g_pos, *g_size, frame, elems),
+                _ => draw_top(*g_pos, *g_size, frame, elems),
             }
         }
         _ => panic!("Expected a hgroup"),
