@@ -1,6 +1,0 @@
-use std::stream::head
-
-let print_millis = ({
-  std::print_int (head std::millis);
-  std::print_string "\n"
-}) << @print_millis

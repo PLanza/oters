@@ -455,9 +455,9 @@ impl Interpreter {
                 } else {
                     path
                 };
-                match self.globals.get(&(path.clone(), x.clone())) {
+                match self.globals.get(&(path.clone(), x.clone())).cloned() {
                     None => Err(SpError::new(UnboundVariableError(x).into(), span)),
-                    Some(v) => Ok((v.clone(), s)),
+                    Some(v) => self.eval(v, s),
                 }
             }
             LetIn(pat, e1, e2) => {

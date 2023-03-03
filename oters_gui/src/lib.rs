@@ -2,11 +2,11 @@ use std::fs::read_to_string;
 use std::path::Path;
 
 use anyhow::Result;
-use oters_lang as oters;
 use oters::export::{export_list, ExportEnums, ExportFns, ExportStructs, PathExportFns};
 use oters::parser::ast::PExpr;
 use oters::parser::span::Spanned;
 use oters::types::check::ProgramChecker;
+use oters_lang as oters;
 pub mod color;
 pub mod image;
 pub mod input;
@@ -88,6 +88,9 @@ pub async fn run_loop(
     let mut interpreter = oters_lang::interpret::Interpreter::new(exprs, export_fns, file_stems)
         .map_err(|e| e.to_anyhow(&source))?;
 
+    let skin = set_style();
+    macroquad::ui::root_ui().push_skin(&skin);
+
     loop {
         macroquad::prelude::clear_background(macroquad::color::WHITE);
 
@@ -116,6 +119,38 @@ pub fn run(
             macroquad::logging::error!("Error: {:?}", err);
         }
     });
+}
+
+fn set_style() -> macroquad::ui::Skin {
+    let mut style_builder = macroquad::ui::root_ui().style_builder();
+    let font = include_bytes!("../assets/Inter-Regular.ttf");
+    style_builder = style_builder.font(font).unwrap();
+    style_builder = style_builder.font_size(18);
+
+    use macroquad::color::Color;
+    style_builder = style_builder.color(macroquad::color_u8!(220, 220, 220, 255));
+    style_builder = style_builder.color_hovered(macroquad::color_u8!(170, 170, 170, 255));
+    style_builder = style_builder.color_clicked(macroquad::color_u8!(150, 150, 150, 255));
+    style_builder = style_builder.color_selected(macroquad::color_u8!(150, 150, 150, 255));
+    style_builder = style_builder.color_selected_hovered(macroquad::color_u8!(170, 170, 170, 255));
+
+    let style = style_builder.build();
+
+    let mut skin = macroquad::ui::root_ui().default_skin().clone();
+    skin.label_style = style.clone();
+    skin.button_style = style.clone();
+    skin.checkbox_style = style.clone();
+
+    let mut editbox_style_builder = macroquad::ui::root_ui().style_builder();
+    editbox_style_builder = editbox_style_builder.font(font).unwrap();
+
+    editbox_style_builder = editbox_style_builder.color(macroquad::color_u8!(233, 233, 233, 255));
+    editbox_style_builder =
+        editbox_style_builder.color_clicked(macroquad::color_u8!(244, 244, 244, 255));
+    let editbox_style = editbox_style_builder.build();
+    skin.editbox_style = editbox_style;
+
+    skin
 }
 
 fn get_exports(

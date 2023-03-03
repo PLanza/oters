@@ -4,7 +4,7 @@ use gui::widget::*
 use gui::color::*
 use gui::shape::*
 
-let ui = gui::frame ((100,50), (250, 100))
+let ui = gui::frame (100,50)
 
 let (btn_id, btn_stream) = button ui (100, 50) (const "Click me!")
 

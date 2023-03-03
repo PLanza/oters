@@ -15,7 +15,7 @@ fn print_int(i: i64) {
 export_list!();
 
 fn main() -> Result<()> {
-    let source = std::fs::read_to_string(std::path::Path::new("oters/examples/ex2.otrs"))?;
+    let source = std::fs::read_to_string(std::path::Path::new("examples/ex2.otrs"))?;
     let program = parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let mut checker = ProgramChecker::new();
 

@@ -14,7 +14,6 @@ pub struct Frame {
     root: i64,
     elems: Vec<UIInstance>,
     pos: (u32, u32),
-    size: (u32, u32),
 }
 
 #[derive(Debug, Clone)]
@@ -47,13 +46,12 @@ pub enum Alignment {
 }
 
 #[export_oters]
-pub fn frame(pos: (i64, i64), size: (i64, i64)) -> i64 {
+pub fn frame(pos: (i64, i64)) -> i64 {
     let frames = &mut FRAMES.lock().unwrap();
     let frame = Frame {
         root: 0,
         elems: Vec::new(),
         pos: (pos.0 as u32, pos.1 as u32),
-        size: (size.0 as u32, size.1 as u32),
     };
     let id = frames.len();
     frames.push(frame);

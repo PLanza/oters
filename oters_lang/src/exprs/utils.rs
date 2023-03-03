@@ -20,13 +20,17 @@ impl Display for Expr {
             Out(e) => write!(f, "out({})", e.term),
             Into(e) => write!(f, "into({})", e.term),
             List(v) => {
-                let mut str = "[".to_string();
-                for i in 0..v.len() - 1 {
-                    str.push_str(&format!("{}, ", v[i].term));
-                }
+                if v.len() == 0 {
+                    write!(f, "[]")
+                } else {
+                    let mut str = "[".to_string();
+                    for i in 0..v.len() - 1 {
+                        str.push_str(&format!("{}, ", v[i].term));
+                    }
 
-                str.push_str(&format!("{}]", v[v.len() - 1].term));
-                write!(f, "{}", str)
+                    str.push_str(&format!("{}]", v[v.len() - 1].term));
+                    write!(f, "{}", str)
+                }
             }
             Tuple(v) => {
                 let mut str = "(".to_string();

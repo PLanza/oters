@@ -44,11 +44,11 @@ pub fn draw_hgroup(frame_id: i64, grp_id: i64, elems: Vec<i64>) {
 }
 
 fn draw_top(g_pos: (u32, u32), g_size: (u32, u32), frame: &mut Frame, elems: Vec<i64>) {
-    let max_x = g_pos.0 + g_size.0 - PADDING;
-    let max_y = g_pos.1 + g_size.1 - PADDING;
+    let max_x = g_pos.0 + g_size.0;
+    let max_y = g_pos.1 + g_size.1;
 
-    let mut x = g_pos.0 + PADDING;
-    let mut y = g_pos.1 + PADDING;
+    let mut x = g_pos.0;
+    let mut y = g_pos.1;
     let mut dx = 0;
 
     for e_id in elems {
@@ -70,7 +70,7 @@ fn draw_top(g_pos: (u32, u32), g_size: (u32, u32), frame: &mut Frame, elems: Vec
             }
         } else {
             if !(g_pos.1 + PADDING + elem.size.1 > max_y) {
-                y = g_pos.1 + PADDING;
+                y = g_pos.1;
                 x += dx;
                 dx = 0;
                 elem.pos = (x, y);
@@ -83,11 +83,11 @@ fn draw_top(g_pos: (u32, u32), g_size: (u32, u32), frame: &mut Frame, elems: Vec
 }
 
 fn draw_bottom(g_pos: (u32, u32), g_size: (u32, u32), frame: &mut Frame, elems: Vec<i64>) {
-    let max_x = g_pos.0 + g_size.0 - PADDING;
-    let min_y = g_pos.1 + PADDING;
+    let max_x = g_pos.0 + g_size.0;
+    let min_y = g_pos.1;
 
-    let mut x = g_pos.0 + PADDING;
-    let mut y = g_pos.1 + g_size.1 - PADDING;
+    let mut x = g_pos.0;
+    let mut y = g_pos.1 + g_size.1;
     let mut dx = 0;
 
     for e_id in elems {
@@ -109,7 +109,7 @@ fn draw_bottom(g_pos: (u32, u32), g_size: (u32, u32), frame: &mut Frame, elems: 
             }
         } else {
             if !(g_pos.1 + g_size.1 - PADDING - elem.size.1 < min_y) {
-                y = g_pos.1 + g_size.1 - PADDING;
+                y = g_pos.1 + g_size.1;
                 x += dx;
                 dx = 0;
                 elem.pos = (x, y - elem.size.1);

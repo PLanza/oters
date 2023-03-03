@@ -3,7 +3,7 @@ use std::stream::const
 use gui::widget::*
 use gui::window::set_bg_color
 
-let menu = gui::frame ((100,50), (200, 500))
+let menu = gui::frame (100,50)
 
 let (btn_id, btn_stream) = button menu (100, 50) (const "Click me!") 
 let (cbx_id, cbx_stream) = checkbox menu (30, 30)

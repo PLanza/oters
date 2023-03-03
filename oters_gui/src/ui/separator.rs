@@ -7,12 +7,11 @@ use super::{UIInstance, UIType, FRAMES};
 #[export_oters]
 pub fn create_separator(frame_id: i64) -> i64 {
     let frame = &mut FRAMES.lock().unwrap()[frame_id as usize];
-    let size = frame.size.clone();
     let id = frame.elems.len();
     frame.elems.push(UIInstance {
         ty: UIType::Separator,
         pos: (0, 0),
-        size,
+        size: (0, 0),
         visible: false,
     });
     id as i64

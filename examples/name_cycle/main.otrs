@@ -21,7 +21,7 @@ let on_5_seconds = {
 
 use data::usernames
 
-let ui = gui::frame ((100,50), (250, 100))
+let ui = gui::frame (100,50)
 
 let (up_id, up_stream) = button ui (100, 50) (const "UP")
 let (down_id, down_stream) = button ui (100, 50) (const "DOWN")
