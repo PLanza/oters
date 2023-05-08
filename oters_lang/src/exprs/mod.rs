@@ -65,7 +65,7 @@ pub enum Expr {
     Match(SpExpr, Vec<(Spanned<Pattern>, SpExpr)>),
     Var(Vec<String>, String),
     LetIn(Spanned<Pattern>, SpExpr, SpExpr),
-    Location(u64), // Only created by the interpreter
+    Location(u32), // Only created by the interpreter
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -221,30 +221,7 @@ impl SpExpr {
                             };
                         }
 
-                        match pat.term.as_ref() {
-                            Pattern::Var(var, _) => {
-                                // If e is "traditionally" recursive in the same time step
-                                if matches!(expr.term.as_ref(), Expr::Fn(..))
-                                    && expr.is_static_recursive(&var)
-                                {
-                                    return Ok(SpExpr::new(
-                                        Expr::LetIn(
-                                            pat.clone(),
-                                            expr.clone(),
-                                            SpExpr::from_pexpr(Spanned {
-                                                term: Box::new(PExpr::Block(tail)),
-                                                span: (expr.span.1, span.0),
-                                            })?,
-                                        ),
-                                        span,
-                                    ));
-                                }
-                            }
-                            _ => (),
-                        };
-
                         if is_rec {
-                            // ...but only if they're guarded recursive expressions
                             Ok(SpExpr::new(
                                 Expr::LetIn(
                                     pat.clone(),
@@ -759,55 +736,6 @@ impl SpExpr {
                 }
             }
             Location(_) => unreachable!("Locations should only appear during interpretation"),
-        }
-    }
-
-    // If a function is recursive in one timestep
-    pub fn is_static_recursive(&self, name: &String) -> bool {
-        use Expr::*;
-        match self.term.as_ref() {
-            Bool(_) | Int(_) | Float(_) | String(_) | Unit | Location(_) => false,
-            Delay(_) | Stable(_) | Adv(_) | Out(_) | Into(_) | Fix(..) => false,
-            BinOp(e1, _, e2) => e1.is_static_recursive(name) || e2.is_static_recursive(name),
-            UnOp(_, e) => e.is_static_recursive(name),
-            Unbox(e) => e.is_static_recursive(name),
-            List(es) => es.iter().fold(false, |mut acc, e| {
-                acc = acc || e.is_static_recursive(name);
-                acc
-            }),
-            Tuple(es) => es.iter().fold(false, |mut acc, e| {
-                acc = acc || e.is_static_recursive(name);
-                acc
-            }),
-            Struct(_, _, fs) => fs.iter().fold(false, |mut acc, f| {
-                acc = acc || f.1.is_static_recursive(name);
-                acc
-            }),
-            Variant(_, _, o) => match o {
-                None => false,
-                Some(e) => e.is_static_recursive(name),
-            },
-            Fn(pat, e) => !pat.contains(name) && e.is_static_recursive(name),
-            If(e1, e2, e3) => {
-                e1.is_static_recursive(name)
-                    || e2.is_static_recursive(name)
-                    || e3.is_static_recursive(name)
-            }
-            Seq(e1, e2) => e1.is_static_recursive(name) || e2.is_static_recursive(name),
-            App(e1, e2) => e1.is_static_recursive(name) || e2.is_static_recursive(name),
-            ProjStruct(e, _) => e.is_static_recursive(name),
-            Match(e, ps) => {
-                e.is_static_recursive(name)
-                    || ps.iter().fold(false, |mut acc, p| {
-                        acc = acc || (!p.0.contains(name) && p.1.is_static_recursive(name));
-                        acc
-                    })
-            }
-            Var(_, var) => var == name,
-            LetIn(pat, e1, e2) => {
-                !(pat.contains(name))
-                    && (e1.is_static_recursive(name) || e2.is_static_recursive(name))
-            }
         }
     }
 }

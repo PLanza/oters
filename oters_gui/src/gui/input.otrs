@@ -1,0 +1,8 @@
+let get_keypressed_str = fn key -> (is_key_pressed key) << @(get_keypressed_str key)
+
+let get_mousepressed_str = fn btn -> (is_mouse_pressed btn) << @(get_mousepressed_str btn)
+
+let mouse_pos_str = fn () -> {
+  let stream = (gui::input::mouse_pos ()) << @stream;
+  stream
+}

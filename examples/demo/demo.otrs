@@ -36,3 +36,13 @@ let circle_color =
     blue) << @circle_color
 
 let circle = (draw_shape (Shape::Circle((200,200), 30, head circle_color))) << @circle
+
+let print_on_btn = (if head btn_stream then (print_message "Button Clicked!") else ()) << @print_on_btn
+
+let mouse_circle = (draw_shape (
+  Shape::Circle(
+    head (gui::input::mouse_pos_str ()),
+    10,
+    red
+  ))) << @mouse_circle
+

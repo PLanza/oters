@@ -5,13 +5,13 @@ type Event<A> = Stream<Option<A>>
 let never = Option::None << @never
 
 let switch = fn (x << xs) (e << es) -> 
-  match e with {
+  match e {
     Option::None => x << @(switch !@xs !@es),
     Option::Some (a << as) => a << @(switch !@as !@es)
   }
 
 let switch_trans' = fn (a << as) (e << es) bs -> 
-  match e with {
+  match e {
     Option::None => a << @(switch_trans' !@as !@es !@(std::stream::tail bs)),
     Option::Some f => {
       let (b' << bs') = f bs;

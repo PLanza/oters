@@ -16,7 +16,7 @@ impl SpError {
 
         let mut line_number = 1;
         let mut line_start = 0;
-        let mut line_end = 0;
+        let mut line_end = source.clone().as_bytes().len() - 1;
 
         // The token's position within its line by number of characters
         let mut token_pos = 0;

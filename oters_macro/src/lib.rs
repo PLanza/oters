@@ -270,7 +270,7 @@ fn get_exports() -> (TokenStream2, TokenStream2, TokenStream2) {
 
             (
                 name,
-                quote!(::std::collections::HashMap::from([#((#field_names.to_string(), std::boxed::Box::new(#field_tys))),*])),
+                quote!(::std::collections::HashMap::from([#((#field_names.to_string(), ::std::boxed::Box::new(#field_tys))),*])),
             )
         })
         .collect();
@@ -289,7 +289,7 @@ fn get_exports() -> (TokenStream2, TokenStream2, TokenStream2) {
                             None => quote!(None),
                             Some(t) => {
                                 let t = t.to_type();
-                                quote!(Some(std::boxed::Box::new(#t)))
+                                quote!(Some(::std::boxed::Box::new(#t)))
                             }
                         },
                     )
@@ -391,8 +391,8 @@ fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::To
             quote!(oters::Value::#ret_ty(
                 #e
                 .into_iter()
-                .map(|v| std::boxed::Box::new(#inner_val))
-                .collect::<Vec<std::boxed::Box<oters::Value>>>()
+                .map(|v| ::std::boxed::Box::new(#inner_val))
+                .collect::<Vec<::std::boxed::Box<oters::Value>>>()
             ))
         }
         ValueType::Tuple(inners) => {
@@ -402,7 +402,7 @@ fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::To
                 inner_vals.push(to_val(quote!(#e.#index), *inner_ty.clone()))
             }
             quote!(oters::Value::#ret_ty(
-                vec![#(std::boxed::Box::new(#inner_vals)),*]
+                vec![#(::std::boxed::Box::new(#inner_vals)),*]
             ))
         }
         ValueType::Unit => {
@@ -425,20 +425,41 @@ fn to_val(e: proc_macro2::TokenStream, return_val: ValueType) -> proc_macro2::To
                 let __struct = #e;
                 oters::Value::#ret_ty(
                     #name.to_string(),
-                    ::std::collections::HashMap::from([#((#fields.to_string(), std::boxed::Box::new(#field_vals))),*])
+                    ::std::collections::HashMap::from([#((#fields.to_string(), ::std::boxed::Box::new(#field_vals))),*])
                 )
             }}
         }
         ValueType::Enum(name) => {
             let map = EXPORT_ENUMS.lock().unwrap().get(name).unwrap().clone();
+            let enum_ident = Ident::new(&name, Span::call_site().into());
             let mut variant_arms = Vec::new();
             for (variant, opt) in map {
                 let variant_ident = Ident::new(&variant, Span::call_site().into());
                 variant_arms.push(match opt {
-                    None => quote!(#variant_ident => oters::Value::#ret_ty(#variant.to_string(), None)),
+                    None => quote!(#enum_ident::#variant_ident => oters::Value::#ret_ty(#variant.to_string(), None)),
                     Some(val_ty) => {
-                        let val = to_val(quote!(__val), val_ty);
-                        quote!(#variant_ident(__val) => oters::Value::#ret_ty(#variant.to_string(), Some(std::boxed::Box::new(#val))))
+                        match val_ty.clone() {
+                            ValueType::Tuple(val_tys) => {
+                                let mut vars = Vec::new();
+                                let mut vals = Vec::new();
+                                for (i, inner_ty) in val_tys.into_iter().enumerate() {
+                                    let stream: proc_macro2::TokenStream = format!("__val{i}").parse().unwrap();
+                                    let val = to_val(stream.clone(), *inner_ty);
+
+                                    vars.push(stream);
+                                    vals.push(val);
+                                }
+                                quote!(#enum_ident::#variant_ident(#(#vars),*) => oters::Value::#ret_ty(#variant.to_string(), 
+                                            Some(::std::boxed::Box::new(
+                                                    oters::Value::Tuple(vec![#(::std::boxed::Box::new(#vals)),*])
+                                                ))
+                                ))
+                            },
+                            val_ty => { 
+                                let val = to_val(quote!(__val), val_ty);
+                                quote!(#enum_ident::#variant_ident(__val) => oters::Value::#ret_ty(#variant.to_string(), Some(::std::boxed::Box::new(#val))))
+                            }
+                        }
                     }
                 });
             }

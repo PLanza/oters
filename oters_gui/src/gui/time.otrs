@@ -1,2 +1,11 @@
 let draw_fps = fn () -> draw_fps_once () << @(draw_fps ())
 
+let current_time_str = fn () -> {
+  let stream = (current_time ()) << @stream;
+  stream
+}
+
+let time_since_start_str = fn () -> {
+  let stream = (time_since_start ()) << @stream;
+  stream
+}

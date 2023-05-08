@@ -1,4 +1,4 @@
-use gui::Color
+use gui::color::Color
 
 let dark_blue  = Color{ r:  33, g: 134, b: 181, a: 255}
 let light_blue = Color{ r:  82, g: 227, b: 225, a: 255}

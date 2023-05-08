@@ -261,14 +261,14 @@ impl ValueType {
             String => quote!(#path::String),
             List(t) => {
                 let t = t.to_type();
-                quote!(#path::List(std::boxed::Box::new(#t)))
+                quote!(#path::List(::std::boxed::Box::new(#t)))
             }
             Tuple(ts) => {
                 let ts: Vec<proc_macro2::TokenStream> = ts
                     .into_iter()
                     .map(|t| {
                         let t = t.to_type();
-                        quote!(std::boxed::Box::new(#t))
+                        quote!(::std::boxed::Box::new(#t))
                     })
                     .collect();
 
@@ -286,7 +286,7 @@ impl ValueType {
                     .into_iter()
                     .map(|(f, t)| {
                         let t = t.to_type();
-                        quote!((#f.to_string(), std::boxed::Box::new(#t)))
+                        quote!((#f.to_string(), ::std::boxed::Box::new(#t)))
                     })
                     .collect();
 
@@ -307,7 +307,7 @@ impl ValueType {
                             None => quote!(None),
                             Some(t) => {
                                 let t = t.to_type();
-                                quote!(Some(std::boxed::Box::new(#t)))
+                                quote!(Some(::std::boxed::Box::new(#t)))
                             }
                         };
                         quote!((#v.to_string(), #t))

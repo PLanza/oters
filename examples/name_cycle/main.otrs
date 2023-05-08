@@ -2,12 +2,6 @@ use std::stream::const
 use std::stream::head
 use gui::widget::*
 
-let get_nth = fn list n -> 
-  match (list, n) with {
-    (x:xs, 0) => x,
-    (x:xs, n) => get_nth xs (n - 1),
-  }
-
 let on_5_seconds = {
   let aux = fn prev -> {
     let second = gui::time::timestamp_millis () / 5000;
@@ -40,7 +34,7 @@ let index = {
   aux 0
 }
 
-let (lab_id, lab_stream) = label ui (100, 100) (std::stream::map #(get_nth usernames) index)
+let (lab_id, lab_stream) = label ui (100, 100) (std::stream::map #(fn n -> data::get_nth (usernames, n)) index)
 let (grp_id, grp_stream) = hgroup 
   ui 
   (300,150) 

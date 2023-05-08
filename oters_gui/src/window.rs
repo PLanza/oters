@@ -9,10 +9,10 @@ use std::sync::Mutex;
 
 lazy_static! {
     pub static ref BACKGROUND_COLOR: Mutex<Color> = Mutex::new(Color {
-        r: 0,
-        g: 0,
-        b: 0,
-        a: 0,
+        r: 255,
+        g: 255,
+        b: 255,
+        a: 255,
     });
 }
 

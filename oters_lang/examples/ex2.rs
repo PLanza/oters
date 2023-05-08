@@ -1,4 +1,5 @@
 extern crate oters_lang;
+
 use oters_lang as oters;
 
 use anyhow::Result;
@@ -12,12 +13,18 @@ fn print_int(i: i64) {
     println!("{}", i);
 }
 
+#[export_oters]
+fn contains(xs: Vec<i64>, v: i64) -> bool {
+    xs.into_iter().find(|x| x == &v).is_some()
+}
+
 export_list!();
 
 fn main() -> Result<()> {
     let source = std::fs::read_to_string(std::path::Path::new("examples/ex2.otrs"))?;
     let program = parser::parse_source(source.clone()).map_err(|e| e.to_anyhow(&source))?;
     let mut checker = ProgramChecker::new();
+    println!("{:?}", EXPORT_FNS.clone());
 
     checker
         .type_check_program(

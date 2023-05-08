@@ -11,7 +11,7 @@ let (lab_id, lab_stream) = label menu (180, 50) (const "This is a label")
 let (sep_id, sep_stream) = separator menu 
 let (tbx_id, tbx_stream) = textbox menu (150, 80)
 
-let otter_img = gui::image::img_from_file "assets/otter.png"
+let otter_img = gui::image::img_from_file "examples/assets/otter.png"
 let (img_id, img_stream) = image menu (80, 80) (const otter_img)
 
 let grp_elems = const [btn_id, sep_id, cbx_id, lab_id, tbx_id, img_id]

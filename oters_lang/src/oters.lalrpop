@@ -396,7 +396,7 @@ MatchItem: (SpPattern, SpPExpr) = {
 };
 
 MatchExpr: PExpr = {
-  "match" <e: SpExpr> "with" "{" <v: Comma<MatchItem>> "}" => PExpr::Match(e, v)
+  "match" <e: SpExpr> "{" <v: Comma<MatchItem>> "}" => PExpr::Match(e, v)
 };
 
 pub Expr: PExpr = {

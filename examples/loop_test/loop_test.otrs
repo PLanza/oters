@@ -1,11 +1,4 @@
-use gui::widget::*
-use std::stream::map
-use std::stream::fold
-
-let ui = gui::frame (0, 0)
-
-let (btn_id, btn_stream) = button ui (100, 75) (map #(fn i -> std::int_to_string i) presses) 
-and presses = fold #(fn acc b -> if b then acc + 1 else acc) 0 btn_stream
-with 0
-
-let _ = gui::attach_root (ui, btn_id)
+let leaky_map = fn f -> {
+  let aux = fn (x << xs) -> (f x) << @(leaky_map f !@xs);
+  aux
+} 

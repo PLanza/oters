@@ -92,8 +92,12 @@ pub async fn run_loop(
     macroquad::ui::root_ui().push_skin(&skin);
 
     loop {
-        macroquad::prelude::clear_background(macroquad::color::WHITE);
-
+        macroquad::prelude::clear_background(
+            crate::window::BACKGROUND_COLOR
+                .lock()
+                .unwrap()
+                .to_macroquad(),
+        );
         interpreter.eval_step().map_err(|e| e.to_anyhow(&source))?;
         macroquad::prelude::next_frame().await
     }
@@ -254,7 +258,7 @@ fn load_gui_lib(checker: &mut ProgramChecker) -> Result<oters_lang::export::Path
         "mouse_wheel",
     ];
     // Plus enum Shape
-    let gui_shape = vec!["draw_shape"];
+    let gui_shape = vec!["draw_shape", "draw_batch", "pos_squares"];
     let gui_window = vec![
         "set_bg_color",
         "window_dims",

@@ -1,0 +1,98 @@
+use std::stream::const
+use std::stream::head
+
+use gui::widget::*
+use gui::window::set_bg_color
+use gui::shape::*
+
+use gui::image::*
+
+use colors::*
+
+let menu = gui::frame (330, 735)
+
+let (red_id, red_str) = button menu (30, 30) (const "") 
+let (orng_id, orng_str) = button menu (30, 30) (const "") 
+let (ylw_id, ylw_str) = button menu (30, 30) (const "") 
+let (grn_id, grn_str) = button menu (30, 30) (const "") 
+let (lblu_id, lblu_str) = button menu (30, 30) (const "") 
+let (dblu_id, dblu_str) = button menu (30, 30) (const "") 
+let (prp_id, prp_str) = button menu (30, 30) (const "") 
+let (bwn_id, bwn_str) = button menu (30, 30) (const "") 
+let (wht_id, wht_str) = button menu (30, 30) (const "") 
+let (blk_id, blk_str) = button menu (30, 30) (const "") 
+
+let colors = [red_id, dblu_id, orng_id, prp_id, ylw_id, bwn_id, grn_id, wht_id, lblu_id, blk_id ]
+
+let (colors_id, colors_str) = hgroup menu (200, 80) (const colors) (Alignment::Top)
+
+let (sep_id, sep_str) = separator menu
+let (bckgnd_id, bckgnd_str) = button menu (150, 70) (const "Background")
+let (clear_id, clear_str) = button menu (150, 70) (const "Clear")
+
+let (full_id, full_str) = hgroup menu (1000, 80) (const [colors_id, sep_id, bckgnd_id, clear_id]) (Alignment::Top)
+
+let _ = gui::attach_root (menu, full_id)
+
+let curr_color = {
+  let color_clk = fn prev -> 
+    if head red_str then
+      prev << @(color_clk colors::red)
+    else if head orng_str then
+      prev << @(color_clk colors::orange)
+    else if head ylw_str then
+      prev << @(color_clk colors::yellow)
+    else if head grn_str then
+      prev << @(color_clk colors::green)
+    else if head lblu_str then
+      prev << @(color_clk colors::light_blue)
+    else if head dblu_str then
+      prev << @(color_clk colors::dark_blue)
+    else if head prp_str then
+      prev << @(color_clk colors::purple)
+    else if head bwn_str then
+      prev << @(color_clk colors::brown)
+    else if head wht_str then
+      prev << @(color_clk colors::white)
+    else if head blk_str then
+      prev << @(color_clk colors::black)
+    else
+      prev << @(color_clk prev);
+  color_clk colors::red
+}
+let mouse_pos = gui::input::mouse_pos_str ()
+let cursor = (draw_shape 
+    (Shape::Circle(head (mouse_pos), 3, head curr_color))
+ ) << @cursor
+
+let menu_line = (draw_shape 
+    (Shape::Line((0, 720), (1080,720), 2, colors::black))
+ ) << @menu_line
+
+let prev_mouse_pos = std::stream::shift (0,0) mouse_pos
+let marks = fn prev -> 
+  if head clear_str then
+    prev << @(marks [])
+  else if gui::input::is_mouse_down (gui::input::MouseButton::Left) then
+    prev << @(marks (Shape::Line(head prev_mouse_pos, head mouse_pos, 3, head curr_color):prev))
+  else 
+    prev << @(marks prev)
+let draw_marks = std::stream::map #(fn ms -> draw_batch ms) (marks [])
+
+let fill_bckgnd = std::stream::map #(fn b -> if b then set_bg_color (head curr_color) else ()) bckgnd_str
+
+let draw_boxes = fn () -> {
+  draw_shape (Shape::Rect((325, 730), (40, 40), colors::red));
+  draw_shape (Shape::Rect((365, 730), (40, 40), colors::orange));
+  draw_shape (Shape::Rect((405, 730), (40, 40), colors::yellow));
+  draw_shape (Shape::Rect((445, 730), (40, 40), colors::green));
+  draw_shape (Shape::Rect((485, 730), (40, 40), colors::light_blue));
+  draw_shape (Shape::Rect((325, 770), (40, 40), colors::dark_blue));
+  draw_shape (Shape::Rect((365, 770), (40, 40), colors::purple));
+  draw_shape (Shape::Rect((405, 770), (40, 40), colors::brown));
+  draw_shape (Shape::Rect((445, 770), (40, 40), colors::white));
+  draw_shape (Shape::Rect((485, 770), (40, 40), colors::black))
+}
+
+let draw_color_boxes = draw_boxes () << @draw_color_boxes
+

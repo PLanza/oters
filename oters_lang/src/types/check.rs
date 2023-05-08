@@ -19,6 +19,7 @@ pub struct ProgramChecker {
     // Each node represents a pair containing type declarations, and value declarations
     pub(super) type_decs: Dag<HashMap<String, Type>, String>,
     value_decs: Dag<HashMap<String, Type>, String>,
+    fields_map: HashMap<String, (Vec<String>, String)>,
 
     fresh_type_var: i32,
     substitutions: Vec<(String, Type)>,
@@ -44,6 +45,7 @@ impl ProgramChecker {
         ProgramChecker {
             type_decs,
             value_decs,
+            fields_map: HashMap::new(),
             fresh_type_var: 0,
             substitutions: Vec::new(),
             current_path: Vec::new(),
@@ -104,6 +106,9 @@ impl ProgramChecker {
                 }
 
                 for (s, fields) in exports.1 {
+                    for field in fields.clone() {
+                        self.fields_map.insert(field.0, (path.clone(), s.clone()));
+                    }
                     insert_dec(&mut self.type_decs, s, Type::Struct(fields), &path);
                 }
 
@@ -167,56 +172,40 @@ impl ProgramChecker {
 
                     // Add struct to the type declarations
                     insert_dec(&mut self.type_decs, id.clone(), t, &path);
+
+                    // Add fields to the fields map
+                    for field in fields {
+                        self.fields_map
+                            .insert(field.0.clone(), (path.clone(), id.to_string()));
+                    }
                 }
                 PExpr::Let(pat, expr) => {
                     let mut e = SpExpr::from_pexpr(expr.clone())?;
 
-                    let mut ctx = VarContext::new();
+                    let ctx = VarContext::new();
 
-                    // If e is recursive within one time step
-                    let ret_type = match pat.term.as_ref() {
-                        Pattern::Var(var, _) => {
-                            if matches!(e.term.as_ref(), Expr::Fn(..))
-                                && e.is_static_recursive(&var)
-                            {
-                                // Add a recursive variable into the context
-                                let t = Type::Function(
-                                    Box::new(Type::GenericVar(self.fresh_type_var(), false)),
-                                    Box::new(Type::GenericVar(self.fresh_type_var(), false)),
-                                );
-                                ctx.push_var(var.clone(), t.clone());
-                                Some(t)
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    };
-
-                    if matches!(ret_type, None) {
-                        // If e is a recursive variable then convert it into a fix expression
-                        for var in pat.vars() {
-                            let fix_var = format!("rec_{}", var);
-                            // Recursive variables are translated to fix points to ensure guarded recursion...
-                            let (is_rec, rec_e) = e.clone().substitute(
-                                &var,
-                                &SpExpr::new(
-                                    Expr::Adv(SpExpr::new(
-                                        Expr::Unbox(SpExpr::new(
-                                            Expr::Var(Vec::new(), fix_var.clone()),
-                                            expr.span,
-                                        )),
+                    // If e is a recursive variable then convert it into a fix expression
+                    for var in pat.vars() {
+                        let fix_var = format!("rec_{}", var);
+                        // Recursive variables are translated to fix points to ensure guarded recursion...
+                        let (is_rec, rec_e) = e.clone().substitute(
+                            &var,
+                            &SpExpr::new(
+                                Expr::Adv(SpExpr::new(
+                                    Expr::Unbox(SpExpr::new(
+                                        Expr::Var(Vec::new(), fix_var.clone()),
                                         expr.span,
                                     )),
                                     expr.span,
-                                ),
-                            );
-                            e = if is_rec {
-                                SpExpr::new(Expr::Fix(fix_var, rec_e), expr.span)
-                            } else {
-                                e
-                            };
-                        }
+                                )),
+                                expr.span,
+                            ),
+                        );
+                        e = if is_rec {
+                            SpExpr::new(Expr::Fix(fix_var, rec_e), expr.span)
+                        } else {
+                            e
+                        };
                     }
 
                     // Convert to Rattus λ✓
@@ -227,14 +216,8 @@ impl ProgramChecker {
                     let (t_pat, vars) = self.check_pattern(pat.clone())?;
 
                     // Unify binding pattern type and expression type
-                    let mut constraints = VecDeque::from([(t.clone(), t_pat)]);
-
-                    // Unify recrusive variable and return type
-                    if let Some(rec_t) = ret_type {
-                        constraints.push_back((t, rec_t));
-                    }
-                    let mut subs = unify(constraints).map_err(|e| SpError::new(e, span))?;
-
+                    let mut subs = unify(VecDeque::from([(t.clone(), t_pat)]))
+                        .map_err(|e| SpError::new(e, span))?;
                     self.substitutions.append(&mut subs);
 
                     // Unify the substitutions
@@ -351,7 +334,7 @@ impl ProgramChecker {
                         insert_dec(&mut self.value_decs, var, t, &path);
                     }
 
-                    // Γ, x∶ 𝑡₁ ⊢ 𝑒₂ ∶ Str<𝑡₂>
+                    // Γ, x∶ Str<𝑡₁> ⊢ 𝑒₂ ∶ Str<𝑡₂>
                     let mut e2 = SpExpr::from_pexpr(e2.clone())?;
                     let fix_var = format!("rec_{}", y);
                     let (is_rec, rec_e) = e2.clone().substitute(
@@ -831,11 +814,30 @@ impl ProgramChecker {
             }
             ProjStruct(e, f) => {
                 let t = self.infer(e, ctx.clone())?;
-                let field_type = Type::GenericVar(self.fresh_type_var(), false);
-                let map = HashMap::from([(f.clone(), Box::new(field_type.clone()))]);
+                let (strct_path, strct) = match self.fields_map.get(f) {
+                    Some(strct) => strct,
+                    None => {
+                        return Err(SpError::new(
+                            TypeError::StructFieldDoesNotExist("".to_string(), f.clone()).into(),
+                            span,
+                        ))
+                    }
+                };
+                let path_map = traverse_path(&self.value_decs, strct_path).unwrap();
+                let struct_type = path_map.get(strct).unwrap();
+
+                let field_type = match struct_type {
+                    Type::Struct(map) => *map.get(f).unwrap().clone(),
+                    t => {
+                        return Err(SpError::new(
+                            TypeError::ImproperType(Type::Struct(HashMap::new()), t.clone()).into(),
+                            span,
+                        ))
+                    }
+                };
 
                 // Struct unification only requires a subset of fields to match
-                let mut subs = unify(VecDeque::from([(t.clone(), Type::Struct(map))]))
+                let mut subs = unify(VecDeque::from([(t.clone(), struct_type.clone())]))
                     .map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
                 ctx.apply_subs(&self.substitutions);
@@ -926,35 +928,14 @@ impl ProgramChecker {
                 }
             },
             LetIn(pat, e1, e2) => {
-                let mut ctx1 = ctx.clone();
-                // If e is recursive within one time step
-                let t_e_ = match pat.term.as_ref() {
-                    Pattern::Var(var, _) => {
-                        if matches!(e1.term.as_ref(), Expr::Fn(..)) && e1.is_static_recursive(&var)
-                        {
-                            // Add a recursive variable into the context
-                            let t = Type::Function(
-                                Box::new(Type::GenericVar(self.fresh_type_var(), false)),
-                                Box::new(Type::GenericVar(self.fresh_type_var(), false)),
-                            );
-                            ctx1.push_var(var.clone(), t.clone());
-                            Some(t)
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                };
+                let ctx1 = ctx.clone();
 
                 // Similar to top level let
                 let t_e = self.infer(&e1, ctx1.clone())?;
                 let (t_pat, vars) = self.check_pattern(pat.clone())?;
 
-                let mut constraints = VecDeque::from([(t_e.clone(), t_pat)]);
-                if let Some(rec_t) = t_e_ {
-                    constraints.push_back((t_e.clone(), rec_t));
-                }
-                let mut subs = unify(constraints).map_err(|e| SpError::new(e, span))?;
+                let mut subs = unify(VecDeque::from([(t_e.clone(), t_pat)]))
+                    .map_err(|e| SpError::new(e, span))?;
                 self.substitutions.append(&mut subs);
 
                 self.unify_subs().map_err(|e| SpError::new(e, span))?;
@@ -1297,7 +1278,6 @@ impl ProgramChecker {
                         }
                         t => t.clone(),
                     },
-
                     None => {
                         return Err(SpError::new(
                             TypeError::UserTypeNotFound(id.clone()).into(),
@@ -1625,17 +1605,11 @@ fn unify(mut constraints: VecDeque<(Type, Type)>) -> Result<Vec<(String, Type)>>
                         unify(constraints)
                     }
                     (Struct(map1), Struct(map2)) => {
-                        // A struct needs to unify with a subset of fields of the other one
-                        let (smaller, bigger) = if map1.len() < map2.len() {
-                            (map1, map2)
-                        } else {
-                            (map2, map1)
-                        };
-                        for (field, t1) in smaller {
-                            match bigger.get(field) {
+                        for (field, t1) in map1 {
+                            match map2.get(field) {
                                 None => {
                                     return Err(TypeError::StructFieldDoesNotExist(
-                                        format!("{:?}", Struct(bigger.clone())),
+                                        format!("{:?}", Struct(map2.clone())),
                                         field.clone(),
                                     )
                                     .into())

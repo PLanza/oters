@@ -73,7 +73,7 @@ impl Display for Expr {
             App(e1, e2) => write!(f, "{} {}", e1.term, e2.term),
             ProjStruct(e, field) => write!(f, "{}.{}", e.term, field),
             Match(e, v) => {
-                let mut str = format!("match {} with {{\n", e.term);
+                let mut str = format!("match {} {{\n", e.term);
 
                 for i in 0..v.len() {
                     str.push_str(&format!("{} => {},\n", v[i].0.term, v[i].1.term));

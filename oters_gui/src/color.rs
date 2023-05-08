@@ -2,7 +2,7 @@ use oters_lang as oters;
 
 use oters::export::export_oters;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[export_oters]
 pub struct Color {
     pub r: i64,

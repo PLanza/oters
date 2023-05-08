@@ -1,3 +1,8 @@
+#[oters::export_oters]
+fn get_nth(list: Vec<String>, n: i64) -> String {
+    list[n as usize].clone()
+}
+
 fn main() {
     let config = oters::WindowConfig {
         title: "My Oters App".to_string(),

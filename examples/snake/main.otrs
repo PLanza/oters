@@ -1,0 +1,112 @@
+use std::stream::const
+use std::stream::head
+
+use gui::widget::*
+use gui::window::set_bg_color
+use gui::shape::*
+
+let _ = set_bg_color gui::color::light_blue
+let bounding_box = (draw_shape (Shape::Rect((30,30), (400, 400), gui::color::white))) << @bounding_box
+
+let menu = gui::frame (190, 450)
+let (restart_id, restart_str) = button menu (105, 50) (const "Restart") 
+let _ = gui::attach_root (menu, restart_id)
+
+enum GameState {
+  Play,
+  Over,
+}
+
+enum Direction {
+  Up,
+  Down,
+  Left, 
+  Right
+}
+
+let next_dir = fn prev ->
+  if gui::input::is_key_pressed "Up" then
+    Direction::Up << @(next_dir (Direction::Up))
+  else if gui::input::is_key_pressed "Down" then
+    Direction::Down << @(next_dir (Direction::Down))
+  else if gui::input::is_key_pressed "Left" then
+    Direction::Left << @(next_dir (Direction::Left))
+  else if gui::input::is_key_pressed "Right" then
+    Direction::Right << @(next_dir (Direction::Right))
+  else if head restart_str then
+    Direction::Right << @(next_dir (Direction::Right))
+  else
+    prev << @(next_dir prev)
+let snake_dir = next_dir (Direction::Right)
+
+let next_pos = fn (prev_x, prev_y) dir ->
+  match dir {
+    Direction::Up => (prev_x, prev_y - 20),
+    Direction::Down => (prev_x, prev_y + 20),
+    Direction::Left => (prev_x - 20, prev_y),
+    Direction::Right => (prev_x + 20, prev_y),
+  }
+
+let snake_pos = {
+  std::stream::fold 
+    #(fn acc dir -> match head game_state {
+        GameState::Over => acc,
+        GameState::Play => if head restart_str then 
+            (30, 30)
+          else 
+            next_pos acc dir
+      }
+    ) (30, 30) snake_dir
+}
+and game_state = {
+  let aux = fn prev -> {
+    let next_state = match prev {
+      GameState::Play => match head snake_pos {
+        (x, y) => if x < 30 || y < 30 || 429 < x || 429 < y then 
+            GameState::Over 
+          else
+            GameState::Play
+      },
+      GameState::Over => if head restart_str then GameState::Play else GameState::Over,
+    };
+    next_state << @(aux next_state)
+  };
+  aux (GameState::Play)
+}
+with GameState::Play
+
+let update_apple = fn ((prev_x, prev_y), _) (snake_x, snake_y) ->
+  if prev_x == snake_x && prev_y == snake_y then 
+    (new_apple (), true)
+  else if head restart_str then 
+    (new_apple (), false)
+  else
+    ((prev_x, prev_y), false)
+    
+let apple = std::stream::fold #update_apple (new_apple (), false) snake_pos
+
+let update_tail = fn prev_tail pos -> 
+  match head game_state {
+    GameState::Over => prev_tail,
+    GameState::Play => if head restart_str then 
+        [(30,30), (30,30)]
+      else
+        match head apple {
+          (_, true) => pos:prev_tail,
+          (_, false) => pos:(pop_last prev_tail),
+        }
+  }
+
+let snake_tail = std::stream::fold  
+  #update_tail [(30,30), (30,30)] (std::stream::shift (30,30) snake_pos)
+
+let draw_snake = fn (x, y) -> {
+  draw_shape (Shape::Circle((x + 10, y + 10), 10, gui::color::green));
+  draw_batch (pos_squares ((head snake_tail), (20, 20), gui::color::green))
+}
+let snake = std::stream::map #draw_snake snake_pos
+
+let draw_apple = std::stream::map #(fn ((x, y), _) ->
+    draw_shape (Shape::Circle((x + 10, y + 10), 10, gui::color::red))
+  ) apple
+

@@ -1,6 +1,6 @@
 [package]
 name = "oters_macro"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 authors = ["Pablo Lanza Serrano"]
 description = "Macro definitions for the oters programming language"
@@ -15,6 +15,9 @@ proc-macro = true
 
 [dependencies]
 quote = "1.0.23"
-syn = { version = "1.0.107", features = ["extra-traits", "full", "derive"] }
+syn = { version = "1.0.*", features = ["extra-traits", "full", "derive"] }
 proc-macro2 = "1.0.51"
 lazy_static = "1.4.0"
+
+[profile.dev.package.'*']
+opt-level = 3
